@@ -5,6 +5,10 @@ A music player and downloader for Android, written in Rust.
 - **Player**: plays FLAC, MP3, AAC/ALAC (M4A), Ogg Vorbis, Opus and WAV in pure Rust.
   Queue, shuffle, repeat, seeking and volume. Shows the stream quality
   (e.g. `FLAC · 24-bit · 96 kHz`).
+- **Background playback**: a media notification and lock-screen controls
+  (play/pause, next, previous, seek), plus Bluetooth and headset buttons.
+  Music keeps playing with the screen off, and Back sends the app to the
+  background instead of closing it.
 - **Library**: scans your music folders and downloads, reads tags and cover
   art, and browses by album, artist and song, with search. Play counts and
   most-played stay on your phone.
@@ -40,7 +44,8 @@ protection.
 | `crates/loss-core` | Library model, folder scanning, tags (lofty), settings, LRC parser, playlist import |
 | `crates/loss-audio` | Audio engine: Symphonia decoding → cpal output (AAudio on Android), queue, resampling |
 | `crates/loss-download` | Download manager (tokio + reqwest/rustls), sources, tagging, lyrics |
-| `app` | The Dioxus app: UI, Android paths and permissions (JNI) |
+| `app` | The Dioxus app: UI, Android paths and permissions (JNI), media bridge |
+| `app/android` | The only non-Rust code: `MainActivity.kt` (media service, MediaSession, permission prompts) and the manifest |
 
 ## Building the APK
 
@@ -79,10 +84,6 @@ cargo test -p loss-download --test manager -- --ignored   # live Internet Archiv
 
 ## Not done yet
 
-- Lock-screen and notification media controls, and guaranteed background
-  playback. Android requires a small Java/Kotlin media service for these.
-  Playback keeps going while the app is in the background, but Android may
-  stop it after a while.
 - Equalizer, home-screen widgets, Android Auto, and USB DAC bit-perfect output.
 - An Android folder picker. For now, folders are typed in or picked from
   suggestions.

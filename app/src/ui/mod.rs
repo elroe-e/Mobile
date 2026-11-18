@@ -120,9 +120,11 @@ pub fn App() -> Element {
 
     // First launch: ask for permission to read music, then scan.
     use_hook(|| {
+        crate::media::start(services::get());
         std::thread::spawn(|| {
+            // On Android the activity shows the permission prompt at launch;
+            // wait for the answer before the first scan.
             if !crate::platform::has_audio_permission() {
-                crate::platform::request_audio_permission();
                 for _ in 0..120 {
                     std::thread::sleep(Duration::from_millis(500));
                     if crate::platform::has_audio_permission() {

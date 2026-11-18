@@ -13,16 +13,18 @@ pub struct Paths {
 }
 
 #[cfg(target_os = "android")]
-mod android {
+pub mod android {
     use jni::objects::{JObject, JString, JValue};
     use jni::JavaVM;
 
-    fn with_env<T>(f: impl FnOnce(&mut jni::JNIEnv, &JObject) -> jni::errors::Result<T>) -> Option<T> {
+    /// Runs `f` with a JNI env and the activity. Local references are freed
+    /// when it returns, so it is safe to call in a loop on a long-lived thread.
+    pub fn with_env<T>(f: impl FnOnce(&mut jni::JNIEnv, &JObject) -> jni::errors::Result<T>) -> Option<T> {
         let ctx = ndk_context::android_context();
         let vm = unsafe { JavaVM::from_raw(ctx.vm().cast()) }.ok()?;
         let mut env = vm.attach_current_thread().ok()?;
         let activity = unsafe { JObject::from_raw(ctx.context().cast()) };
-        let out = f(&mut env, &activity);
+        let out = env.with_local_frame(32, |env| f(env, &activity));
         if env.exception_check().unwrap_or(false) {
             let _ = env.exception_describe();
             let _ = env.exception_clear();

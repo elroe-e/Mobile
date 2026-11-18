@@ -1,6 +1,9 @@
 [application]
 name = "Loss"
 out_dir = "dist"
+# Android glue: media service, lock-screen controls, permission prompts.
+android_manifest = "android/AndroidManifest.xml"
+android_main_activity = "android/MainActivity.kt"
 
 [bundle]
 identifier = "app.loss.player"
@@ -11,9 +14,7 @@ short_description = "A music player and downloader written in Rust"
 min_sdk = 26
 target_sdk = 35
 
-[android.permissions]
-"android.permission.READ_MEDIA_AUDIO" = { description = "Read your music files" }
-"android.permission.READ_EXTERNAL_STORAGE" = { description = "Read your music files (Android 12 and older)" }
+# Permissions are declared in android/AndroidManifest.xml.
 
 [android.application]
 uses_cleartext_traffic = true
