@@ -1,0 +1,11 @@
+[package]
+name = "loss-audio"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+loss-core.workspace = true
+log.workspace = true
+symphonia = { version = "0.5", features = ["all"] }
+cpal = "0.16"
+rtrb = "0.3"

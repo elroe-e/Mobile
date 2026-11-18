@@ -1,0 +1,19 @@
+[package]
+name = "loss-download"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+loss-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+lofty.workspace = true
+log.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "sync", "time"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "rustls-tls-native-roots", "stream", "json", "gzip"] }
+futures-util = "0.3"
+rss = "2"
+md5 = "0.7"
+urlencoding = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
