@@ -166,6 +166,16 @@ impl Services {
         self.covers.get(track_id, &path, size)
     }
 
+    /// Main colour of a track's cover (loads the cover in the background
+    /// the first time; returns None until it's ready).
+    pub fn cover_color(&self, track_id: &str) -> Option<[u8; 3]> {
+        if let Some(c) = lock(&self.covers.colors).get(track_id) {
+            return Some(*c);
+        }
+        let _ = self.thumb(track_id);
+        None
+    }
+
     pub fn covers_version(&self) -> u64 {
         self.covers.version.load(Ordering::Relaxed)
     }
@@ -209,6 +219,8 @@ fn manager_config(s: &Settings) -> ManagerConfig {
 /// on a background thread so scrolling never waits on tag parsing.
 struct Covers {
     mem: Arc<Mutex<HashMap<(String, u32), Option<String>>>>,
+    /// Main colour of each cover, for dynamic theming.
+    colors: Arc<Mutex<HashMap<String, [u8; 3]>>>,
     pending: Arc<Mutex<HashSet<(String, u32)>>>,
     tx: std::sync::mpsc::Sender<(String, PathBuf, u32)>,
     version: Arc<AtomicU64>,
@@ -224,12 +236,17 @@ impl Covers {
         let order: Arc<Mutex<VecDeque<(String, u32)>>> = Default::default();
         let pending: Arc<Mutex<HashSet<(String, u32)>>> = Default::default();
         let version = Arc::new(AtomicU64::new(0));
-        let (m, o, p, v, d) = (mem.clone(), order, pending.clone(), version.clone(), dir);
+        let colors: Arc<Mutex<HashMap<String, [u8; 3]>>> = Default::default();
+        let (m, o, p, v, d, c) = (mem.clone(), order, pending.clone(), version.clone(), dir, colors.clone());
         std::thread::Builder::new()
             .name("loss-covers".into())
             .spawn(move || {
                 while let Ok((id, path, size)) = rx.recv() {
-                    let uri = load_cover(&d, &id, &path, size);
+                    let need_color = !lock(&c).contains_key(&id);
+                    let (uri, color) = load_cover(&d, &id, &path, size, need_color);
+                    if let Some(col) = color {
+                        lock(&c).insert(id.clone(), col);
+                    }
                     let key = (id, size);
                     {
                         let mut mem = lock(&m);
@@ -249,6 +266,7 @@ impl Covers {
             .expect("cover thread");
         Covers {
             mem,
+            colors,
             pending,
             tx,
             version,
@@ -267,25 +285,40 @@ impl Covers {
     }
 }
 
-fn load_cover(dir: &Path, id: &str, path: &Path, size: u32) -> Option<String> {
+fn load_cover(dir: &Path, id: &str, path: &Path, size: u32, want_color: bool) -> (Option<String>, Option<[u8; 3]>) {
     let cache = dir.join(format!("{id}-{size}.jpg"));
     let bytes = match std::fs::read(&cache) {
         Ok(b) => b,
         Err(_) => {
-            let raw = loss_core::tags::read_cover(path)
+            let Some(raw) = loss_core::tags::read_cover(path)
                 .map(|(b, _)| b)
-                .or_else(|| loss_core::tags::find_folder_cover(path).and_then(|p| std::fs::read(p).ok()))?;
-            let img = image::load_from_memory(&raw).ok()?;
+                .or_else(|| loss_core::tags::find_folder_cover(path).and_then(|p| std::fs::read(p).ok()))
+            else {
+                return (None, None);
+            };
+            let Ok(img) = image::load_from_memory(&raw) else {
+                return (None, None);
+            };
             let thumb = img.thumbnail(size, size).to_rgb8();
             let mut out = Vec::new();
-            let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 85);
-            enc.encode_image(&thumb).ok()?;
+            let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 88);
+            if enc.encode_image(&thumb).is_err() {
+                return (None, None);
+            }
             let _ = std::fs::write(&cache, &out);
             out
         }
     };
-    Some(format!(
+    let color = if want_color {
+        image::load_from_memory(&bytes)
+            .ok()
+            .map(|img| crate::ui::theme::seed_from_image(&img))
+    } else {
+        None
+    };
+    let uri = format!(
         "data:image/jpeg;base64,{}",
         base64::engine::general_purpose::STANDARD.encode(bytes)
-    ))
+    );
+    (Some(uri), color)
 }

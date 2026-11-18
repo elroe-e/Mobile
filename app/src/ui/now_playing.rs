@@ -18,7 +18,7 @@ enum Pane {
 pub fn NowPlaying() -> Element {
     let mut st = state();
     let p = st.player.read().clone();
-    let mut pane = use_signal(|| Pane::Cover);
+    let pane = use_signal(|| Pane::Cover);
     let mut drag: Signal<Option<f64>> = use_signal(|| None);
     let Some(cur) = p.current().cloned() else {
         return rsx! {};
@@ -39,40 +39,40 @@ pub fn NowPlaying() -> Element {
     let vol = (p.volume * 100.0).round();
     let repeat_icon = if p.repeat == Repeat::One { "repeat_one" } else { "repeat" };
     let (shuffle, repeat) = (p.shuffle, p.repeat);
+    let pn = pane();
+    let toggle = move |target: Pane| {
+        let mut pane = pane;
+        pane.set(if pane() == target { Pane::Cover } else { target });
+    };
+    let next_up = p
+        .index
+        .and_then(|i| p.queue.get(i + 1))
+        .and_then(|q| svc.library().get(&q.id).map(|t| t.title.clone()));
 
     rsx! {
-        div { class: "now-playing",
-            div { class: "np-top",
-                button { class: "icon-btn", onclick: move |_| st.now_playing.set(false), Icon { name: "chevron_down", size: 32 } }
-                div { class: "np-tabs",
-                    for (pn , label) in [(Pane::Cover, "Playing"), (Pane::Lyrics, "Lyrics"), (Pane::Queue, "Queue")] {
-                        button {
-                            class: if pane() == pn { "seg active" } else { "seg" },
-                            onclick: move |_| pane.set(pn),
-                            "{label}"
-                        }
-                    }
-                }
-                div { style: "width: 44px" }
+        div { class: if pn == Pane::Cover { "now-playing" } else { "now-playing panel-open" },
+            div { class: "np-art-bg",
+                Cover { track_id: cur.id.clone(), class: "cover np-art", big: true }
+                div { class: "np-art-fade" }
             }
-            div { class: "np-body",
-                match pane() {
-                    Pane::Cover => rsx! {
-                        Cover { track_id: cur.id.clone(), class: "cover np-cover", big: true }
-                    },
-                    Pane::Lyrics => rsx! { LyricsPane { key: "{cur.id}", track_id: cur.id.clone(), position: p.position } },
-                    Pane::Queue => rsx! { QueuePane {} },
+            div { class: "np-top",
+                button { class: "icon-btn glass", onclick: move |_| st.now_playing.set(false), Icon { name: "chevron_down", size: 28 } }
+                div { class: "np-top-title",
+                    div { class: "eyebrow", "Now playing" }
+                    div { class: "np-top-album", "{album}" }
+                }
+                button { class: "icon-btn glass", onclick: move |_| toggle(Pane::Queue), Icon { name: "queue", size: 24 } }
+            }
+            div { class: "np-stage",
+                match pn {
+                    Pane::Cover => rsx! {},
+                    Pane::Lyrics => rsx! { div { class: "np-panel", LyricsPane { key: "{cur.id}", track_id: cur.id.clone(), position: p.position } } },
+                    Pane::Queue => rsx! { div { class: "np-panel", QueuePane {} } },
                 }
             }
             div { class: "np-info",
                 div { class: "np-title", "{title}" }
                 div { class: "np-artist", "{artist}" }
-                if !album.is_empty() {
-                    div { class: "muted small", "{album}" }
-                }
-                if !p.info.codec.is_empty() {
-                    span { class: if lossless { "quality lossless" } else { "quality" }, "{quality}" }
-                }
                 if let Some(err) = &p.error {
                     div { class: "error small", "{err}" }
                 }
@@ -80,6 +80,7 @@ pub fn NowPlaying() -> Element {
             div { class: "np-seek",
                 input {
                     r#type: "range",
+                    class: "seek",
                     min: "0",
                     max: "{dur.max(1.0)}",
                     step: "0.5",
@@ -95,7 +96,13 @@ pub fn NowPlaying() -> Element {
                 }
                 div { class: "times",
                     span { "{format_duration(pos)}" }
-                    span { "-{format_duration((dur - pos).max(0.0))}" }
+                    if !p.info.codec.is_empty() {
+                        span { class: if lossless { "quality lossless" } else { "quality" },
+                            Icon { name: "eq", size: 14 }
+                            "{quality}"
+                        }
+                    }
+                    span { "{format_duration(dur)}" }
                 }
             }
             div { class: "np-controls",
@@ -104,11 +111,11 @@ pub fn NowPlaying() -> Element {
                     onclick: move |_| services::get().player.send(Command::SetShuffle(!shuffle)),
                     Icon { name: "shuffle" }
                 }
-                button { class: "icon-btn", onclick: move |_| services::get().player.send(Command::Previous), Icon { name: "prev", size: 40 } }
-                button { class: "play-btn", onclick: move |_| services::get().player.send(Command::Toggle),
-                    Icon { name: if playing { "pause" } else { "play" }, size: 44 }
+                button { class: "skip-btn", onclick: move |_| services::get().player.send(Command::Previous), Icon { name: "prev", size: 30 } }
+                button { class: if playing { "play-btn playing" } else { "play-btn" }, onclick: move |_| services::get().player.send(Command::Toggle),
+                    Icon { name: if playing { "pause" } else { "play" }, size: 36 }
                 }
-                button { class: "icon-btn", onclick: move |_| services::get().player.send(Command::Next), Icon { name: "next", size: 40 } }
+                button { class: "skip-btn", onclick: move |_| services::get().player.send(Command::Next), Icon { name: "next", size: 30 } }
                 button {
                     class: if repeat != Repeat::Off { "icon-btn on" } else { "icon-btn" },
                     onclick: move |_| services::get().player.send(Command::SetRepeat(repeat.next())),
@@ -116,7 +123,7 @@ pub fn NowPlaying() -> Element {
                 }
             }
             div { class: "np-volume",
-                Icon { name: "volume", size: 20 }
+                Icon { name: "volume_down", size: 20 }
                 input {
                     r#type: "range",
                     min: "0",
@@ -133,6 +140,19 @@ pub fn NowPlaying() -> Element {
                             services::get().update_settings(|s| s.volume = v / 100.0);
                         }
                     },
+                }
+                Icon { name: "volume_up", size: 20 }
+            }
+            div { class: "np-bottom",
+                button { class: if pn == Pane::Lyrics { "np-chip on" } else { "np-chip" }, onclick: move |_| toggle(Pane::Lyrics),
+                    Icon { name: "lyrics", size: 18 }
+                    "Lyrics"
+                }
+                if let Some(n) = next_up {
+                    button { class: "np-chip next-up", onclick: move |_| toggle(Pane::Queue),
+                        span { class: "muted", "Up next" }
+                        span { class: "ellipsis", "{n}" }
+                    }
                 }
             }
         }

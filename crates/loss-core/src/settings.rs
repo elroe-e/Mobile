@@ -33,6 +33,13 @@ pub struct Settings {
     pub podcasts: Vec<String>,
     pub volume: f32,
     pub accent: String,
+    /// "system", "dark" or "light".
+    pub theme: String,
+    /// Colour the app from the playing song's cover art.
+    pub dynamic_color: bool,
+    /// For "Continue listening" on Home.
+    pub last_track: Option<String>,
+    pub last_position: f64,
 }
 
 impl Default for Settings {
@@ -51,6 +58,10 @@ impl Default for Settings {
             podcasts: vec![],
             volume: 1.0,
             accent: "#e8615a".into(),
+            theme: "system".into(),
+            dynamic_color: true,
+            last_track: None,
+            last_position: 0.0,
         }
     }
 }

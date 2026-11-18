@@ -2,6 +2,11 @@
 
 A music player and downloader for Android, written in Rust.
 
+- **Looks**: a Material 3-style design whose colours come from the album art
+  of what's playing, in dark and light themes. It has a Home screen with
+  "Continue listening", shortcut tiles, recently added albums and your most
+  played songs, plus an artwork-led Now Playing screen, quality badges
+  (Hi-Res, 24-bit, FLAC…) and the Google Sans Flex typeface.
 - **Player**: plays FLAC, MP3, AAC/ALAC (M4A), Ogg Vorbis, Opus and WAV in pure Rust.
   Queue, shuffle, repeat, seeking and volume. Shows the stream quality
   (e.g. `FLAC · 24-bit · 96 kHz`).
@@ -81,6 +86,11 @@ On Linux this needs `libwebkit2gtk-4.1-dev`, `libxdo-dev` and `libasound2-dev`.
 cargo test -p loss-core -p loss-audio -p loss-download
 cargo test -p loss-download --test manager -- --ignored   # live Internet Archive check
 ```
+
+## Credits
+
+Google Sans Flex is © The Google Sans Flex Authors and is used under the SIL
+Open Font License 1.1 (`app/assets/fonts/OFL.txt`).
 
 ## Not done yet
 

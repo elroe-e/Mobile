@@ -225,12 +225,51 @@ pub fn SettingsTab() -> Element {
 
         h2 { class: "section-title", "Look" }
         div { class: "card",
-            div { class: "swatches",
-                for c in ["#e8615a", "#4fb3a9", "#7c8cff", "#e3a83b", "#c56bd8", "#5fbf5f"] {
-                    button {
-                        class: if cur.accent == c { "swatch active" } else { "swatch" },
-                        style: "background: {c}",
-                        onclick: { let mut save = save; move |_| save(Box::new(move |s| s.accent = c.to_string())) },
+            div { class: "setting",
+                div { class: "row-text", div { class: "title", "Theme" } }
+                div { class: "stepper",
+                    for (mode , label) in [("system", "Auto"), ("dark", "Dark"), ("light", "Light")] {
+                        button {
+                            class: if cur.theme == mode { "seg active" } else { "seg" },
+                            onclick: {
+                                let mut save = save;
+                                move |_| {
+                                    save(Box::new(move |s| s.theme = mode.to_string()));
+                                    st.settings_changed();
+                                }
+                            },
+                            "{label}"
+                        }
+                    }
+                }
+            }
+            Toggle {
+                label: "Colours from album art",
+                hint: "The whole app takes on the colours of what's playing",
+                on: cur.dynamic_color,
+                onchange: {
+                    let mut save = save;
+                    move |v| {
+                        save(Box::new(move |s| s.dynamic_color = v));
+                        st.settings_changed();
+                    }
+                },
+            }
+            div { class: "setting col",
+                div { class: "title", if cur.dynamic_color { "Colour when nothing is playing" } else { "Accent colour" } }
+                div { class: "swatches",
+                    for c in ["#e8615a", "#4fb3a9", "#7c8cff", "#e3a83b", "#c56bd8", "#5fbf5f"] {
+                        button {
+                            class: if cur.accent == c { "swatch active" } else { "swatch" },
+                            style: "background: {c}",
+                            onclick: {
+                                let mut save = save;
+                                move |_| {
+                                    save(Box::new(move |s| s.accent = c.to_string()));
+                                    st.settings_changed();
+                                }
+                            },
+                        }
                     }
                 }
             }

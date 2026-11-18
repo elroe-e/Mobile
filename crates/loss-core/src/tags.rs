@@ -20,6 +20,10 @@ pub struct TrackMeta {
     pub duration_secs: f64,
     pub has_cover: bool,
     pub embedded_lyrics: Option<String>,
+    #[serde(default)]
+    pub bit_depth: Option<u8>,
+    #[serde(default)]
+    pub sample_rate: Option<u32>,
 }
 
 fn clean(s: Option<std::borrow::Cow<'_, str>>) -> Option<String> {
@@ -28,9 +32,12 @@ fn clean(s: Option<std::borrow::Cow<'_, str>>) -> Option<String> {
 
 pub fn read_meta(path: &Path) -> Result<TrackMeta, String> {
     let file = lofty::read_from_path(path).map_err(|e| e.to_string())?;
-    let duration_secs = file.properties().duration().as_secs_f64();
+    let props = file.properties();
+    let duration_secs = props.duration().as_secs_f64();
     let mut meta = TrackMeta {
         duration_secs,
+        bit_depth: props.bit_depth(),
+        sample_rate: props.sample_rate(),
         ..Default::default()
     };
     if let Some(tag) = file.primary_tag().or_else(|| file.first_tag()) {

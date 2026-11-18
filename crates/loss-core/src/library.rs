@@ -34,6 +34,16 @@ pub struct Track {
     pub mtime: u64,
     #[serde(default)]
     pub play_count: u32,
+    /// Container/codec from the extension, e.g. "FLAC". Empty in libraries
+    /// saved by older versions (those tracks are re-read on the next scan).
+    #[serde(default)]
+    pub format: String,
+    #[serde(default)]
+    pub bit_depth: Option<u8>,
+    #[serde(default)]
+    pub sample_rate: Option<u32>,
+    #[serde(default)]
+    pub last_played: u64,
 }
 
 impl Track {
@@ -68,6 +78,16 @@ impl Track {
                 .to_string()
         });
         let has_cover = meta.has_cover || tags::find_folder_cover(path).is_some();
+        let format = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| match e.to_ascii_lowercase().as_str() {
+                "m4a" | "mp4" | "aac" => "AAC".to_string(),
+                "oga" => "OGG".to_string(),
+                "aif" => "AIFF".to_string(),
+                other => other.to_uppercase(),
+            })
+            .unwrap_or_default();
         Track {
             id: stable_id(&path.to_string_lossy()),
             path: path.to_path_buf(),
@@ -85,6 +105,27 @@ impl Track {
             added_at: now_secs(),
             mtime: file_mtime(path),
             play_count: 0,
+            format,
+            bit_depth: meta.bit_depth,
+            sample_rate: meta.sample_rate,
+            last_played: 0,
+        }
+    }
+
+    pub fn is_lossless(&self) -> bool {
+        matches!(self.format.as_str(), "FLAC" | "WAV" | "AIFF" | "ALAC" | "APE" | "WV")
+            || (self.format == "AAC" && self.bit_depth.is_some())
+    }
+
+    /// Short quality badge: "Hi-Res", "24-bit", "FLAC", "MP3"...
+    pub fn quality_badge(&self) -> String {
+        let hires = self.sample_rate.map(|r| r > 48_000).unwrap_or(false);
+        match (self.is_lossless(), self.bit_depth) {
+            (true, Some(b)) if b >= 24 && hires => "Hi-Res".into(),
+            (true, Some(b)) if b >= 24 => "24-bit".into(),
+            (true, Some(b)) => format!("{b}-bit"),
+            _ if self.format.is_empty() => String::new(),
+            _ => self.format.clone(),
         }
     }
 
@@ -199,6 +240,7 @@ impl Library {
             let mut t = track;
             t.added_at = old.added_at;
             t.play_count = old.play_count;
+            t.last_played = old.last_played;
             self.tracks[i] = t;
         } else {
             self.tracks.push(track);
@@ -215,7 +257,16 @@ impl Library {
     pub fn record_play(&mut self, id: &str) {
         if let Some(&i) = self.index.get(id) {
             self.tracks[i].play_count += 1;
+            self.tracks[i].last_played = now_secs();
         }
+    }
+
+    /// Recently played tracks, newest first.
+    pub fn recently_played(&self, n: usize) -> Vec<&Track> {
+        let mut v: Vec<&Track> = self.tracks.iter().filter(|t| t.last_played > 0).collect();
+        v.sort_by(|a, b| b.last_played.cmp(&a.last_played));
+        v.truncate(n);
+        v
     }
 
     /// Incremental scan: new files are added, changed files re-read, and
@@ -272,7 +323,7 @@ impl Library {
                 }
                 let mtime = file_mtime(path);
                 match existing.get(path) {
-                    Some(&i) if self.tracks[i].mtime == mtime => {
+                    Some(&i) if self.tracks[i].mtime == mtime && !self.tracks[i].format.is_empty() => {
                         new_tracks.push(self.tracks[i].clone());
                     }
                     Some(&i) => {
@@ -283,6 +334,7 @@ impl Library {
                         );
                         t.added_at = self.tracks[i].added_at;
                         t.play_count = self.tracks[i].play_count;
+                        t.last_played = self.tracks[i].last_played;
                         new_tracks.push(t);
                         report.updated += 1;
                     }
@@ -428,6 +480,21 @@ mod tests {
         assert_eq!(lib.search("band second").len(), 1);
         assert_eq!(lib.artists().len(), 2);
         assert!(lib.find("band", "opening").is_some());
+    }
+
+    #[test]
+    fn quality_badges() {
+        let mut t = make("/m/a.flac", "A", "B", "C", 1);
+        t.bit_depth = Some(24);
+        t.sample_rate = Some(96_000);
+        assert_eq!(t.format, "FLAC");
+        assert_eq!(t.quality_badge(), "Hi-Res");
+        t.sample_rate = Some(48_000);
+        assert_eq!(t.quality_badge(), "24-bit");
+        t.bit_depth = Some(16);
+        assert_eq!(t.quality_badge(), "16-bit");
+        let m = make("/m/a.mp3", "A", "B", "C", 1);
+        assert_eq!(m.quality_badge(), "MP3");
     }
 
     #[test]

@@ -1,14 +1,14 @@
 //! Library: songs, albums and artists from your folders and downloads.
 
 use super::icons::Icon;
-use super::{play_tracks, queue_items, shuffle_tracks, state, Cover, Tab};
+use super::{play_tracks, queue_items, shuffle_tracks, state, Cover, CookieButton, Tab};
 use crate::services;
 use dioxus::prelude::*;
 use loss_audio::Command;
-use loss_core::{format_duration, Track};
+use loss_core::{format_duration, Album, Track};
 
 #[derive(Clone, PartialEq, Debug)]
-enum View {
+pub enum View {
     Main,
     Album(String),
     Artist(String),
@@ -21,9 +21,42 @@ enum Seg {
     Artists,
 }
 
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Sort {
+    Latest,
+    Title,
+    Artist,
+}
+
+impl Sort {
+    fn next(self) -> Sort {
+        match self {
+            Sort::Latest => Sort::Title,
+            Sort::Title => Sort::Artist,
+            Sort::Artist => Sort::Latest,
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Sort::Latest => "Latest",
+            Sort::Title => "A–Z",
+            Sort::Artist => "Artist",
+        }
+    }
+}
+
+/// Which library page is open; kept by the App so switching tabs and back
+/// returns to the same album or artist.
+#[derive(Clone, Copy)]
+pub struct LibNav(pub Signal<View>);
+
+pub fn use_provide_nav() {
+    use_context_provider(|| LibNav(Signal::new(View::Main)));
+}
+
 #[component]
 pub fn LibraryTab() -> Element {
-    let view = use_signal(|| View::Main);
+    let view = use_context::<LibNav>().0;
     match view() {
         View::Main => rsx! { LibraryMain { view } },
         View::Album(key) => rsx! { AlbumPage { key: "{key}", album_key: key.clone(), view } },
@@ -36,60 +69,81 @@ fn LibraryMain(view: Signal<View>) -> Element {
     let st = state();
     let _ = (st.lib_version)();
     let mut seg = use_signal(|| Seg::Albums);
+    let mut sort = use_signal(|| Sort::Latest);
     let mut query = use_signal(String::new);
     let mut limit = use_signal(|| 150usize);
     let svc = services::get();
     let lib = svc.library();
     let total = lib.len();
-    let total_secs: f64 = lib.tracks.iter().map(|t| t.duration_secs).sum();
     let q = query();
     let searching = !q.trim().is_empty();
     let scanning = (st.scanning)();
 
-    let songs: Vec<Track> = if seg() == Seg::Songs || searching {
-        lib.search(&q).into_iter().cloned().collect()
-    } else {
-        vec![]
-    };
-    let albums = if seg() == Seg::Albums && !searching { lib.albums() } else { vec![] };
-    let artists = if seg() == Seg::Artists && !searching { lib.artists() } else { vec![] };
-    let recent: Vec<Track> = if seg() == Seg::Albums && !searching {
-        let mut seen = std::collections::HashSet::new();
-        lib.recently_added(200)
-            .into_iter()
-            .filter(|t| seen.insert(t.album_key()))
-            .take(10)
-            .cloned()
-            .collect()
-    } else {
-        vec![]
-    };
+    let mut songs: Vec<Track> = lib.search(&q).into_iter().cloned().collect();
+    let mut albums: Vec<Album> = lib.albums();
+    let artists = lib.artists();
+    let (n_songs, n_albums, n_artists) = (songs.len(), albums.len(), artists.len());
+    match sort() {
+        Sort::Latest => {
+            songs.sort_by(|a, b| b.added_at.cmp(&a.added_at));
+            let added: std::collections::HashMap<String, u64> = lib
+                .tracks
+                .iter()
+                .map(|t| (t.album_key(), t.added_at))
+                .collect();
+            albums.sort_by(|a, b| added.get(&b.key).cmp(&added.get(&a.key)));
+        }
+        Sort::Title => {
+            songs.sort_by_key(|t| loss_core::normalize(&t.title));
+            albums.sort_by_key(|a| loss_core::normalize(&a.title));
+        }
+        Sort::Artist => {
+            songs.sort_by_key(|t| loss_core::normalize(&t.artist));
+            albums.sort_by_key(|a| loss_core::normalize(&a.artist));
+        }
+    }
+    // Badge + first track per album.
+    let album_info: Vec<(Album, String)> = albums
+        .into_iter()
+        .map(|a| {
+            let badge = a
+                .tracks
+                .first()
+                .and_then(|id| lib.get(id))
+                .map(|t| t.quality_badge())
+                .unwrap_or_default();
+            (a, badge)
+        })
+        .collect();
     drop(lib);
 
     let song_ids: Vec<String> = songs.iter().map(|t| t.id.clone()).collect();
     let shown = songs.len().min(limit());
+    let active = if searching { Seg::Songs } else { seg() };
+    let count_line = match active {
+        Seg::Songs => format!("{} songs", songs.len()),
+        Seg::Albums => format!("{n_albums} albums"),
+        Seg::Artists => format!("{n_artists} artists"),
+    };
 
     rsx! {
         header { class: "page-header",
             h1 { "Library" }
-            div { class: "header-actions",
-                button {
-                    class: "pill",
-                    disabled: total == 0,
-                    onclick: move |_| {
-                        let ids: Vec<String> = services::get().library().tracks.iter().map(|t| t.id.clone()).collect();
-                        shuffle_tracks(&ids);
-                    },
-                    Icon { name: "shuffle", size: 18 }
-                    " Shuffle all"
-                }
+            button {
+                class: "icon-btn tonal",
+                disabled: total == 0,
+                onclick: move |_| {
+                    let ids: Vec<String> = services::get().library().tracks.iter().map(|t| t.id.clone()).collect();
+                    shuffle_tracks(&ids);
+                },
+                Icon { name: "shuffle" }
             }
         }
         div { class: "search-box",
-            Icon { name: "search", size: 20 }
+            Icon { name: "search", size: 22 }
             input {
                 r#type: "search",
-                placeholder: "Search your music",
+                placeholder: "Search your library",
                 initial_value: "{q}",
                 oninput: move |e| query.set(e.value()),
             }
@@ -100,55 +154,34 @@ fn LibraryMain(view: Signal<View>) -> Element {
         if total == 0 && scanning.is_none() {
             EmptyLibrary {}
         } else {
-            if !searching {
-                div { class: "segmented",
-                    for (s , label) in [(Seg::Albums, "Albums"), (Seg::Songs, "Songs"), (Seg::Artists, "Artists")] {
-                        button {
-                            class: if seg() == s { "seg active" } else { "seg" },
-                            onclick: move |_| seg.set(s),
-                            "{label}"
-                        }
+            div { class: "chips",
+                for (s , icon , label , n) in [(Seg::Songs, "note", "Songs", n_songs), (Seg::Albums, "album", "Albums", n_albums), (Seg::Artists, "person", "Artists", n_artists)] {
+                    button {
+                        class: if active == s { "chip selected" } else { "chip" },
+                        onclick: move |_| seg.set(s),
+                        Icon { name: if active == s { "check" } else { icon }, size: 18 }
+                        "{label}"
+                        span { class: "chip-count", "{n}" }
                     }
                 }
-                p { class: "muted small pad", "{total} songs · {format_duration(total_secs)}" }
             }
-            if !recent.is_empty() {
-                h2 { class: "section-title", "Recently added" }
-                div { class: "h-scroll",
-                    for t in recent.iter() {
-                        div {
-                            key: "{t.id}",
-                            class: "h-card",
-                            onclick: {
-                                let key = t.album_key();
-                                move |_| view.clone().set(View::Album(key.clone()))
-                            },
-                            Cover { track_id: t.id.clone(), class: "cover card-cover" }
-                            div { class: "title", "{t.album}" }
-                            div { class: "subtitle", "{t.album_artist}" }
-                        }
+            div { class: "toolbar",
+                span { class: "muted small", "{count_line}" }
+                if active != Seg::Artists {
+                    button { class: "text-btn", onclick: move |_| sort.set(sort().next()),
+                        Icon { name: "sort", size: 18 }
+                        "{sort().label()}"
                     }
                 }
-                h2 { class: "section-title", "All albums" }
             }
-            if !albums.is_empty() {
+            if active == Seg::Albums {
                 div { class: "album-grid",
-                    for a in albums.iter() {
-                        div {
-                            key: "{a.key}",
-                            class: "album-card",
-                            onclick: {
-                                let key = a.key.clone();
-                                move |_| view.clone().set(View::Album(key.clone()))
-                            },
-                            Cover { track_id: a.cover_track.clone().unwrap_or_default(), class: "cover card-cover" }
-                            div { class: "title", "{a.title}" }
-                            div { class: "subtitle", "{a.artist}" }
-                        }
+                    for (a , badge) in album_info.iter() {
+                        AlbumCard { key: "{a.key}", album: a.clone(), badge: badge.clone(), view }
                     }
                 }
             }
-            if !artists.is_empty() {
+            if active == Seg::Artists {
                 div { class: "list",
                     for a in artists.iter() {
                         div {
@@ -168,7 +201,7 @@ fn LibraryMain(view: Signal<View>) -> Element {
                     }
                 }
             }
-            if seg() == Seg::Songs || searching {
+            if active == Seg::Songs {
                 if songs.is_empty() {
                     p { class: "muted pad", "No songs match “{q}”." }
                 }
@@ -186,12 +219,38 @@ fn LibraryMain(view: Signal<View>) -> Element {
 }
 
 #[component]
+fn AlbumCard(album: Album, badge: String, view: Signal<View>) -> Element {
+    let key = album.key.clone();
+    let ids = album.tracks.clone();
+    rsx! {
+        div { class: "album-card", onclick: move |_| view.set(View::Album(key.clone())),
+            div { class: "art-wrap",
+                Cover { track_id: album.cover_track.clone().unwrap_or_default(), class: "cover card-cover" }
+                if !badge.is_empty() {
+                    span { class: "q-badge", "{badge}" }
+                }
+                button {
+                    class: "art-play",
+                    onclick: move |e| {
+                        e.stop_propagation();
+                        play_tracks(&ids, 0);
+                    },
+                    Icon { name: "play", size: 20 }
+                }
+            }
+            div { class: "title", "{album.title}" }
+            div { class: "subtitle", "{album.artist}" }
+        }
+    }
+}
+
+#[component]
 fn EmptyLibrary() -> Element {
     let mut st = state();
     let has_perm = crate::platform::has_audio_permission();
     rsx! {
         div { class: "empty",
-            Icon { name: "library", size: 64 }
+            div { class: "empty-icon", Icon { name: "library", size: 40 } }
             h2 { "No music yet" }
             p { "Loss plays the music on your phone and anything you download." }
             if !has_perm {
@@ -222,19 +281,35 @@ pub fn SongRow(track: Track, ids: Vec<String>, index: usize, #[props(default = f
     let is_current = playing_id.as_deref() == Some(track.id.as_str());
     let mut menu = use_signal(|| false);
     let id = track.id.clone();
+    let badge = track.quality_badge();
+    let lossless = track.is_lossless();
     rsx! {
         div { class: if is_current { "row current" } else { "row" },
             div {
                 class: "row-main",
                 onclick: move |_| play_tracks(&ids, index),
                 if show_cover {
-                    Cover { track_id: track.id.clone(), class: "cover row-cover" }
+                    div { class: "row-art",
+                        Cover { track_id: track.id.clone(), class: "cover row-cover" }
+                        if is_current {
+                            div { class: "eq-overlay", Icon { name: "eq", size: 20 } }
+                        }
+                    }
                 } else {
-                    div { class: "track-no", "{track.track_no.map(|n| n.to_string()).unwrap_or_default()}" }
+                    div { class: "track-no",
+                        if is_current {
+                            Icon { name: "eq", size: 18 }
+                        } else {
+                            "{track.track_no.map(|n| n.to_string()).unwrap_or_default()}"
+                        }
+                    }
                 }
                 div { class: "row-text",
                     div { class: "title", "{track.title}" }
                     div { class: "subtitle",
+                        if lossless && !badge.is_empty() {
+                            span { class: "mini-badge", "{badge}" }
+                        }
                         if track.origin == loss_core::TrackOrigin::Downloaded {
                             span { class: "dl-dot", title: "Downloaded" }
                         }
@@ -242,10 +317,11 @@ pub fn SongRow(track: Track, ids: Vec<String>, index: usize, #[props(default = f
                         if show_cover { " · {track.album}" }
                     }
                 }
-                div { class: "muted small", "{format_duration(track.duration_secs)}" }
+                div { class: "muted small tabular", "{format_duration(track.duration_secs)}" }
             }
-            button { class: "icon-btn small", onclick: move |_| menu.set(!menu()), Icon { name: "add", size: 20 } }
+            button { class: "icon-btn small", onclick: move |_| menu.set(!menu()), Icon { name: "more", size: 20 } }
             if menu() {
+                div { class: "menu-scrim", onclick: move |_| menu.set(false) }
                 div { class: "row-menu",
                     button {
                         onclick: {
@@ -256,8 +332,8 @@ pub fn SongRow(track: Track, ids: Vec<String>, index: usize, #[props(default = f
                                 st.toast("Playing next");
                             }
                         },
-                        Icon { name: "play_next", size: 18 }
-                        " Play next"
+                        Icon { name: "play_next", size: 20 }
+                        "Play next"
                     }
                     button {
                         onclick: {
@@ -268,8 +344,8 @@ pub fn SongRow(track: Track, ids: Vec<String>, index: usize, #[props(default = f
                                 st.toast("Added to queue");
                             }
                         },
-                        Icon { name: "queue", size: 18 }
-                        " Add to queue"
+                        Icon { name: "queue", size: 20 }
+                        "Add to queue"
                     }
                 }
             }
@@ -286,7 +362,7 @@ fn AlbumPage(album_key: String, view: Signal<View>) -> Element {
     let Some(album) = lib.album(&album_key) else {
         drop(lib);
         return rsx! {
-            button { class: "back", onclick: move |_| view.set(View::Main), Icon { name: "back" } " Library" }
+            button { class: "back", onclick: move |_| view.set(View::Main), Icon { name: "back" } }
             p { class: "pad muted", "This album is no longer in your library." }
         };
     };
@@ -296,30 +372,45 @@ fn AlbumPage(album_key: String, view: Signal<View>) -> Element {
     let ids2 = ids.clone();
     let ids3 = ids.clone();
     let artist = album.artist.clone();
-    let year = album.year.map(|y| format!(" · {y}")).unwrap_or_default();
+    let badge = tracks.first().map(|t| t.quality_badge()).unwrap_or_default();
+    let fmt = tracks.first().map(|t| t.format.clone()).unwrap_or_default();
+    let year = album.year.map(|y| format!("{y} · ")).unwrap_or_default();
+    let playing_here = {
+        let p = st.player.read();
+        p.status == loss_audio::Status::Playing && p.current().map(|c| ids.contains(&c.id)).unwrap_or(false)
+    };
     rsx! {
-        button { class: "back", onclick: move |_| view.set(View::Main), Icon { name: "back" } " Library" }
+        button { class: "back", onclick: move |_| view.set(View::Main), Icon { name: "back" } }
         div { class: "album-hero",
             Cover { track_id: album.cover_track.clone().unwrap_or_default(), class: "cover hero-cover", big: true }
             h1 { "{album.title}" }
             button { class: "link", onclick: move |_| view.set(View::Artist(artist.clone())), "{album.artist}" }
-            p { class: "muted small", "{tracks.len()} songs · {format_duration(album.duration_secs)}{year}" }
+            p { class: "muted small", "{year}{tracks.len()} songs · {format_duration(album.duration_secs)}" }
+            div { class: "tags center-tags",
+                if !fmt.is_empty() { span { class: "tag", "{fmt}" } }
+                if !badge.is_empty() && badge != fmt { span { class: "tag accent", "{badge}" } }
+            }
             div { class: "hero-actions",
-                button { class: "primary", onclick: move |_| play_tracks(&ids, 0), Icon { name: "play", size: 20 } " Play" }
                 button {
-                    class: "pill",
-                    onclick: move |_| shuffle_tracks(&ids2),
-                    Icon { name: "shuffle", size: 18 }
-                    " Shuffle"
-                }
-                button {
-                    class: "pill",
+                    class: "icon-btn tonal big",
                     onclick: move |_| {
                         services::get().player.send(Command::Enqueue(queue_items(&ids3)));
                         st.toast("Album added to queue");
                     },
-                    Icon { name: "queue", size: 18 }
+                    Icon { name: "queue" }
                 }
+                CookieButton {
+                    playing: playing_here,
+                    size: 76,
+                    onclick: move |_| {
+                        if playing_here {
+                            services::get().player.send(Command::Pause);
+                        } else {
+                            play_tracks(&ids, 0);
+                        }
+                    },
+                }
+                button { class: "icon-btn tonal big", onclick: move |_| shuffle_tracks(&ids2), Icon { name: "shuffle" } }
             }
         }
         div { class: "list",
@@ -337,10 +428,14 @@ fn ArtistPage(name: String, view: Signal<View>) -> Element {
     let svc = services::get();
     let lib = svc.library();
     let norm = loss_core::normalize(&name);
-    let albums: Vec<_> = lib
+    let albums: Vec<(Album, String)> = lib
         .albums()
         .into_iter()
         .filter(|a| loss_core::normalize(&a.artist) == norm)
+        .map(|a| {
+            let b = a.tracks.first().and_then(|id| lib.get(id)).map(|t| t.quality_badge()).unwrap_or_default();
+            (a, b)
+        })
         .collect();
     let songs: Vec<Track> = lib
         .tracks
@@ -351,26 +446,23 @@ fn ArtistPage(name: String, view: Signal<View>) -> Element {
     drop(lib);
     let ids: Vec<String> = songs.iter().map(|t| t.id.clone()).collect();
     let ids_play = ids.clone();
+    let ids_shuffle = ids.clone();
+    let initial = name.chars().next().unwrap_or('?');
     rsx! {
-        button { class: "back", onclick: move |_| view.set(View::Main), Icon { name: "back" } " Library" }
-        header { class: "page-header",
+        button { class: "back", onclick: move |_| view.set(View::Main), Icon { name: "back" } }
+        div { class: "artist-hero",
+            div { class: "avatar huge", "{initial}" }
             h1 { "{name}" }
-            button { class: "primary", onclick: move |_| play_tracks(&ids_play, 0), Icon { name: "play", size: 20 } " Play" }
+            p { class: "muted small", "{albums.len()} albums · {songs.len()} songs" }
+            div { class: "hero-actions",
+                button { class: "primary", onclick: move |_| play_tracks(&ids_play, 0), Icon { name: "play", size: 20 } "Play" }
+                button { class: "pill", onclick: move |_| shuffle_tracks(&ids_shuffle), Icon { name: "shuffle", size: 18 } "Shuffle" }
+            }
         }
-        p { class: "muted small pad", "{albums.len()} albums · {songs.len()} songs" }
+        h2 { class: "section-title", "Albums" }
         div { class: "album-grid",
-            for a in albums.iter() {
-                div {
-                    key: "{a.key}",
-                    class: "album-card",
-                    onclick: {
-                        let key = a.key.clone();
-                        move |_| view.set(View::Album(key.clone()))
-                    },
-                    Cover { track_id: a.cover_track.clone().unwrap_or_default(), class: "cover card-cover" }
-                    div { class: "title", "{a.title}" }
-                    div { class: "subtitle", "{a.year.map(|y| y.to_string()).unwrap_or_default()}" }
-                }
+            for (a , badge) in albums.iter() {
+                AlbumCard { key: "{a.key}", album: a.clone(), badge: badge.clone(), view }
             }
         }
         h2 { class: "section-title", "Songs" }
