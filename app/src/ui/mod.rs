@@ -59,6 +59,8 @@ pub struct AppState {
     pub toast: Signal<Option<(String, std::time::Instant)>>,
     /// Bumped when settings that affect the look change.
     pub settings_rev: Signal<u64>,
+    /// Volume shown on the slider: the phone's media volume on Android.
+    pub volume: Signal<f32>,
 }
 
 impl AppState {
@@ -153,6 +155,7 @@ pub fn App() -> Element {
     let now_playing = use_signal(|| false);
     let mut toast = use_signal(|| None::<(String, std::time::Instant)>);
     let settings_rev = use_signal(|| 0u64);
+    let mut volume = use_signal(|| svc.system_volume().unwrap_or(svc.player.state().volume));
     use_context_provider(|| AppState {
         player,
         jobs,
@@ -163,6 +166,7 @@ pub fn App() -> Element {
         now_playing,
         toast,
         settings_rev,
+        volume,
     });
 
     library::use_provide_nav();
@@ -203,6 +207,10 @@ pub fn App() -> Element {
                         s.last_position = pos;
                     });
                 }
+            }
+            let vol = svc.system_volume().unwrap_or(p.volume);
+            if (*volume.peek() - vol).abs() > 0.001 {
+                volume.set(vol);
             }
             if *player.peek() != p {
                 player.set(p);
@@ -256,12 +264,17 @@ pub fn App() -> Element {
         document::Meta { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" }
         div { class: if has_player { "app with-player" } else { "app" },
             main { class: "content",
-                match tab() {
-                    Tab::Home => rsx! { home::HomeTab {} },
-                    Tab::Library => rsx! { library::LibraryTab {} },
-                    Tab::Discover => rsx! { discover::DiscoverTab {} },
-                    Tab::Downloads => rsx! { downloads::DownloadsTab {} },
-                    Tab::Settings => rsx! { settings::SettingsTab {} },
+                // Keyed by tab so each switch plays the page transition.
+                for t in std::iter::once(tab()) {
+                    div { key: "{t:?}", class: "tab-page",
+                        match t {
+                            Tab::Home => rsx! { home::HomeTab {} },
+                            Tab::Library => rsx! { library::LibraryTab {} },
+                            Tab::Discover => rsx! { discover::DiscoverTab {} },
+                            Tab::Downloads => rsx! { downloads::DownloadsTab {} },
+                            Tab::Settings => rsx! { settings::SettingsTab {} },
+                        }
+                    }
                 }
             }
             if has_player {
@@ -334,10 +347,14 @@ fn MiniPlayer() -> Element {
     let playing = p.status == Status::Playing;
     rsx! {
         div { class: "mini-player", onclick: move |_| st.now_playing.set(true),
-            Cover { track_id: cur.id.clone(), class: "cover mini-cover" }
-            div { class: "mini-text",
-                div { class: "title", "{title}" }
-                div { class: "subtitle", "{artist}" }
+            for id in std::iter::once(cur.id.clone()) {
+                div { key: "{id}", class: "mini-now",
+                    Cover { track_id: id.clone(), class: "cover mini-cover" }
+                    div { class: "mini-text",
+                        div { class: "title", "{title}" }
+                        div { class: "subtitle", "{artist}" }
+                    }
+                }
             }
             button {
                 class: "mini-play",
@@ -345,7 +362,9 @@ fn MiniPlayer() -> Element {
                     e.stop_propagation();
                     services::get().player.send(Command::Toggle);
                 },
-                Icon { name: if playing { "pause" } else { "play" }, size: 26 }
+                for pl in std::iter::once(playing) {
+                    span { key: "{pl}", class: "icon-swap", Icon { name: if pl { "pause" } else { "play" }, size: 26 } }
+                }
             }
             button {
                 class: "icon-btn",
@@ -356,6 +375,63 @@ fn MiniPlayer() -> Element {
                 Icon { name: "next", size: 26 }
             }
             div { class: "mini-track", div { class: "mini-progress", style: "width: {pct}%;" } }
+        }
+    }
+}
+
+/// A slider that never fights the user: while dragging it shows exactly
+/// where the finger is, and after release it keeps that value until the real
+/// value (player position, phone volume) catches up, so the thumb can't jump
+/// back. The filled part animates smoothly between updates.
+#[component]
+pub fn Slider(
+    value: f64,
+    max: f64,
+    #[props(default = 0.0)] step: f64,
+    #[props(default = String::new())] class: String,
+    /// Called continuously while dragging.
+    #[props(default)]
+    on_input: Option<EventHandler<f64>>,
+    /// Called once when the finger is lifted.
+    on_commit: EventHandler<f64>,
+) -> Element {
+    let mut dragging = use_signal(|| None::<f64>);
+    let mut held = use_signal(|| None::<(f64, std::time::Instant)>);
+    let tolerance = (max * 0.01).max(step);
+    let shown = match (dragging(), held()) {
+        (Some(v), _) => v,
+        (None, Some((v, t))) if (v - value).abs() > tolerance && t.elapsed() < Duration::from_millis(1500) => v,
+        _ => value,
+    };
+    let max = max.max(0.0001);
+    let pct = (shown / max * 100.0).clamp(0.0, 100.0);
+    let step_attr = if step > 0.0 { step.to_string() } else { "any".to_string() };
+    let cls = if dragging().is_some() { format!("slider dragging {class}") } else { format!("slider {class}") };
+    rsx! {
+        input {
+            r#type: "range",
+            class: "{cls}",
+            min: "0",
+            max: "{max}",
+            step: "{step_attr}",
+            value: "{shown}",
+            style: "--pct: {pct}%",
+            oninput: move |e| {
+                if let Ok(v) = e.value().parse::<f64>() {
+                    dragging.set(Some(v));
+                    if let Some(h) = &on_input {
+                        h.call(v);
+                    }
+                }
+            },
+            onchange: move |e| {
+                let v = e.value().parse::<f64>().ok().or(dragging());
+                if let Some(v) = v {
+                    held.set(Some((v, std::time::Instant::now())));
+                    on_commit.call(v);
+                }
+                dragging.set(None);
+            },
         }
     }
 }

@@ -20,6 +20,8 @@ pub struct Services {
     /// Bumped whenever the library changes, so the UI knows to refresh.
     pub library_version: AtomicU64,
     pub scanning: AtomicBool,
+    /// Phone media volume (0..1) as f32 bits; NaN where not available.
+    pub system_volume: std::sync::atomic::AtomicU32,
     pub scan_progress: AtomicU64,
     covers: Covers,
 }
@@ -56,7 +58,8 @@ impl Services {
         });
         let _ = std::fs::create_dir_all(&settings.download_dir);
         let library = Library::load(&paths.data.join("library.json"));
-        let player = Player::new(settings.volume);
+        let follows_system = crate::platform::system_volume();
+        let player = Player::new(if follows_system.is_some() { 1.0 } else { settings.volume });
         let downloads = DownloadManager::new(manager_config(&settings), paths.data.join("downloads.json"));
         let covers = Covers::new(paths.data.join("covers"));
         Services {
@@ -67,6 +70,7 @@ impl Services {
             settings: Mutex::new(settings),
             library_version: AtomicU64::new(1),
             scanning: AtomicBool::new(false),
+            system_volume: std::sync::atomic::AtomicU32::new(follows_system.unwrap_or(f32::NAN).to_bits()),
             scan_progress: AtomicU64::new(0),
             covers,
         }
@@ -174,6 +178,24 @@ impl Services {
         }
         let _ = self.thumb(track_id);
         None
+    }
+
+    /// The phone's media volume if the app follows it (Android).
+    pub fn system_volume(&self) -> Option<f32> {
+        let v = f32::from_bits(self.system_volume.load(Ordering::Relaxed));
+        (!v.is_nan()).then_some(v)
+    }
+
+    /// Volume slider: on Android this is the phone's media volume (same as
+    /// the volume buttons); elsewhere it's the app's own volume.
+    pub fn set_volume(&self, v: f32) {
+        let v = v.clamp(0.0, 1.0);
+        if self.system_volume().is_some() {
+            crate::platform::set_system_volume(v);
+            self.system_volume.store(v.to_bits(), Ordering::Relaxed);
+        } else {
+            self.player.send(loss_audio::Command::SetVolume(v));
+        }
     }
 
     pub fn covers_version(&self) -> u64 {

@@ -88,6 +88,41 @@ pub mod android {
         .unwrap_or(false)
     }
 
+    const STREAM_MUSIC: i32 = 3;
+
+    fn audio_manager<'a>(env: &mut jni::JNIEnv<'a>, act: &JObject) -> jni::errors::Result<JObject<'a>> {
+        let name = env.new_string("audio")?;
+        env.call_method(act, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", &[JValue::Object(&name)])?
+            .l()
+    }
+
+    /// Android media volume as (current step, max step).
+    pub fn media_volume() -> Option<(i32, i32)> {
+        with_env(|env, act| {
+            let am = audio_manager(env, act)?;
+            let cur = env
+                .call_method(&am, "getStreamVolume", "(I)I", &[JValue::Int(STREAM_MUSIC)])?
+                .i()?;
+            let max = env
+                .call_method(&am, "getStreamMaxVolume", "(I)I", &[JValue::Int(STREAM_MUSIC)])?
+                .i()?;
+            Ok((cur, max))
+        })
+    }
+
+    pub fn set_media_volume(step: i32) {
+        with_env(|env, act| {
+            let am = audio_manager(env, act)?;
+            env.call_method(
+                &am,
+                "setStreamVolume",
+                "(III)V",
+                &[JValue::Int(STREAM_MUSIC), JValue::Int(step), JValue::Int(0)],
+            )?;
+            Ok(())
+        });
+    }
+
     /// Opens Android's settings page for Loss (to grant access manually).
     pub fn open_app_settings() {
         with_env(|env, act| {
@@ -172,6 +207,31 @@ pub fn has_audio_permission() -> bool {
 pub fn request_audio_permission() {
     #[cfg(target_os = "android")]
     android::request_audio_permission();
+}
+
+/// The phone's media volume (0..1), or None where the app controls its own
+/// volume (desktop).
+pub fn system_volume() -> Option<f32> {
+    #[cfg(target_os = "android")]
+    {
+        android::media_volume()
+            .filter(|(_, max)| *max > 0)
+            .map(|(cur, max)| cur as f32 / max as f32)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        None
+    }
+}
+
+/// Sets the phone's media volume (0..1), rounded to Android's volume steps.
+pub fn set_system_volume(v: f32) {
+    #[cfg(target_os = "android")]
+    if let Some((_, max)) = android::media_volume() {
+        android::set_media_volume((v.clamp(0.0, 1.0) * max as f32).round() as i32);
+    }
+    #[cfg(not(target_os = "android"))]
+    let _ = v;
 }
 
 pub fn open_app_settings() {

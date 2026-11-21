@@ -1,7 +1,7 @@
 //! Full-screen player with seek bar, synced lyrics and the queue.
 
 use super::icons::Icon;
-use super::{state, Cover};
+use super::{state, Cover, Slider};
 use crate::services;
 use dioxus::prelude::*;
 use loss_audio::{Command, Repeat, Status};
@@ -20,6 +20,9 @@ pub fn NowPlaying() -> Element {
     let p = st.player.read().clone();
     let pane = use_signal(|| Pane::Cover);
     let mut drag: Signal<Option<f64>> = use_signal(|| None);
+    // After a seek, keep showing the target time until the player gets there.
+    let mut seek_hold: Signal<Option<(f64, std::time::Instant)>> = use_signal(|| None);
+    let mut closing = use_signal(|| false);
     let Some(cur) = p.current().cloned() else {
         return rsx! {};
     };
@@ -30,16 +33,35 @@ pub fn NowPlaying() -> Element {
     });
     let artist = track.as_ref().map(|t| t.artist.clone()).unwrap_or_default();
     let album = track.as_ref().map(|t| t.album.clone()).unwrap_or_default();
-    let pos = drag().unwrap_or(p.position);
+    let pos = match (drag(), seek_hold()) {
+        (Some(v), _) => v,
+        (None, Some((v, t))) if (v - p.position).abs() > 1.0 && t.elapsed().as_millis() < 1500 => v,
+        _ => p.position,
+    };
     let dur = p.duration.max(0.0);
-    let seek_pct = if dur > 0.0 { pos / dur * 100.0 } else { 0.0 };
     let playing = p.status == Status::Playing;
     let quality = p.info.label();
     let lossless = p.info.is_lossless();
-    let vol = (p.volume * 100.0).round();
+    let vol_now = (st.volume)();
     let repeat_icon = if p.repeat == Repeat::One { "repeat_one" } else { "repeat" };
     let (shuffle, repeat) = (p.shuffle, p.repeat);
     let pn = pane();
+    let np_class = format!(
+        "now-playing{}{}",
+        if pn == Pane::Cover { "" } else { " panel-open" },
+        if closing() { " closing" } else { "" }
+    );
+    // Slide down, then unmount.
+    let mut close = move || {
+        if closing() {
+            return;
+        }
+        closing.set(true);
+        spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(230)).await;
+            st.now_playing.set(false);
+        });
+    };
     let toggle = move |target: Pane| {
         let mut pane = pane;
         pane.set(if pane() == target { Pane::Cover } else { target });
@@ -50,13 +72,16 @@ pub fn NowPlaying() -> Element {
         .and_then(|q| svc.library().get(&q.id).map(|t| t.title.clone()));
 
     rsx! {
-        div { class: if pn == Pane::Cover { "now-playing" } else { "now-playing panel-open" },
-            div { class: "np-art-bg",
-                Cover { track_id: cur.id.clone(), class: "cover np-art", big: true }
-                div { class: "np-art-fade" }
+        div { class: "{np_class}",
+            // Keyed by track: a new song's art and title animate in.
+            for id in std::iter::once(cur.id.clone()) {
+                div { key: "art-{id}", class: "np-art-bg",
+                    Cover { track_id: id.clone(), class: "cover np-art", big: true }
+                    div { class: "np-art-fade" }
+                }
             }
             div { class: "np-top",
-                button { class: "icon-btn glass", onclick: move |_| st.now_playing.set(false), Icon { name: "chevron_down", size: 28 } }
+                button { class: "icon-btn glass", onclick: move |_| close(), Icon { name: "chevron_down", size: 28 } }
                 div { class: "np-top-title",
                     div { class: "eyebrow", "Now playing" }
                     div { class: "np-top-album", "{album}" }
@@ -70,27 +95,24 @@ pub fn NowPlaying() -> Element {
                     Pane::Queue => rsx! { div { class: "np-panel", QueuePane {} } },
                 }
             }
-            div { class: "np-info",
-                div { class: "np-title", "{title}" }
-                div { class: "np-artist", "{artist}" }
-                if let Some(err) = &p.error {
-                    div { class: "error small", "{err}" }
+            for id in std::iter::once(cur.id.clone()) {
+                div { key: "info-{id}", class: "np-info",
+                    div { class: "np-title", "{title}" }
+                    div { class: "np-artist", "{artist}" }
+                    if let Some(err) = &p.error {
+                        div { class: "error small", "{err}" }
+                    }
                 }
             }
             div { class: "np-seek",
-                input {
-                    r#type: "range",
+                Slider {
                     class: "seek",
-                    min: "0",
-                    max: "{dur.max(1.0)}",
-                    step: "0.5",
-                    value: "{pos}",
-                    style: "--pct: {seek_pct}%",
-                    oninput: move |e| drag.set(e.value().parse().ok()),
-                    onchange: move |e| {
-                        if let Ok(v) = e.value().parse::<f64>() {
-                            services::get().player.send(Command::Seek(v));
-                        }
+                    value: p.position,
+                    max: dur.max(1.0),
+                    on_input: move |v| drag.set(Some(v)),
+                    on_commit: move |v| {
+                        services::get().player.send(Command::Seek(v));
+                        seek_hold.set(Some((v, std::time::Instant::now())));
                         drag.set(None);
                     },
                 }
@@ -113,7 +135,9 @@ pub fn NowPlaying() -> Element {
                 }
                 button { class: "skip-btn", onclick: move |_| services::get().player.send(Command::Previous), Icon { name: "prev", size: 30 } }
                 button { class: if playing { "play-btn playing" } else { "play-btn" }, onclick: move |_| services::get().player.send(Command::Toggle),
-                    Icon { name: if playing { "pause" } else { "play" }, size: 36 }
+                    for pl in std::iter::once(playing) {
+                        span { key: "{pl}", class: "icon-swap", Icon { name: if pl { "pause" } else { "play" }, size: 36 } }
+                    }
                 }
                 button { class: "skip-btn", onclick: move |_| services::get().player.send(Command::Next), Icon { name: "next", size: 30 } }
                 button {
@@ -123,25 +147,31 @@ pub fn NowPlaying() -> Element {
                 }
             }
             div { class: "np-volume",
-                Icon { name: "volume_down", size: 20 }
-                input {
-                    r#type: "range",
-                    min: "0",
-                    max: "100",
-                    value: "{vol}",
-                    style: "--pct: {vol}%",
-                    oninput: move |e| {
-                        if let Ok(v) = e.value().parse::<f32>() {
-                            services::get().player.send(Command::SetVolume(v / 100.0));
-                        }
+                button {
+                    class: "icon-btn small",
+                    onclick: move |_| services::get().set_volume((vol_now - 0.1).max(0.0)),
+                    Icon { name: "volume_down", size: 20 }
+                }
+                Slider {
+                    value: vol_now as f64,
+                    max: 1.0,
+                    on_input: move |v: f64| {
+                        // Update the % label instantly, not on the next tick.
+                        let mut vol = st.volume;
+                        vol.set(v as f32);
+                        services::get().set_volume(v as f32);
                     },
-                    onchange: move |e| {
-                        if let Ok(v) = e.value().parse::<f32>() {
-                            services::get().update_settings(|s| s.volume = v / 100.0);
+                    on_commit: move |v: f64| {
+                        let mut vol = st.volume;
+                        vol.set(v as f32);
+                        let svc = services::get();
+                        svc.set_volume(v as f32);
+                        if svc.system_volume().is_none() {
+                            svc.update_settings(move |s| s.volume = v as f32);
                         }
                     },
                 }
-                Icon { name: "volume_up", size: 20 }
+                span { class: "vol-pct", "{(vol_now * 100.0).round()}%" }
             }
             div { class: "np-bottom",
                 button { class: if pn == Pane::Lyrics { "np-chip on" } else { "np-chip" }, onclick: move |_| toggle(Pane::Lyrics),

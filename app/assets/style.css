@@ -16,8 +16,12 @@
   --nav-h: 80px; --mini-h: 68px;
   --ease: cubic-bezier(.2, 0, 0, 1);
   --ease-spring: cubic-bezier(.34, 1.4, .64, 1);
+  --ease-in: cubic-bezier(.3, 0, .8, .15);
   color-scheme: dark;
 }
+
+/* Registered so slider fills can animate between position updates. */
+@property --pct { syntax: '<percentage>'; inherits: true; initial-value: 0%; }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
@@ -40,8 +44,9 @@ img { -webkit-user-drag: none; }
 .content {
   padding: calc(env(safe-area-inset-top) + 12px) 16px calc(var(--nav-h) + env(safe-area-inset-bottom) + 24px);
   max-width: 920px; margin: 0 auto;
-  animation: fade-in .3s var(--ease);
 }
+.tab-page { animation: page-in .34s var(--ease) both; }
+@keyframes page-in { from { opacity: 0; transform: translateY(10px) scale(.995); } to { opacity: 1; transform: none; } }
 .with-player .content { padding-bottom: calc(var(--nav-h) + var(--mini-h) + env(safe-area-inset-bottom) + 28px); }
 @keyframes fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
@@ -321,6 +326,15 @@ textarea { resize: vertical; font-family: ui-monospace, monospace; font-size: 13
   padding: calc(env(safe-area-inset-top) + 10px) 20px calc(env(safe-area-inset-bottom) + 14px);
   animation: sheet-up .38s var(--ease); overflow: hidden;
 }
+.now-playing.closing { animation: sheet-down .23s var(--ease-in) forwards; pointer-events: none; }
+@keyframes sheet-down { to { transform: translateY(12%); opacity: 0; } }
+.np-art-bg { animation: art-in .55s var(--ease) both; }
+@keyframes art-in { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: none; } }
+.np-info { animation: info-in .45s var(--ease) both; }
+@keyframes info-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+.icon-swap { display: grid; place-items: center; animation: icon-pop .32s var(--ease-spring) both; }
+@keyframes icon-pop { from { opacity: 0; transform: scale(.4) rotate(-60deg); } to { opacity: 1; transform: none; } }
+.mini-now { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; animation: info-in .4s var(--ease) both; }
 @keyframes sheet-up { from { transform: translateY(8%); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes slide-up { from { transform: translateY(20px); opacity: 0; } to { transform: none; opacity: 1; } }
 .np-art-bg { position: absolute; left: 0; right: 0; top: 0; height: min(68vh, 100vw + 90px); z-index: 0; transition: filter .5s var(--ease), transform .5s var(--ease); }
@@ -346,7 +360,7 @@ textarea { resize: vertical; font-family: ui-monospace, monospace; font-size: 13
 .play-btn { width: 104px; height: 72px; border-radius: var(--r-xl); display: grid; place-items: center; background: var(--primary); color: var(--on-primary); box-shadow: 0 10px 30px color-mix(in srgb, var(--primary) 30%, transparent); transition: transform .25s var(--ease-spring), border-radius .35s var(--ease), background .6s; }
 .play-btn.playing { border-radius: var(--r-m); }
 .play-btn:active { transform: scale(.93); }
-.np-volume { position: relative; z-index: 1; display: flex; align-items: center; gap: 12px; color: var(--on-surface-variant); padding: 0 4px; }
+.np-volume { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; color: var(--on-surface-variant); }
 .np-bottom { position: relative; z-index: 1; display: flex; gap: 8px; margin-top: 14px; min-width: 0; }
 .np-chip { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: var(--r-full); background: var(--surface-container-high); color: var(--on-surface); font-size: 14px; font-weight: 600; flex-shrink: 0; transition: background .2s; }
 .np-chip.on { background: var(--primary-container); color: var(--on-primary-container); }
@@ -354,18 +368,27 @@ textarea { resize: vertical; font-family: ui-monospace, monospace; font-size: 13
 .np-chip.next-up .muted { flex-shrink: 0; font-size: 12.5px; }
 
 /* Sliders */
-input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 28px; padding: 0; background: transparent; box-shadow: none; border-radius: 0; }
+input[type="range"] {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 32px; padding: 0; margin: 0;
+  background: transparent; box-shadow: none; border-radius: 0; touch-action: none; cursor: pointer;
+  transition: --pct .3s linear;
+}
+input[type="range"].dragging { transition: none; }
 input[type="range"]::-webkit-slider-runnable-track {
   height: 6px; border-radius: 9px;
   background: linear-gradient(to right, var(--primary) var(--pct, 0%), var(--secondary-container) var(--pct, 0%));
+  transition: height .2s var(--ease);
 }
 input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 6px; height: 26px; margin-top: -10px; border-radius: 4px; background: var(--primary);
-  box-shadow: 0 0 0 4px var(--surface); transition: transform .15s;
+  -webkit-appearance: none; width: 6px; height: 24px; margin-top: -9px; border-radius: 4px; background: var(--primary);
+  box-shadow: 0 0 0 4px var(--surface); transition: transform .2s var(--ease-spring), width .2s var(--ease);
 }
-input[type="range"]:active::-webkit-slider-thumb { transform: scaleX(.7) scaleY(1.1); }
+input[type="range"].dragging::-webkit-slider-thumb { transform: scaleY(1.2); width: 4px; }
 input.seek::-webkit-slider-runnable-track { height: 14px; border-radius: 10px; }
 input.seek::-webkit-slider-thumb { height: 34px; margin-top: -10px; }
+input.seek.dragging::-webkit-slider-runnable-track { height: 18px; }
+input.seek.dragging::-webkit-slider-thumb { margin-top: -8px; }
+.vol-pct { min-width: 42px; text-align: right; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--on-surface-variant); }
 
 /* Lyrics & queue */
 .lyrics, .queue { width: 100%; height: 100%; overflow-y: auto; scrollbar-width: none; }
@@ -387,4 +410,9 @@ input.seek::-webkit-slider-thumb { height: 34px; margin-top: -10px; }
 @media (min-width: 700px) {
   .album-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
   .tiles { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* Less motion for people who ask their phone for it. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }

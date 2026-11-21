@@ -122,6 +122,10 @@ mod imp {
                 apply(svc, &cmd);
             }
             svc.sync();
+            // Follow the phone's volume (hardware buttons, other apps).
+            if let Some(v) = crate::platform::system_volume() {
+                svc.system_volume.store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
+            }
 
             let st = svc.player.state();
             let Some(cur) = st.current().cloned() else {
