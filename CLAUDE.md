@@ -18,7 +18,7 @@ setup: **Xiaomi 14 Ultra (HyperOS) + Beats Studio Pro over USB-C** (headphone DA
 
 1. `cargo test -p loss-core -p loss-audio -p loss-download` (plus new crates) and an Android build pass.
 2. Tick finished tasks in PLAN.md; update the Status table counts; update **Next up**.
-3. Set PARITY.md states for covered items (`doing`/`done`).
+3. `python3 scripts/check-plan.py --sync` updates PARITY.md states from the ticked tasks.
 4. Add a PROGRESS.md entry (what changed, what's left, gotchas).
 5. Add phone checks to DEVICE-TESTS.md when behaviour can only be verified on the device.
 6. `python3 scripts/check-plan.py` must pass. Commit (message starts with the task ID, e.g.
@@ -45,6 +45,7 @@ crates/loss-audio      engine: Symphonia decode → resample → cpal/AAudio; qu
 crates/loss-download   download manager + legal sources + post-processing
 app/src/ui/            Dioxus screens (home, library, now_playing, discover, downloads, settings), theme.rs
 app/src/{services,media,platform}.rs   app services, Android media bridge, JNI helpers
+app/src/{diag,nav,notify}.rs           logging/crash reports, Back plumbing, downloads notification
 app/android/           AndroidManifest.xml + MainActivity.kt (used verbatim by dx, see Dioxus.toml)
 app/assets/            style.css (embedded with include_str!), fonts
 docs/plan/             PLAN, PARITY, ARCHITECTURE, DEVICE-TESTS, PROGRESS

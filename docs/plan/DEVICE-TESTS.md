@@ -18,6 +18,10 @@ Mark each line ✅ or ❌, with a note for anything odd.
 
 ## Round M1 (problems fixed + first full phone check)
 
+First, with the Beats plugged in: Settings → Logs and diagnostics → This device → **Share**, and send
+the text to Claude. It lists what Android reports for the Beats (sample rates, formats, and whether
+this phone offers bit-perfect playback to them), which shapes M2.
+
 Playback and controls
 - [ ] Play an album. The notification shows title, artist and cover, and its buttons work.
 - [ ] Lock the phone: lock-screen controls work, and seeking from the lock screen works.
@@ -25,6 +29,9 @@ Playback and controls
 - [ ] The volume slider in Loss moves the phone's volume and the % matches; the phone's volume buttons
       move Loss' slider.
 - [ ] Press Back on an album page: you return to the library (the app doesn't close).
+- [ ] Open an artist from an album, then press Back twice: artist → album → library.
+- [ ] Back on the Settings → Logs page returns to Settings; Back on Home sends the app to the
+      background while music keeps playing.
 
 Interruptions
 - [ ] Receive a phone call while playing: music pauses, then resumes after the call.
@@ -37,12 +44,14 @@ Formats and gapless
 
 Background
 - [ ] Start a 20-song download, turn the screen off for 10 minutes: the downloads finish, and a
-      notification shows progress.
+      notification shows progress (song, songs left, speed). "Pause all" in the notification pauses
+      them; "Resume" continues. Afterwards a "Downloads finished" notification remains.
 - [ ] Play music with the screen off for 30 minutes: it doesn't stop.
 
 Security
 - [ ] Settings → My server: after restarting the phone, the server still connects without retyping the
       password.
+- [ ] Settings → Logs and diagnostics opens; the log shows lines; Copy and Share work.
 
 ## Round M2 (hi-fi audio with the Beats)
 

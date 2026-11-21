@@ -24,8 +24,8 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 | PLT-07 | Languages | 21 languages with an in-app language picker | English only | Only in Mornye | M0-09, M10-09 | todo |
 | PLT-08 | First-run setup | Setup wizard (language, permissions, download folder) and a tutorial | Asks for music and notification permission | Simpler in Loss | M10-04 | todo |
 | PLT-09 | App updates | Built-in updater with Stable and Preview channels and “What’s new” | Install each new APK yourself | Only in Mornye | M0-04, M10-05 | todo |
-| PLT-10 | Crash reports & logs | Saves crash reports; log viewer with search, filter and share | None inside the app | Only in Mornye | M0-11 | todo |
-| PLT-11 | Back button | Goes back through screens (predictive back) | Always leaves the app, even from an album page | Different | M0-10, M1-04 | todo |
+| PLT-10 | Crash reports & logs | Saves crash reports; log viewer with search, filter and share | None inside the app | Only in Mornye | M0-11 | done |
+| PLT-11 | Back button | Goes back through screens (predictive back) | Always leaves the app, even from an album page | Different | M0-10, M1-04 | doing |
 | PLT-12 | Open files and links from other apps | “Open with” for audio files, share songs or links into the app, search selected text | No | Only in Mornye | M9-05 | todo |
 | PLT-13 | Built with | Flutter/Dart screens, Rust backend, Kotlin and C++ for Android | Rust for screens, player and downloads, plus one small Kotlin file | Different | — | keep |
 | PLT-14 | Licence | Open source, LGPL-3.0 | No licence chosen yet | Different | M10-12 | todo |
@@ -133,8 +133,8 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 
 | ID | Feature | Mornye | Loss today | Status | Tasks | State |
 |---|---|---|---|---|---|---|
-| SND-01 | File formats | Very wide through FFmpeg and Media3, including Opus, WavPack and DSD (DSF/DFF) | MP3, FLAC, AAC/M4A, ALAC, Ogg Vorbis, WAV, AIFF. Opus files show up but don’t play | Simpler in Loss | M1-03, M2-08 | todo |
-| SND-02 | Gapless playback | Yes (setting) | A short gap between songs | Only in Mornye | M1-06 | todo |
+| SND-01 | File formats | Very wide through FFmpeg and Media3, including Opus, WavPack and DSD (DSF/DFF) | MP3, FLAC, AAC/M4A, ALAC, Ogg Vorbis, WAV, AIFF. Opus files show up but don’t play | Simpler in Loss | M1-03, M2-08 | doing |
+| SND-02 | Gapless playback | Yes (setting) | A short gap between songs | Only in Mornye | M1-06 | done |
 | SND-03 | AutoMix / crossfade | Beat-matched transitions with crossfade, muffled, echo and pitch effects | No | Only in Mornye | M2-15 | todo |
 | SND-04 | Equalizer | 5 to 31 bands, bass, treble, balance, pre-amp, limiter, compressor, presets to save, import and share | No | Only in Mornye | M2-10, M2-11 | todo |
 | SND-05 | Volume levelling (ReplayGain) | By track or album, with pre-amp | No | Only in Mornye | M2-09 | todo |
@@ -142,8 +142,8 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 | SND-07 | Spatial audio | On/off, shows head-tracking support | No | Only in Mornye | M2-16 | todo |
 | SND-08 | Hi-res and bit-perfect output | USB bit-perfect (Android 14+), direct USB driver, DSD over USB, exclusive mode for music players, sample-rate limit | Opens the output at the song’s rate when the phone allows; Android may still resample | Simpler in Loss | M2-02, M2-04, M2-05, M2-06, M2-07 | todo |
 | SND-09 | Choice of playback engine | Old or new (Media3) engine | One engine written in Rust | Different | M2-04 | todo |
-| SND-10 | Pause for calls and other apps | Yes | No, keeps playing | Only in Mornye | M1-01 | todo |
-| SND-11 | Pause when headphones are unplugged | Yes | No, switches to the speaker | Only in Mornye | M1-02 | todo |
+| SND-10 | Pause for calls and other apps | Yes | No, keeps playing | Only in Mornye | M1-01 | done |
+| SND-11 | Pause when headphones are unplugged | Yes | No, switches to the speaker | Only in Mornye | M1-02 | done |
 | SND-12 | Resume when headphones or car connect | Off, after a disconnect, or always | No | Only in Mornye | M2-17 | todo |
 | SND-13 | Pause when muted | Yes | No | Only in Mornye | M2-17 | todo |
 | SND-14 | Loud-volume warning | Yes | No | Only in Mornye | M2-17, M3-12 | todo |
@@ -184,8 +184,8 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 | DL-04 | Several at once | Setting | 1 to 5 at once | Same | — | keep |
 | DL-05 | Pause, resume, retry | Yes | Yes; resumes where it stopped and retries on its own | Same | — | keep |
 | DL-06 | Survives app restart | Yes | Yes | Same | — | keep |
-| DL-07 | Progress notifications | Yes, plus a download widget | Only inside the app | Only in Mornye | M1-05, M6-11 | todo |
-| DL-08 | Keeps going in the background | Background download service | May stop when the app is in the background | Only in Mornye | M1-05 | todo |
+| DL-07 | Progress notifications | Yes, plus a download widget | Only inside the app | Only in Mornye | M1-05, M6-11 | doing |
+| DL-08 | Keeps going in the background | Background download service | May stop when the app is in the background | Only in Mornye | M1-05 | done |
 | DL-09 | Wi-Fi only | Yes | No | Only in Mornye | M6-02 | todo |
 | DL-10 | Pick a quality | Quality picker for each download | Takes the file the source offers | Different | M6-03 | todo |
 | DL-11 | File and folder names | Templates like {artist}/{album}, separate singles folder, several album layouts | Fixed: Artist / Album / 01 Title | Simpler in Loss | M6-04 | todo |
@@ -259,7 +259,7 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 | SET-02 | Settings search | Yes | No | Only in Mornye | M0-08, M10-08 | todo |
 | SET-03 | Backup and restore | Settings, history, playlists, favourites, extensions | No | Only in Mornye | M10-06 | todo |
 | SET-04 | Storage and cache page | See and clear each cache | No | Only in Mornye | M10-07 | todo |
-| SET-05 | Passwords and keys | Kept in the phone’s secure storage | Server password kept in the app’s private settings file | Simpler in Loss | M1-07 | todo |
+| SET-05 | Passwords and keys | Kept in the phone’s secure storage | Server password kept in the app’s private settings file | Simpler in Loss | M1-07 | done |
 | SET-06 | Plain-HTTP connections | Blocked, with a local-network option | Allowed for all servers (needed for home servers) | Different | M7-07 | todo |
 | SET-07 | Keyboard shortcuts | Yes, on desktop | No | Only in Mornye | M10-10 | todo |
 | SET-08 | About and community | Contributors, translators, links, donations, Telegram | One About card | Simpler in Loss | M10-08 | todo |

@@ -25,8 +25,8 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 
 | Milestone | What it delivers | Tasks | Done | Rough size |
 |---|---|---|---|---|
-| M0 | Foundations: CI, glue module, bridge, store, settings, i18n, UI kit, diagnostics | 13 | 1 | 4–5 sessions |
-| M1 | The 7 problems fixed + phone verification | 8 | 0 | 2–3 sessions |
+| M0 | Foundations: CI, glue module, bridge, store, settings, i18n, UI kit, diagnostics | 13 | 3 | 4–5 sessions |
+| M1 | The 7 problems fixed + phone verification | 8 | 7 | 2–3 sessions |
 | M2 | Audio engine v2, hi-fi output, USB, DSP | 24 | 0 | 8–10 sessions |
 | M3 | Player and queue | 16 | 0 | 3–4 sessions |
 | M4 | Library v2 | 25 | 0 | 6–8 sessions |
@@ -36,24 +36,21 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 | M8 | Home, discovery, stats, social, audio tools | 13 | 0 | 5–6 sessions |
 | M9 | Devices and platform integrations | 8 | 0 | 5–6 sessions |
 | M10 | Look, app shell, desktop, iOS, languages, release | 14 | 0 | 6–7 sessions |
-| **Total** | | **155** | **1** | **≈ 50–60 sessions** |
+| **Total** | | **155** | **10** | **≈ 50–60 sessions** |
 
 A "session" here means one working session of the length used so far. Numbers are estimates.
 
 ## Next up
 
-Work in this order (it front-loads what the owner feels every day):
-
-1. **M0-02** CI: build, test and APK on every push.
-2. **M1-01** and **M1-02** Pause for calls and other apps; pause on unplug.
-3. **M1-03** Opus playback.
-4. **M0-11** In-app logs and crash reports, so the owner can send logs from the phone.
-5. **M1-04** Back navigation (minimal router; the full UI kit comes in M0-10).
-6. **M1-06** Gapless playback.
-7. **M1-05** Background download service and notifications.
-8. **M1-07** Encrypted secrets.
-9. **M0-03** Emulator smoke test, then **M1-08** phone verification round.
-10. Then the rest of M0 (M0-05 to M0-10, M0-12, M0-13), then M2 (audio, the owner's priority).
+1. **M1-08** Phone round on the Xiaomi with the Beats (DEVICE-TESTS "Round M1"). The APK with all
+   M1 fixes is built; fix whatever the owner reports first.
+2. **M0-03** Emulator smoke test in CI (needs an x86_64 APK build in CI).
+3. **M0-05** Android glue module, then **M0-06** bridge (events are already direct native calls;
+   finish by removing the polling fallback).
+4. **M0-07** Database, **M0-08** settings registry, **M0-09** i18n, **M0-10** UI kit (the minimal
+   router from M1-04 grows into it), **M0-12** test harness, **M0-13** HyperOS reliability.
+5. Then **M2** (audio engine, hi-fi output for the Beats), starting with **M2-01**, **M2-03** and
+   **M2-06** so the DAC report arrives early.
 
 ## Open decisions (defaults apply until the owner decides)
 
@@ -80,7 +77,7 @@ updated; this file's checkbox is ticked. Commit messages start with the task ID 
 ## M0 Foundations
 
 - [x] **M0-01 Plan and session anchor.** CLAUDE.md, docs/plan/*, setup scripts, parity matrix.
-- [ ] **M0-02 CI.** GitHub Actions: `cargo fmt --check`, `clippy -D warnings`, `cargo test` for all
+- [x] **M0-02 CI.** GitHub Actions: `cargo fmt --check`, `clippy -D warnings`, `cargo test` for all
   crates; Android APK build with `dx` for arm64 and x86_64 (cache cargo, Gradle, SDK); upload APKs as
   artifacts. *Done when:* the workflow is green on push and the APK artifact installs.
 - [ ] **M0-03 Emulator smoke test.** CI job on ubuntu with KVM: API 34 x86_64 emulator; install, launch,
@@ -115,7 +112,7 @@ updated; this file's checkbox is ticked. Commit messages start with the task ID 
 
   *Done when:* a component gallery screen (debug builds) shows each one, and the library uses the
   virtual list.
-- [ ] **M0-11 Diagnostics.** `tracing` into a ring buffer and a rotating log file. Log viewer with
+- [x] **M0-11 Diagnostics.** `tracing` into a ring buffer and a rotating log file. Log viewer with
   search, level filter, auto-scroll, copy, share and clear. A panic hook saves a crash report, and the
   next launch offers to view or copy it. "Copy diagnostics" collects device, Android version, audio
   routes and settings without secrets. *Done when:* a forced panic in a debug build shows the report on
@@ -134,28 +131,28 @@ updated; this file's checkbox is ticked. Commit messages start with the task ID 
 
 ## M1 Fix the problems found in the audit
 
-- [ ] **M1-01 (PRB-1) Audio focus.** Request focus on play (usage media, content music). Pause on loss,
+- [x] **M1-01 (PRB-1) Audio focus.** Request focus on play (usage media, content music). Pause on loss,
   pause and resume on transient loss, duck or pause (setting) on "can duck", abandon on stop. Calls
   pause playback. *Done when:* the emulator test (another player takes focus) pauses Loss, and the
   owner confirms a phone call pauses and resumes.
-- [ ] **M1-02 (PRB-2) Becoming noisy.** Pause on `ACTION_AUDIO_BECOMING_NOISY` and when the active
+- [x] **M1-02 (PRB-2) Becoming noisy.** Pause on `ACTION_AUDIO_BECOMING_NOISY` and when the active
   output device disappears (AudioDeviceCallback): USB unplug, Bluetooth off, wired unplug. *Done when:*
   unplugging the Beats' cable pauses playback instead of switching to the speaker.
-- [ ] **M1-03 (PRB-3) Opus.** `opus-decoder` (pure Rust) behind Symphonia's Ogg and MKV/WebM demuxers;
+- [x] **M1-03 (PRB-3) Opus.** `opus-decoder` (pure Rust) behind Symphonia's Ogg and MKV/WebM demuxers;
   pre-skip and gapless; R128 gain tags; seeking. *Done when:* fixture `.opus` and `.webm` files play,
   seek and join gaplessly in tests.
-- [ ] **M1-04 (PRB-4) Back navigation.** Minimal router: Back closes sheets and the player, then
+- [x] **M1-04 (PRB-4) Back navigation.** Minimal router: Back closes sheets and the player, then
   sub-pages, then returns to the previous tab, and only then moves the app to the background. *Done
   when:* album page → Back returns to the library on the phone.
-- [ ] **M1-05 (PRB-5) Background downloads.** `DownloadService` (foreground type dataSync) runs while
+- [x] **M1-05 (PRB-5) Background downloads.** `DownloadService` (foreground type dataSync) runs while
   downloads are active. Progress notification (overall plus current item, with pause and cancel
   actions), wake lock, stops when idle, survives swiping the app away. *Done when:* a 20-file album
   finishes with the screen off on the Xiaomi.
-- [ ] **M1-06 (PRB-6) Gapless playback.** Scheduler pre-opens the next track; continuous ring buffer
+- [x] **M1-06 (PRB-6) Gapless playback.** Scheduler pre-opens the next track; continuous ring buffer
   when the format matches; trims encoder delay and padding (LAME/Xing, iTunSMPB, Opus pre-skip); fast
   sink reopen when rates differ. *Done when:* the split-sine fixtures join with no sample discontinuity
   (test checks the waveform) and the owner hears no gap on a live album.
-- [ ] **M1-07 (PRB-7) Encrypted secrets.** Vault: AES-GCM file whose key is wrapped by Android Keystore
+- [x] **M1-07 (PRB-7) Encrypted secrets.** Vault: AES-GCM file whose key is wrapped by Android Keystore
   (Kotlin: create, wrap, unwrap only); `keyring` on desktop. Migrate the Subsonic password; future keys
   and tokens go here. *Done when:* settings files contain no secrets (test) and the server still
   connects after an app restart.
