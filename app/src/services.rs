@@ -7,6 +7,7 @@ use loss_audio::Player;
 use loss_core::vault::{names, Vault};
 use loss_core::{Library, Settings, TrackOrigin};
 use loss_download::{DownloadManager, ManagerConfig};
+use loss_store::Store;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -17,6 +18,8 @@ pub struct Services {
     pub player: Player,
     pub downloads: DownloadManager,
     library: Mutex<Library>,
+    /// The database (`loss.redb`); None only if the data folder can't be written.
+    store: Option<Store>,
     /// Encrypted secrets; None if the platform couldn't provide a key.
     vault: Mutex<Option<Vault>>,
     /// Fallback when there is no vault: secrets kept only while the app runs.
@@ -37,6 +40,12 @@ pub fn get() -> &'static Services {
     SERVICES.get_or_init(Services::init)
 }
 
+fn save_settings(store: Option<&Store>, s: &Settings) {
+    if let Some(Err(e)) = store.map(|st| st.put_settings(s)) {
+        log::error!("saving settings: {e}");
+    }
+}
+
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|p| p.into_inner())
 }
@@ -46,8 +55,38 @@ impl Services {
         let paths = platform::paths();
         let _ = std::fs::create_dir_all(&paths.data);
         crate::diag::set_dir(&paths.data.join("logs"));
-        let settings_path = paths.data.join("settings.json");
-        let mut settings = Settings::load(&settings_path).unwrap_or_else(|| {
+        let mut vault = platform::vault_key(&paths.data)
+            .map(|key| Vault::open(&paths.data.join("vault.bin"), key));
+        if vault.is_none() {
+            log::warn!("encrypted storage unavailable; passwords last until the app closes");
+        }
+        let store = match Store::open_or_reset(&paths.data.join("loss.redb")) {
+            Ok((store, reset)) => {
+                if let Some(e) = reset {
+                    log::error!("started a new database: {e}");
+                }
+                // Library and settings from versions before the database (once).
+                // Passwords go to the vault before the settings are written.
+                let import = store.import_legacy(&paths.data, |s| {
+                    move_secrets(s, vault.as_mut());
+                });
+                if let Err(e) = import {
+                    log::error!("importing old data: {e}");
+                }
+                Some(store)
+            }
+            Err(e) => {
+                log::error!("no database, nothing will be saved: {e}");
+                None
+            }
+        };
+        let stored = store.as_ref().and_then(|s| {
+            s.settings()
+                .map_err(|e| log::error!("reading settings: {e}"))
+                .ok()
+                .flatten()
+        });
+        let mut settings = stored.unwrap_or_else(|| {
             let s = Settings {
                 download_dir: paths.downloads.clone(),
                 music_folders: paths
@@ -59,27 +98,35 @@ impl Services {
                     .collect(),
                 ..Default::default()
             };
-            let _ = s.save(&settings_path);
+            save_settings(store.as_ref(), &s);
             s
         });
         let _ = std::fs::create_dir_all(&settings.download_dir);
         crate::diag::set_detailed(settings.detailed_logging);
 
-        // Secrets live in the encrypted vault; move any left in settings.json.
-        let mut vault = platform::vault_key(&paths.data)
-            .map(|key| Vault::open(&paths.data.join("vault.bin"), key));
-        if vault.is_none() {
-            log::warn!("encrypted storage unavailable; passwords last until the app closes");
-        }
+        // Secrets live in the encrypted vault, never in the database.
         if move_secrets(&mut settings, vault.as_mut()) {
-            let _ = settings.save(&settings_path);
+            save_settings(store.as_ref(), &settings);
         }
         log::info!(
             "Loss {} starting; data in {}",
             env!("CARGO_PKG_VERSION"),
             paths.data.display()
         );
-        let library = Library::load(&paths.data.join("library.json"));
+        let started = std::time::Instant::now();
+        let library = store
+            .as_ref()
+            .and_then(|s| {
+                s.library()
+                    .map_err(|e| log::error!("reading library: {e}"))
+                    .ok()
+            })
+            .unwrap_or_default();
+        log::info!(
+            "library: {} songs loaded in {} ms",
+            library.tracks.len(),
+            started.elapsed().as_millis()
+        );
         let follows_system = crate::platform::system_volume();
         let player = Player::new(if follows_system.is_some() {
             1.0
@@ -94,6 +141,7 @@ impl Services {
             player,
             downloads,
             library: Mutex::new(library),
+            store,
             settings: Mutex::new(settings),
             vault: Mutex::new(vault),
             memory_secrets: Mutex::new(Default::default()),
@@ -128,7 +176,7 @@ impl Services {
     }
 
     /// Changes settings and saves them. Secrets set by `f` go to the vault,
-    /// never to settings.json.
+    /// never to the database.
     pub fn update_settings(&self, f: impl FnOnce(&mut Settings)) {
         let s = {
             let mut s = lock(&self.settings);
@@ -153,15 +201,30 @@ impl Services {
             }
             s.clone()
         };
-        let _ = s.save(&self.paths.data.join("settings.json"));
+        save_settings(self.store.as_ref(), &s);
         let _ = std::fs::create_dir_all(&s.download_dir);
         self.downloads.set_config(manager_config(&s));
     }
 
+    /// Saves the whole library (after a scan): only changed songs are written.
     pub fn save_library(&self) {
-        let lib = self.library().clone();
-        if let Err(e) = lib.save(&self.paths.data.join("library.json")) {
-            log::error!("saving library: {e}");
+        let Some(store) = &self.store else { return };
+        let tracks = self.library().tracks.clone();
+        match store.save_tracks(&tracks) {
+            Ok(r) => log::debug!("library saved: {r:?}"),
+            Err(e) => log::error!("saving library: {e}"),
+        }
+    }
+
+    /// Saves these songs only (a play counted, a download added).
+    fn save_tracks(&self, ids: &[String]) {
+        let Some(store) = &self.store else { return };
+        let tracks: Vec<loss_core::Track> = {
+            let lib = self.library();
+            ids.iter().filter_map(|id| lib.get(id).cloned()).collect()
+        };
+        if let Err(e) = store.put_tracks(&tracks) {
+            log::error!("saving songs: {e}");
         }
     }
 
@@ -196,18 +259,21 @@ impl Services {
         if done.is_empty() && plays.is_empty() {
             return;
         }
+        let mut changed = Vec::new();
         {
             let mut lib = self.library();
             for p in &done {
-                if let Err(e) = lib.add_file(p, TrackOrigin::Downloaded) {
-                    log::warn!("adding {}: {e}", p.display());
+                match lib.add_file(p, TrackOrigin::Downloaded) {
+                    Ok(id) => changed.push(id),
+                    Err(e) => log::warn!("adding {}: {e}", p.display()),
                 }
             }
             for id in &plays {
                 lib.record_play(id);
+                changed.push(id.clone());
             }
         }
-        self.save_library();
+        self.save_tracks(&changed);
         self.bump();
     }
 
@@ -455,7 +521,7 @@ mod tests {
     use loss_core::SubsonicConfig;
 
     #[test]
-    fn passwords_move_to_the_vault_and_never_reach_settings_json() {
+    fn passwords_move_to_the_vault_and_never_reach_the_database() {
         let dir = std::env::temp_dir().join(format!("loss-secrets-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let mut vault = Vault::open(&dir.join("vault.bin"), loss_core::vault::new_key().unwrap());
@@ -469,13 +535,12 @@ mod tests {
         };
         assert!(move_secrets(&mut s, Some(&mut vault)));
         assert_eq!(vault.get(names::SUBSONIC_PASSWORD), Some("hunter2"));
-        let path = dir.join("settings.json");
-        s.save(&path).unwrap();
-        let json = std::fs::read_to_string(&path).unwrap();
-        assert!(
-            !json.contains("hunter2") && !json.contains("password"),
-            "{json}"
-        );
+        let store = Store::open(&dir.join("loss.redb")).unwrap();
+        save_settings(Some(&store), &s);
+        drop(store);
+        let bytes = std::fs::read(dir.join("loss.redb")).unwrap();
+        let has = |needle: &[u8]| bytes.windows(needle.len()).any(|w| w == needle);
+        assert!(!has(b"hunter2") && !has(b"password"));
 
         // Removing the server removes its password.
         s.subsonic = None;

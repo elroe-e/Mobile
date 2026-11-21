@@ -1,0 +1,13 @@
+[package]
+name = "loss-store"
+version.workspace = true
+edition.workspace = true
+description = "Loss' on-disk database (redb): library, settings and app state, with versioned migrations"
+
+[dependencies]
+loss-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+log.workspace = true
+redb = "5"

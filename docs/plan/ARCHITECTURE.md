@@ -179,6 +179,12 @@ are used directly. Fallback if a phone blocks usbdevfs isochronous transfers: `l
 The library loads into memory-light indexes at startup: 50,000 tracks in under 1 s on the Xiaomi.
 Migrations are versioned and tested with fixture databases.
 
+Status (M0-07): `crates/loss-store` has `tracks`, `settings` (one `app` row until M0-08) and `kv`, schema
+version 1, values as JSON. Old `library.json`/`settings.json` are imported once and kept as
+`*.json.imported`; passwords go to the vault during the import. Measured: 50,000 tracks open, load
+and index in about 0.1 s on the CI-class desktop (release). Downloads still use `downloads.json`
+until M6; the other tables arrive with the tasks that need them.
+
 ## 6. UI (app/)
 
 * Dioxus 0.7 in the Android System WebView (Chromium). The decision is to stay on Dioxus. Revisit only

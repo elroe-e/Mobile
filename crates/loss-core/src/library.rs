@@ -204,14 +204,27 @@ impl Library {
         std::fs::rename(tmp, path)
     }
 
+    /// A library from stored tracks (sorted and indexed).
+    pub fn from_tracks(tracks: Vec<Track>) -> Library {
+        let mut lib = Library {
+            tracks,
+            index: HashMap::new(),
+        };
+        lib.reindex();
+        lib
+    }
+
     fn reindex(&mut self) {
-        self.tracks.sort_by(|a, b| {
-            normalize(&a.artist)
-                .cmp(&normalize(&b.artist))
-                .then_with(|| normalize(&a.album).cmp(&normalize(&b.album)))
-                .then(a.disc_no.unwrap_or(1).cmp(&b.disc_no.unwrap_or(1)))
-                .then(a.track_no.unwrap_or(0).cmp(&b.track_no.unwrap_or(0)))
-                .then_with(|| a.title.cmp(&b.title))
+        // Keys are computed once per track (normalising is the slow part), which keeps a
+        // 50,000-track library quick to load.
+        self.tracks.sort_by_cached_key(|t| {
+            (
+                normalize(&t.artist),
+                normalize(&t.album),
+                t.disc_no.unwrap_or(1),
+                t.track_no.unwrap_or(0),
+                t.title.clone(),
+            )
         });
         self.index = self
             .tracks

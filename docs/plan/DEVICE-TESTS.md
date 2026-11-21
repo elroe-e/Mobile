@@ -51,6 +51,11 @@ Background
       them; "Resume" continues. Afterwards a "Downloads finished" notification remains.
 - [ ] Play music with the screen off for 30 minutes: it doesn't stop.
 
+Storage (database)
+- [ ] After installing over the old version, your library, play counts and settings are all still
+      there (they move into the new database on first start).
+- [ ] Settings → Logs: the line "library: N songs loaded in X ms" — note X.
+
 Security
 - [ ] Settings → My server: after restarting the phone, the server still connects without retyping the
       password.

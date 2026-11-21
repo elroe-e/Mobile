@@ -104,7 +104,7 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 | LIB-26 | Automatic scanning | On app open, daily or weekly; pause and resume | At launch and when you tap Rescan | Simpler in Loss | M4-01, M4-03 | todo |
 | LIB-27 | Unreadable files report | Lists files it couldn’t read and why | No | Only in Mornye | M4-04 | todo |
 | LIB-28 | Missing and moved files | Clean up missing entries, relink moved downloads | Missing files drop out on the next scan | Simpler in Loss | M4-04 | todo |
-| LIB-29 | Library storage | SQLite database | One JSON file; fine for thousands of songs, slower for very large libraries | Different | M0-07, M4-01, M4-24 | todo |
+| LIB-29 | Library storage | SQLite database | One JSON file; fine for thousands of songs, slower for very large libraries | Different | M0-07, M4-01, M4-24 | doing |
 | LIB-30 | Reorganise files | Moves and renames files to match your folder rules | No | Only in Mornye | M4-22 | todo |
 | LIB-31 | Play in another app | Open songs in an external player | No | Only in Mornye | M4-23 | todo |
 

@@ -32,11 +32,13 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy (crates)
-        run: cargo clippy -p loss-core -p loss-audio -p loss-download -p loss-platform --all-targets -- -D warnings
+        run: cargo clippy -p loss-core -p loss-audio -p loss-download -p loss-platform -p loss-store --all-targets -- -D warnings
       - name: Clippy (app, desktop build)
         run: cargo clippy -p loss --no-default-features --features desktop --all-targets -- -D warnings
       - name: Tests (crates)
-        run: cargo test -p loss-core -p loss-audio -p loss-download -p loss-platform
+        run: cargo test -p loss-core -p loss-audio -p loss-download -p loss-platform -p loss-store
+      - name: Database speed (50,000 songs load in under 1 s)
+        run: cargo test -p loss-store --release -- --ignored
       - name: Tests (app)
         run: cargo test -p loss --no-default-features --features desktop
       - name: Plan consistency

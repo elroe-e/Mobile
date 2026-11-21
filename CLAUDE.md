@@ -17,7 +17,7 @@ no bit-perfect mixer on this phone, see `docs/plan/reports/`).
 
 ## End of every session
 
-1. `cargo test -p loss-core -p loss-audio -p loss-download -p loss-platform` (plus new crates) and an Android build pass.
+1. `cargo test -p loss-core -p loss-audio -p loss-download -p loss-platform -p loss-store` (plus new crates) and an Android build pass.
 2. Tick finished tasks in PLAN.md; update the Status table counts; update **Next up**.
 3. `python3 scripts/check-plan.py --sync` updates PARITY.md states from the ticked tasks.
 4. Add a PROGRESS.md entry (what changed, what's left, gotchas).
@@ -45,6 +45,7 @@ no bit-perfect mixer on this phone, see `docs/plan/reports/`).
 crates/loss-core       library model, tags (lofty), LRC, playlists, settings
 crates/loss-audio      engine: Symphonia decode → resample → cpal/AAudio; queue, gapless (M1-06)
 crates/loss-download   download manager + legal sources + post-processing
+crates/loss-store      database (redb `loss.redb`): library, settings; versioned migrations
 crates/loss-platform   Android events, focus/unplug policy, JNI bridge (RegisterNatives, cached classes)
 app/src/ui/            Dioxus screens (home, library, now_playing, discover, downloads, settings), theme.rs
 app/src/{services,media,platform}.rs   app services, Android media bridge, JNI helpers
@@ -59,7 +60,7 @@ scripts/               setup-env, build-android, check-plan, fetch-mornye
 ## Build and test
 
 ```sh
-cargo test -p loss-core -p loss-audio -p loss-download -p loss-platform
+cargo test -p loss-core -p loss-audio -p loss-download -p loss-platform -p loss-store
 cargo test -p loss --no-default-features --features desktop          # app unit tests (theme…)
 cargo build -p loss --no-default-features --features desktop         # desktop window for UI checks
 scripts/build-android.sh                                             # APK → dist/Loss-arm64.apk
@@ -96,6 +97,8 @@ plays instantly. Set `HOME`/`LOSS_DATA_DIR` to a scratch dir, drive it with `xdo
   `android/glue` (it becomes `:plugins:lossglue`). Permissions and services go in the glue's manifest;
   Kotlin reaches Rust only through `LossBridge.emit` → `LossNative.onEvent` (registered natives, so
   no `Java_*` symbol names); Rust calls Kotlin through `loss_platform::android`.
+* Data lives in `loss.redb` (loss-store). Values are JSON, so new fields need `#[serde(default)]`; a
+  new table or a changed meaning needs a migration step in `loss-store` (bump `SCHEMA_VERSION`).
 * `scripts/emulator-smoke.sh <apk>` checks a build on an emulator or a phone over adb (M0-03).
 * cpal 0.16 uses AAudio on Android (0.15 needed C++ Oboe). Symphonia 0.5/0.6 have no Opus decoder.
 * The desktop test environment's WebKitGTK reports a light theme; set the theme in settings for

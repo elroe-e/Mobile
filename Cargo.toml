@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/loss-core", "crates/loss-audio", "crates/loss-download", "crates/loss-platform", "app"]
+members = ["crates/loss-core", "crates/loss-audio", "crates/loss-download", "crates/loss-platform", "crates/loss-store", "app"]
 resolver = "2"
 
 [workspace.package]
@@ -11,6 +11,7 @@ loss-core = { path = "crates/loss-core" }
 loss-audio = { path = "crates/loss-audio" }
 loss-download = { path = "crates/loss-download" }
 loss-platform = { path = "crates/loss-platform" }
+loss-store = { path = "crates/loss-store" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
