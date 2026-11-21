@@ -99,8 +99,20 @@ Source (decoder) ─► Scheduler ─► DSP graph (f64) ───────�
 
 ### 4.2 Output selection and the owner's setup
 
-Phone: **Xiaomi 14 Ultra** (HyperOS, Android 14/15). Headphones: **Beats Studio Pro over USB-C**. Its
-built-in DAC accepts up to **24-bit / 48 kHz** over USB-C, and noise cancelling is off while wired.
+Phone: **Xiaomi 14 Ultra** (HyperOS, **Android 16**). Headphones: **Beats Studio Pro over USB-C**, noise
+cancelling off while wired.
+
+Measured on 2026-11-21 (`docs/plan/reports/2026-11-21-xiaomi-beats.txt`):
+
+* The Beats' DAC takes **only 32 kHz and 48 kHz** (16-bit, 24-bit, float; stereo). There is no
+  44.1 kHz, so CD-rate music (most FLAC) is always resampled before it reaches the headphones. The
+  question is only who does it: Android's mixer, or Loss with its best filter.
+* The phone **does not offer the Android bit-perfect mixer** for this output. Direct USB is the only
+  way past the system mixer.
+* The system mixer runs at 48 kHz (144-frame bursts), with low-latency and pro-audio support. Media
+  volume has 150 steps.
+* To confirm in M2-06: the raw USB descriptors (12 interfaces, including the microphone), in case
+  Android hides a 44.1 kHz alt setting.
 
 Output modes, chosen per device and remembered (M2-20):
 
@@ -112,11 +124,15 @@ Output modes, chosen per device and remembered (M2-20):
 | Direct USB | Loss claims the USB audio interface and streams over usbdevfs itself | yes |
 | Exclusive (DAPs) | AAudio MMAP exclusive at the track's rate | yes, where supported |
 
-Rate negotiation for a 48 kHz-maximum DAC like the Beats:
+Rate negotiation (the sink reports its rates; Loss picks the target):
 
-* 44.1 kHz and 48 kHz sources play at their own rate (bit-perfect at 16 or 24 bit).
-* 88.2 and 176.4 kHz → 44.1 kHz; 96 and 192 kHz → 48 kHz. These are integer-ratio, high-quality sinc
-  downsampling (rubato), staying in 24-bit with TPDF dither only where precision is lost.
+* A source rate the DAC accepts plays at that rate (bit-perfect where the path allows).
+* Otherwise the nearest accepted rate, preferring the same family (88.2/176.4 → 44.1, 96/192 → 48,
+  integer ratios) and then the higher rate.
+* **The Beats: everything goes to 48 kHz.** 48/96/192 kHz are exact or integer-ratio; 44.1/88.2/176.4
+  kHz use the rational 160/147 ratio with the Best sinc filter (rubato), in f64, then 24-bit with TPDF
+  dither. Loss does this itself in every mode, so Android's resampler never touches the music: in
+  Standard mode Loss hands the mixer 48 kHz float, which it passes on without resampling.
 * DSD → PCM at 44.1 kHz family (DoP needs a DAC that supports it; the Beats doesn't).
 * Volume: Direct USB uses the DAC's hardware volume (UAC feature unit) when present. Otherwise the
   phone's media volume. Digital volume is only a fallback, and then with dither.

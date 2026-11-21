@@ -49,8 +49,11 @@ A "session" here means one working session of the length used so far. Numbers ar
    finish by removing the polling fallback).
 4. **M0-07** Database, **M0-08** settings registry, **M0-09** i18n, **M0-10** UI kit (the minimal
    router from M1-04 grows into it), **M0-12** test harness, **M0-13** HyperOS reliability.
-5. Then **M2** (audio engine, hi-fi output for the Beats), starting with **M2-01**, **M2-03** and
-   **M2-06** so the DAC report arrives early.
+5. Then **M2** (audio engine, hi-fi output for the Beats). The device report is in
+   (`docs/plan/reports/2026-11-21-xiaomi-beats.txt`): the Beats take 32/48 kHz only and this phone has
+   no bit-perfect mixer. So the order is **M2-01**, **M2-07** (our own 44.1 → 48 kHz resampling, which
+   affects most of the library), **M2-02**, **M2-03**, **M2-06** (raw descriptors), then **M2-05**
+   (Direct USB, the only bit-perfect route here) and **M2-04**.
 
 ## Open decisions (defaults apply until the owner decides)
 
@@ -190,16 +193,18 @@ updated; this file's checkbox is ticked. Commit messages start with the task ID 
   - Feature-unit hardware volume and mute, with a fixed-volume safety prompt; DoP for DSD.
   - Hot-unplug recovery; release on stop. Fallback: `libusb1-sys`.
 
-  *Done when:* the Beats plays 16/44.1, 24/44.1, 16/48 and 24/48 bit-perfect through Direct USB, and
-  unplugging and replugging recovers.
+  *Done when:* the Beats plays 16/48 and 24/48 bit-perfect through Direct USB, 44.1 kHz files reach
+  them as 24/48 from Loss' resampler, and unplugging and replugging recovers. (The Beats have no
+  44.1 kHz rate, measured 2026-11-21; a DAC that has one plays 44.1 bit-perfect.)
 - [ ] **M2-06 DAC probe screen.** Lists each USB DAC's interfaces, formats, bit depths, rates and volume
   range; "Copy report" shares raw descriptors. Used to tune the Beats profile and to add descriptor
   fixtures to tests. *Done when:* the owner shares the Beats report and it's committed as a test fixture.
 - [ ] **M2-07 Resampling and dither.** rubato sinc presets (Fast, Medium, High, Best). Integer-ratio
-  paths (96→48, 192→48, 88.2→44.1, 176.4→44.1). Maximum-sample-rate setting. Rate-family choice for
-  48 kHz-max DACs. TPDF and high-pass TPDF dither when bit depth drops. *Done when:* tests show passband
-  ripple under 0.01 dB to 20 kHz and aliasing under −120 dB for Best, and a 24/96 file reaches the Beats
-  as 24/48.
+  paths (96→48, 192→48, 88.2→44.1, 176.4→44.1) and rational 44.1-family → 48 kHz (160/147) for DACs
+  without 44.1, like the Beats. Target rate picked from the sink's reported rates. Maximum-sample-rate
+  setting. TPDF and high-pass TPDF dither when bit depth drops. *Done when:* tests show passband
+  ripple under 0.01 dB to 20 kHz and aliasing under −120 dB for Best, a 24/96 file reaches the Beats
+  as 24/48, and a 16/44.1 file reaches them as 24/48 from Loss (not Android's resampler).
 - [ ] **M2-08 More formats.**
   - APE (`ape-decoder`); DSD: DSF and DFF readers → DoP or high-quality DSD→PCM.
   - WavPack: decide between a pure-Rust port and the binding, document it in ARCHITECTURE §12.
@@ -567,7 +572,7 @@ updated; this file's checkbox is ticked. Commit messages start with the task ID 
 | Extra | Task |
 |---|---|
 | Pure-Rust direct USB driver with live bit-perfect verification and a DAC capability viewer | M2-05, M2-06 |
-| Integer-ratio hi-res downsampling with best-quality sinc filter + TPDF dither for 48 kHz-max DACs (the Beats) | M2-07 |
+| Best-quality sinc resampling to the DAC's own rates (44.1 → 48 kHz for the Beats, integer ratios for hi-res) + TPDF dither, so Android's resampler never runs | M2-07 |
 | Parametric EQ + AutoEq headphone profiles | M2-10, M2-11 |
 | Per-output-device profiles | M2-20 |
 | Crossfeed for headphones | M2-12 |

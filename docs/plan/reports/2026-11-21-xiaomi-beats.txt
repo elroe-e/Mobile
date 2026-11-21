@@ -1,0 +1,34 @@
+Device report from Settings → Logs and diagnostics → This device, shared by the owner on 2026-11-21
+with the Beats Studio Pro plugged in over USB-C. Used for M2 (output modes, resampling, Direct USB).
+
+Device: Xiaomi 24031PN0DC (aurora)
+Android: 16 (SDK 36)
+Media volume: 150/150
+System mixer: 48000 Hz, 144 frames per buffer
+Low-latency audio: true, pro audio: true
+Audio outputs:
+- Earpiece "24031PN0DC" (id 2)
+    sample rates: 48000
+    channels: 1
+    formats: 16-bit
+- Phone speaker "24031PN0DC" (id 3)
+    sample rates: 48000
+    channels: 2
+    formats: 16-bit
+- Telephony "24031PN0DC" (id 16)
+    sample rates: 8000, 16000
+    channels: 1, 2
+    formats: 16-bit
+- USB headset "USB-Audio - Beats Studio Pro" (id 33408)
+    sample rates: 32000, 48000
+    channels: 2
+    formats: 16-bit, 32-bit float, 24-bit
+    bit-perfect: not offered by this phone for this output
+USB: Apple Inc. Beats Studio Pro (vendor 290b, product 0900, 12 audio interfaces)
+
+Settings: detailed logging off
+
+Loss 0.1.0 log
+21:06:09.213 INFO  loss: Loss starting
+21:06:09.606 INFO  loss::services: Loss 0.1.0 starting; data in /data/user/0/app.loss.player/files
+21:06:09.702 INFO  loss::services: scan: ScanReport { added: 0, updated: 0, removed: 0, total: 761, errors: [] }

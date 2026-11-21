@@ -2,7 +2,8 @@
 
 Loss is a music player and downloader for Android, written in Rust (Dioxus UI). The goal is full parity
 with the Mornye app (v5.4.0) and beyond, and above all the best lossless/FLAC player for the owner's
-setup: **Xiaomi 14 Ultra (HyperOS) + Beats Studio Pro over USB-C** (headphone DAC, max 24-bit/48 kHz).
+setup: **Xiaomi 14 Ultra (HyperOS) + Beats Studio Pro over USB-C** (headphone DAC: 32 or 48 kHz only, no 44.1; 16/24-bit;
+no bit-perfect mixer on this phone, see `docs/plan/reports/`).
 
 ## Start of every session
 

@@ -2,7 +2,7 @@
 
 Things that can only be confirmed on the owner's phone. After a milestone lands, Claude lists the round
 to run, and the owner reports results (or sends logs). Phone: **Xiaomi 14 Ultra** (HyperOS).
-Headphones: **Beats Studio Pro** on the USB-C cable. Their own DAC handles up to 24-bit/48 kHz, and noise
+Headphones: **Beats Studio Pro** on the USB-C cable. Their own DAC takes 32 or 48 kHz only (16/24-bit), and noise
 cancelling is off while wired, which is normal for these headphones.
 
 ## Before every round
@@ -55,11 +55,17 @@ Security
 
 ## Round M2 (hi-fi audio with the Beats)
 
+Known from the 2026-11-21 report: the Beats take 32/48 kHz only, and this phone doesn't offer the
+Android bit-perfect mixer for them.
+
 - [ ] Settings → Audio output → **DAC probe** with the Beats plugged in → Copy report → send it to
-      Claude. This tells us exactly what the Beats accept.
-- [ ] Output mode **Bit-perfect** (if offered): a 16/44.1 FLAC shows "Bit-perfect: yes" in audio info.
-- [ ] Output mode **Direct USB**: Android asks for USB permission once; 16/44.1, 24/44.1, 16/48 and
-      24/48 files show "Bit-perfect: yes".
+      Claude. This adds the raw USB descriptors (does a hidden 44.1 kHz setting exist?).
+- [ ] Output mode **Bit-perfect** is shown as unavailable, with the reason (recheck after HyperOS
+      updates).
+- [ ] Output mode **Direct USB**: Android asks for USB permission once; 16/48 and 24/48 files show
+      "Bit-perfect: yes"; a 16/44.1 file shows "resampled to 48 kHz by Loss (Best)".
+- [ ] Standard mode: a 16/44.1 file shows "resampled to 48 kHz by Loss"; Android doesn't resample
+      again.
 - [ ] A 24/96 file shows "resampled to 48 kHz (Best)" and sounds clean (no clicks or crackle).
 - [ ] Unplug and replug during playback: playback pauses, then works again after pressing play.
 - [ ] Direct USB volume: the hardware volume control changes loudness smoothly; first-use loudness

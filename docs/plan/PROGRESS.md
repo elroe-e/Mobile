@@ -5,6 +5,11 @@ next session must know.
 
 ## 2026-11-21 (session 2): CI and the seven problems (M0-02, M0-11, M1-01 … M1-07)
 
+- **Device report received** (`docs/plan/reports/2026-11-21-xiaomi-beats.txt`). Android 16. The Beats
+  take only 32/48 kHz (16/24-bit/float), not 44.1 kHz, and the phone offers no bit-perfect mixer for
+  them. The M2 plan now resamples 44.1-family music to 48 kHz in Loss itself (M2-07 moved up) and
+  treats Direct USB as the only bit-perfect route. ARCHITECTURE §4.2, M2-05/M2-07 and DEVICE-TESTS
+  round M2 were updated. Round M1 results are still to come.
 - **M0-02** CI on GitHub Actions: fmt, clippy `-D warnings`, tests and the plan check on every push;
   the Android APK job runs on PRs, main and manual runs to save minutes. The workspace was rustfmt'd
   and all clippy findings fixed. Each push cancels the previous run (concurrency group).
