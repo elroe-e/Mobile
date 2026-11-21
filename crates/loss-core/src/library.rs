@@ -310,6 +310,8 @@ impl Library {
         if let Some(d) = download_dir {
             roots.push((d.to_path_buf(), TrackOrigin::Downloaded));
         }
+        // An unset folder is not an error to report on every scan.
+        roots.retain(|(r, _)| !r.as_os_str().is_empty());
 
         for (root, origin) in roots {
             for entry in walkdir::WalkDir::new(&root)

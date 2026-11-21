@@ -101,6 +101,11 @@ impl Services {
             save_settings(store.as_ref(), &s);
             s
         });
+        // Settings from older versions may have no download folder.
+        if settings.download_dir.as_os_str().is_empty() {
+            settings.download_dir = paths.downloads.clone();
+            save_settings(store.as_ref(), &settings);
+        }
         let _ = std::fs::create_dir_all(&settings.download_dir);
         crate::diag::set_detailed(settings.detailed_logging);
 
