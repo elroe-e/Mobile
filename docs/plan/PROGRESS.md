@@ -18,6 +18,11 @@ next session must know.
     (`rusty-chromaprint`), Cast (`rust_cast`) and the database (`redb`).
   - Dioxus 0.7.10's CLI can bundle an Android Gradle module (manganis `AndroidArtifactMetadata`).
   - Beats Studio Pro over USB-C use their own DAC, up to 24-bit/48 kHz, with ANC off while wired.
+- Saved a setup script on the owner's "Music" cloud environment. It runs `scripts/setup-env.sh` when a
+  fresh container is built, so new sessions start with the Android SDK/NDK and `dx` ready. Unproven
+  until the first fresh session: check that `dx --version` and `/opt/android-sdk/ndk/27.2.12479018`
+  exist; if not, run `scripts/setup-env.sh` by hand (it takes about 20 minutes: SDK download plus
+  `cargo install dioxus-cli`; prebuilt `dx` downloads from GitHub are blocked here).
 - Next: M0-02 (CI), then the M1 problem fixes in the order listed in PLAN.md → Next up.
 
 ## Before the plan (sessions 1–5)
