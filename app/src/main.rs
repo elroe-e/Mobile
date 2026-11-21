@@ -3,6 +3,7 @@
 mod diag;
 mod media;
 mod nav;
+mod notify;
 mod platform;
 mod services;
 mod ui;

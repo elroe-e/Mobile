@@ -70,6 +70,32 @@ mod imp {
         });
     }
 
+    fn push_downloads(n: &crate::notify::DownloadsNotice) {
+        use crate::notify::DownloadsState;
+        let state = match n.state {
+            DownloadsState::Running => 1,
+            DownloadsState::Paused => 2,
+            DownloadsState::Finished | DownloadsState::Idle => 0,
+        };
+        with_env(|env, act| {
+            let cls = crate::platform::android::bridge_class(env, act)?;
+            let (t, x) = (env.new_string(&n.title)?, env.new_string(&n.text)?);
+            env.call_static_method(
+                &cls,
+                "downloads",
+                "(Landroid/content/Context;ILjava/lang/String;Ljava/lang/String;I)V",
+                &[
+                    JValue::Object(act),
+                    JValue::Int(state),
+                    JValue::Object(&t),
+                    JValue::Object(&x),
+                    JValue::Int(n.progress),
+                ],
+            )?;
+            Ok(())
+        });
+    }
+
     fn stop() {
         with_env(|env, act| {
             let cls = crate::platform::android::bridge_class(env, act)?;
@@ -85,6 +111,10 @@ mod imp {
             let _ = vm.attach_current_thread_permanently();
         }
         let mut shown: Option<Shown> = None;
+        // Downloads notification: last sent value, when, and whether any ran.
+        let mut dl_sent: Option<crate::notify::DownloadsNotice> = None;
+        let mut dl_sent_at = Instant::now();
+        let mut dl_ran = false;
         let mut last_sent = Instant::now();
         let mut last_pos = 0.0;
         loop {
@@ -93,6 +123,24 @@ mod imp {
                 super::apply_command(svc, &cmd);
             }
             svc.sync();
+
+            let notice = crate::notify::downloads_notice(&svc.downloads.jobs(), dl_ran);
+            let running = notice.state == crate::notify::DownloadsState::Running;
+            let state_changed = dl_sent
+                .as_ref()
+                .map(|d| d.state != notice.state)
+                .unwrap_or(true);
+            let content_changed = dl_sent.as_ref() != Some(&notice);
+            // State changes go out at once; progress at most once a second.
+            if state_changed || (content_changed && dl_sent_at.elapsed() >= Duration::from_secs(1))
+            {
+                if state_changed || running {
+                    push_downloads(&notice);
+                }
+                dl_sent = Some(notice);
+                dl_sent_at = Instant::now();
+            }
+            dl_ran |= running;
             // Follow the phone's volume (hardware buttons, other apps).
             if let Some(v) = crate::platform::system_volume() {
                 svc.system_volume
@@ -182,6 +230,8 @@ pub fn apply_command(svc: &Services, cmd: &str) {
             "toggle" => p.send(Command::Toggle),
             "next" => p.send(Command::Next),
             "prev" => p.send(Command::Previous),
+            "dl_pause_all" => svc.downloads.pause_all(),
+            "dl_resume_all" => svc.downloads.resume_all(),
             other => log::warn!("unknown media command {other}"),
         },
     }
