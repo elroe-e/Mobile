@@ -156,7 +156,13 @@ struct Session {
 }
 
 /// An opened file: reader, decoder, track id, stream info, duration in seconds.
-type OpenedFile = (Box<dyn FormatReader>, Box<dyn Decoder>, u32, StreamInfo, f64);
+type OpenedFile = (
+    Box<dyn FormatReader>,
+    Box<dyn Decoder>,
+    u32,
+    StreamInfo,
+    f64,
+);
 
 fn open_file(path: &Path) -> Result<OpenedFile, String> {
     let file = File::open(path).map_err(|e| format!("cannot open file: {e}"))?;
@@ -728,7 +734,8 @@ mod tests {
         b.extend_from_slice(b"data");
         b.extend_from_slice(&data_len.to_le_bytes());
         for i in 0..frames {
-            let v = ((i as f32 * 440.0 * std::f32::consts::TAU / rate as f32).sin() * 8000.0) as i16;
+            let v =
+                ((i as f32 * 440.0 * std::f32::consts::TAU / rate as f32).sin() * 8000.0) as i16;
             b.extend_from_slice(&v.to_le_bytes());
             b.extend_from_slice(&v.to_le_bytes());
         }

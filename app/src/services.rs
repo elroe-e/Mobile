@@ -40,6 +40,7 @@ impl Services {
     fn init() -> Services {
         let paths = platform::paths();
         let _ = std::fs::create_dir_all(&paths.data);
+        crate::diag::set_dir(&paths.data.join("logs"));
         let settings_path = paths.data.join("settings.json");
         let settings = Settings::load(&settings_path).unwrap_or_else(|| {
             let s = Settings {
@@ -57,6 +58,12 @@ impl Services {
             s
         });
         let _ = std::fs::create_dir_all(&settings.download_dir);
+        crate::diag::set_detailed(settings.detailed_logging);
+        log::info!(
+            "Loss {} starting; data in {}",
+            env!("CARGO_PKG_VERSION"),
+            paths.data.display()
+        );
         let library = Library::load(&paths.data.join("library.json"));
         let follows_system = crate::platform::system_volume();
         let player = Player::new(if follows_system.is_some() {

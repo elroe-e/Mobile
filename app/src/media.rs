@@ -11,33 +11,13 @@ use crate::services::Services;
 mod imp {
     use crate::platform::android::with_env;
     use crate::services::Services;
-    use jni::objects::{JClass, JObject, JString, JValue};
-    use loss_audio::{Command, Status};
+    use jni::objects::{JString, JValue};
+    use loss_audio::Status;
     use std::time::{Duration, Instant};
-
-    const BRIDGE: &str = "dev.dioxus.main.LossBridge";
-
-    /// App classes must be loaded through the activity's class loader on
-    /// threads created by Rust.
-    fn bridge<'a>(env: &mut jni::JNIEnv<'a>, act: &JObject) -> jni::errors::Result<JClass<'a>> {
-        let loader = env
-            .call_method(act, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
-            .l()?;
-        let name = env.new_string(BRIDGE)?;
-        let cls = env
-            .call_method(
-                &loader,
-                "loadClass",
-                "(Ljava/lang/String;)Ljava/lang/Class;",
-                &[JValue::Object(&name)],
-            )?
-            .l()?;
-        Ok(JClass::from(cls))
-    }
 
     fn poll_commands() -> Vec<String> {
         with_env(|env, act| {
-            let cls = bridge(env, act)?;
+            let cls = crate::platform::android::bridge_class(env, act)?;
             let s = env
                 .call_static_method(&cls, "pollCommands", "()Ljava/lang/String;", &[])?
                 .l()?;
@@ -64,7 +44,7 @@ mod imp {
 
     fn update(s: &Shown, position: f64, duration: f64) {
         with_env(|env, act| {
-            let cls = bridge(env, act)?;
+            let cls = crate::platform::android::bridge_class(env, act)?;
             let (t, a, al, art) = (
                 env.new_string(&s.title)?,
                 env.new_string(&s.artist)?,
@@ -92,29 +72,10 @@ mod imp {
 
     fn stop() {
         with_env(|env, act| {
-            let cls = bridge(env, act)?;
+            let cls = crate::platform::android::bridge_class(env, act)?;
             env.call_static_method(&cls, "stop", "()V", &[])?;
             Ok(())
         });
-    }
-
-    fn apply(svc: &Services, cmd: &str) {
-        let p = &svc.player;
-        match cmd.split_once(' ') {
-            Some(("seek", ms)) => {
-                if let Ok(ms) = ms.trim().parse::<f64>() {
-                    p.send(Command::Seek(ms / 1000.0));
-                }
-            }
-            _ => match cmd {
-                "play" => p.send(Command::Play),
-                "pause" => p.send(Command::Pause),
-                "toggle" => p.send(Command::Toggle),
-                "next" => p.send(Command::Next),
-                "prev" => p.send(Command::Previous),
-                other => log::warn!("unknown media command {other}"),
-            },
-        }
     }
 
     pub fn run(svc: &'static Services) {
@@ -129,7 +90,7 @@ mod imp {
         loop {
             std::thread::sleep(Duration::from_millis(300));
             for cmd in poll_commands() {
-                apply(svc, &cmd);
+                super::apply_command(svc, &cmd);
             }
             svc.sync();
             // Follow the phone's volume (hardware buttons, other apps).
@@ -200,6 +161,29 @@ mod imp {
                 last_pos = st.position;
             }
         }
+    }
+}
+
+/// Applies a command from the notification, lock screen, headset buttons,
+/// audio focus or unplug events: play, pause, toggle, next, prev, "seek <ms>".
+#[cfg_attr(not(target_os = "android"), allow(dead_code))] // desktop media keys come with M9-08
+pub fn apply_command(svc: &Services, cmd: &str) {
+    use loss_audio::Command;
+    let p = &svc.player;
+    match cmd.split_once(' ') {
+        Some(("seek", ms)) => {
+            if let Ok(ms) = ms.trim().parse::<f64>() {
+                p.send(Command::Seek(ms / 1000.0));
+            }
+        }
+        _ => match cmd {
+            "play" => p.send(Command::Play),
+            "pause" => p.send(Command::Pause),
+            "toggle" => p.send(Command::Toggle),
+            "next" => p.send(Command::Next),
+            "prev" => p.send(Command::Previous),
+            other => log::warn!("unknown media command {other}"),
+        },
     }
 }
 

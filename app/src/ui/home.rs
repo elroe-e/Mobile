@@ -20,6 +20,7 @@ fn greeting() -> &'static str {
 #[component]
 pub fn HomeTab() -> Element {
     let mut st = state();
+    let mut crash_seen = use_signal(|| crate::diag::pending_crash().is_some());
     let _ = (st.lib_version)();
     let svc = services::get();
     let p = st.player.read().clone();
@@ -80,6 +81,32 @@ pub fn HomeTab() -> Element {
     let top_ids: Vec<String> = top.iter().map(|t| t.id.clone()).collect();
 
     rsx! {
+        if crash_seen() {
+            div { class: "notice-card",
+                Icon { name: "info", size: 22 }
+                div { class: "row-text",
+                    div { class: "title", "Loss closed unexpectedly last time" }
+                    div { class: "subtitle", "The crash report can help fix it." }
+                }
+                button {
+                    class: "text-btn",
+                    onclick: move |_| {
+                        let mut page = use_context::<super::settings::SettingsNav>().0;
+                        page.set(super::settings::SettingsPage::Logs);
+                        st.tab.set(Tab::Settings);
+                    },
+                    "View"
+                }
+                button {
+                    class: "icon-btn small",
+                    onclick: move |_| {
+                        crate::diag::dismiss_crashes();
+                        crash_seen.set(false);
+                    },
+                    Icon { name: "close", size: 18 }
+                }
+            }
+        }
         header { class: "home-header",
             h1 { class: "display", "{greeting()}" }
             p { class: "muted", "Your music, on your phone." }

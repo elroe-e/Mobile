@@ -8,6 +8,15 @@ use loss_core::format_duration;
 use loss_download::sources::{archive, direct, jamendo, podcast, subsonic, ItemAction};
 use loss_download::{Collection, DownloadRequest, SearchItem, SourceKind};
 
+/// The opened collection (album, podcast…), kept by the App so Android's Back
+/// button can close it.
+#[derive(Clone, Copy)]
+pub struct DiscoverNav(pub Signal<Option<(Collection, Vec<SearchItem>)>>);
+
+pub fn use_provide_nav() -> DiscoverNav {
+    use_context_provider(|| DiscoverNav(Signal::new(None)))
+}
+
 const SOURCES: [SourceKind; 5] = [
     SourceKind::InternetArchive,
     SourceKind::Jamendo,
@@ -99,7 +108,7 @@ pub fn DiscoverTab() -> Element {
     let mut results: Signal<Vec<SearchItem>> = use_signal(Vec::new);
     let mut loading = use_signal(|| false);
     let mut error: Signal<Option<String>> = use_signal(|| None);
-    let mut opened: Signal<Option<(Collection, Vec<SearchItem>)>> = use_signal(|| None);
+    let mut opened = use_context::<DiscoverNav>().0;
     let mut links = use_signal(String::new);
 
     let mut do_search = move || {

@@ -22,8 +22,31 @@ fn Toggle(label: String, hint: String, on: bool, onchange: EventHandler<bool>) -
     }
 }
 
+/// Which Settings page is open; kept by the App so Back can return to the list.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum SettingsPage {
+    Main,
+    Logs,
+}
+
+#[derive(Clone, Copy)]
+pub struct SettingsNav(pub Signal<SettingsPage>);
+
+pub fn use_provide_nav() -> SettingsNav {
+    use_context_provider(|| SettingsNav(Signal::new(SettingsPage::Main)))
+}
+
 #[component]
 pub fn SettingsTab() -> Element {
+    let nav = use_context::<SettingsNav>();
+    match (nav.0)() {
+        SettingsPage::Main => rsx! { SettingsMain {} },
+        SettingsPage::Logs => rsx! { super::logs::LogsPage {} },
+    }
+}
+
+#[component]
+fn SettingsMain() -> Element {
     let st = state();
     let _ = (st.lib_version)();
     let svc = services::get();
@@ -272,6 +295,35 @@ pub fn SettingsTab() -> Element {
                         }
                     }
                 }
+            }
+        }
+
+        h2 { class: "section-title", "Help" }
+        div { class: "card",
+            button {
+                class: "setting nav-row",
+                onclick: move |_| {
+                    let mut page = use_context::<SettingsNav>().0;
+                    page.set(SettingsPage::Logs);
+                },
+                Icon { name: "info", size: 22 }
+                div { class: "row-text",
+                    div { class: "title", "Logs and diagnostics" }
+                    div { class: "subtitle", "See what the app is doing, copy details for a bug report, check your audio outputs" }
+                }
+                Icon { name: "chevron_right" }
+            }
+            Toggle {
+                label: "Detailed logging",
+                hint: "Record more detail. Turn on when reporting a problem.",
+                on: cur.detailed_logging,
+                onchange: {
+                    let mut save = save;
+                    move |v| {
+                        crate::diag::set_detailed(v);
+                        save(Box::new(move |s| s.detailed_logging = v));
+                    }
+                },
             }
         }
 

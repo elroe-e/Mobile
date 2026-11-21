@@ -11,7 +11,7 @@ log.workspace = true
 dioxus = { version = "=0.7.10", features = ["mobile"] }
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "sync"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 serde_json.workspace = true
 

@@ -70,6 +70,11 @@ plays instantly. Set `HOME`/`LOSS_DATA_DIR` to a scratch dir, drive it with `xdo
 
 ## Gotchas (learned the hard way)
 
+* Run `cargo fmt --all` right before every commit: CI fails on any formatting diff.
+* CI (`.github/workflows/ci.yml`) runs fmt, clippy `-D warnings` and tests on every push. Code
+  that only Android uses must still compile without warnings on desktop
+  (`#[cfg_attr(not(target_os = "android"), allow(dead_code))]` or a desktop use).
+
 * Dioxus `rsx!` format strings can't hold `if` or complex expressions; compute a variable first.
 * Text inputs must use `initial_value`, not `value`: controlled inputs lose keystrokes on re-render.
 * Sliders: use `ui::Slider` (holds the dragged value until the real value catches up). The animated

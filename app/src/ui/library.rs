@@ -45,27 +45,56 @@ impl Sort {
     }
 }
 
-/// Which library page is open; kept by the App so switching tabs and back
-/// returns to the same album or artist.
-#[derive(Clone, Copy)]
-pub struct LibNav(pub Signal<View>);
+/// Which library page is open, plus the pages before it. Kept by the App so
+/// switching tabs and back returns to the same page, and so Android's Back
+/// button can step back through album and artist pages.
+#[derive(Clone, Copy, PartialEq)]
+pub struct LibNav {
+    pub view: Signal<View>,
+    history: Signal<Vec<View>>,
+}
 
-pub fn use_provide_nav() {
-    use_context_provider(|| LibNav(Signal::new(View::Main)));
+impl LibNav {
+    /// Open a page, remembering the current one for Back.
+    pub fn go(mut self, v: View) {
+        let current = self.view.peek().clone();
+        if current != v {
+            self.history.write().push(current);
+            self.view.set(v);
+        }
+    }
+
+    /// Go to the previous page. Returns false when already on the main page.
+    pub fn back(mut self) -> bool {
+        if *self.view.peek() == View::Main {
+            return false;
+        }
+        let prev = self.history.write().pop().unwrap_or(View::Main);
+        self.view.set(prev);
+        true
+    }
+}
+
+pub fn use_provide_nav() -> LibNav {
+    use_context_provider(|| LibNav {
+        view: Signal::new(View::Main),
+        history: Signal::new(Vec::new()),
+    })
 }
 
 #[component]
 pub fn LibraryTab() -> Element {
-    let view = use_context::<LibNav>().0;
-    match view() {
-        View::Main => rsx! { LibraryMain { view } },
-        View::Album(key) => rsx! { AlbumPage { key: "{key}", album_key: key.clone(), view } },
-        View::Artist(name) => rsx! { ArtistPage { key: "{name}", name: name.clone(), view } },
+    let nav = use_context::<LibNav>();
+    let current = (nav.view)();
+    match current {
+        View::Main => rsx! { LibraryMain { nav } },
+        View::Album(key) => rsx! { AlbumPage { key: "{key}", album_key: key.clone(), nav } },
+        View::Artist(name) => rsx! { ArtistPage { key: "{name}", name: name.clone(), nav } },
     }
 }
 
 #[component]
-fn LibraryMain(view: Signal<View>) -> Element {
+fn LibraryMain(nav: LibNav) -> Element {
     let st = state();
     let _ = (st.lib_version)();
     let mut seg = use_signal(|| Seg::Albums);
@@ -177,7 +206,7 @@ fn LibraryMain(view: Signal<View>) -> Element {
             if active == Seg::Albums {
                 div { class: "album-grid",
                     for (a , badge) in album_info.iter() {
-                        AlbumCard { key: "{a.key}", album: a.clone(), badge: badge.clone(), view }
+                        AlbumCard { key: "{a.key}", album: a.clone(), badge: badge.clone(), nav }
                     }
                 }
             }
@@ -189,7 +218,7 @@ fn LibraryMain(view: Signal<View>) -> Element {
                             class: "row",
                             onclick: {
                                 let name = a.name.clone();
-                                move |_| view.clone().set(View::Artist(name.clone()))
+                                move |_| nav.go(View::Artist(name.clone()))
                             },
                             div { class: "avatar", "{a.name.chars().next().unwrap_or('?')}" }
                             div { class: "row-text",
@@ -219,11 +248,11 @@ fn LibraryMain(view: Signal<View>) -> Element {
 }
 
 #[component]
-fn AlbumCard(album: Album, badge: String, view: Signal<View>) -> Element {
+fn AlbumCard(album: Album, badge: String, nav: LibNav) -> Element {
     let key = album.key.clone();
     let ids = album.tracks.clone();
     rsx! {
-        div { class: "album-card", onclick: move |_| view.set(View::Album(key.clone())),
+        div { class: "album-card", onclick: move |_| nav.go(View::Album(key.clone())),
             div { class: "art-wrap",
                 Cover { track_id: album.cover_track.clone().unwrap_or_default(), class: "cover card-cover" }
                 if !badge.is_empty() {
@@ -359,7 +388,7 @@ pub fn SongRow(
 }
 
 #[component]
-fn AlbumPage(album_key: String, view: Signal<View>) -> Element {
+fn AlbumPage(album_key: String, nav: LibNav) -> Element {
     let st = state();
     let _ = (st.lib_version)();
     let svc = services::get();
@@ -367,7 +396,7 @@ fn AlbumPage(album_key: String, view: Signal<View>) -> Element {
     let Some(album) = lib.album(&album_key) else {
         drop(lib);
         return rsx! {
-            button { class: "back", onclick: move |_| view.set(View::Main), Icon { name: "back" } }
+            button { class: "back", onclick: move |_| { nav.back(); }, Icon { name: "back" } }
             p { class: "pad muted", "This album is no longer in your library." }
         };
     };
@@ -393,11 +422,11 @@ fn AlbumPage(album_key: String, view: Signal<View>) -> Element {
             && p.current().map(|c| ids.contains(&c.id)).unwrap_or(false)
     };
     rsx! {
-        button { class: "back", onclick: move |_| view.set(View::Main), Icon { name: "back" } }
+        button { class: "back", onclick: move |_| { nav.back(); }, Icon { name: "back" } }
         div { class: "album-hero",
             Cover { track_id: album.cover_track.clone().unwrap_or_default(), class: "cover hero-cover", big: true }
             h1 { "{album.title}" }
-            button { class: "link", onclick: move |_| view.set(View::Artist(artist.clone())), "{album.artist}" }
+            button { class: "link", onclick: move |_| nav.go(View::Artist(artist.clone())), "{album.artist}" }
             p { class: "muted small", "{year}{tracks.len()} songs · {format_duration(album.duration_secs)}" }
             div { class: "tags center-tags",
                 if !fmt.is_empty() { span { class: "tag", "{fmt}" } }
@@ -435,7 +464,7 @@ fn AlbumPage(album_key: String, view: Signal<View>) -> Element {
 }
 
 #[component]
-fn ArtistPage(name: String, view: Signal<View>) -> Element {
+fn ArtistPage(name: String, nav: LibNav) -> Element {
     let st = state();
     let _ = (st.lib_version)();
     let svc = services::get();
@@ -469,7 +498,7 @@ fn ArtistPage(name: String, view: Signal<View>) -> Element {
     let ids_shuffle = ids.clone();
     let initial = name.chars().next().unwrap_or('?');
     rsx! {
-        button { class: "back", onclick: move |_| view.set(View::Main), Icon { name: "back" } }
+        button { class: "back", onclick: move |_| { nav.back(); }, Icon { name: "back" } }
         div { class: "artist-hero",
             div { class: "avatar huge", "{initial}" }
             h1 { "{name}" }
@@ -482,7 +511,7 @@ fn ArtistPage(name: String, view: Signal<View>) -> Element {
         h2 { class: "section-title", "Albums" }
         div { class: "album-grid",
             for (a , badge) in albums.iter() {
-                AlbumCard { key: "{a.key}", album: a.clone(), badge: badge.clone(), view }
+                AlbumCard { key: "{a.key}", album: a.clone(), badge: badge.clone(), nav }
             }
         }
         h2 { class: "section-title", "Songs" }

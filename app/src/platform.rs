@@ -69,6 +69,96 @@ pub mod android {
         })
     }
 
+    // ---- Calls from Kotlin (LossNative) ----
+
+    /// `LossNative.command(cmd)`: playback commands from the notification,
+    /// lock screen, headset buttons, audio focus and unplug events.
+    #[no_mangle]
+    pub extern "system" fn Java_dev_dioxus_main_LossNative_command<'local>(
+        mut env: jni::JNIEnv<'local>,
+        _class: jni::objects::JClass<'local>,
+        cmd: JString<'local>,
+    ) {
+        let cmd: String = match env.get_string(&cmd) {
+            Ok(s) => s.into(),
+            Err(_) => return,
+        };
+        crate::media::apply_command(crate::services::get(), &cmd);
+    }
+
+    /// `LossNative.back()`: returns whether the app handled Back itself.
+    #[no_mangle]
+    pub extern "system" fn Java_dev_dioxus_main_LossNative_back<'local>(
+        _env: jni::JNIEnv<'local>,
+        _class: jni::objects::JClass<'local>,
+    ) -> jni::sys::jboolean {
+        crate::nav::request_back() as jni::sys::jboolean
+    }
+
+    /// `dev.dioxus.main.LossBridge`, loaded through the activity's class loader
+    /// (works from threads Rust created, where `FindClass` can't see app classes).
+    pub fn bridge_class<'a>(
+        env: &mut jni::JNIEnv<'a>,
+        act: &JObject,
+    ) -> jni::errors::Result<jni::objects::JClass<'a>> {
+        let loader = env
+            .call_method(act, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
+            .l()?;
+        let name = env.new_string("dev.dioxus.main.LossBridge")?;
+        let cls = env
+            .call_method(
+                &loader,
+                "loadClass",
+                "(Ljava/lang/String;)Ljava/lang/Class;",
+                &[JValue::Object(&name)],
+            )?
+            .l()?;
+        Ok(jni::objects::JClass::from(cls))
+    }
+
+    pub fn copy_text(label: &str, text: &str) {
+        with_env(|env, act| {
+            let cls = bridge_class(env, act)?;
+            let (l, t) = (env.new_string(label)?, env.new_string(text)?);
+            env.call_static_method(
+                &cls,
+                "copyText",
+                "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V",
+                &[JValue::Object(act), JValue::Object(&l), JValue::Object(&t)],
+            )?;
+            Ok(())
+        });
+    }
+
+    pub fn share_text(subject: &str, text: &str) {
+        with_env(|env, act| {
+            let cls = bridge_class(env, act)?;
+            let (s, t) = (env.new_string(subject)?, env.new_string(text)?);
+            env.call_static_method(
+                &cls,
+                "shareText",
+                "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V",
+                &[JValue::Object(act), JValue::Object(&s), JValue::Object(&t)],
+            )?;
+            Ok(())
+        });
+    }
+
+    pub fn diagnostics() -> Option<String> {
+        with_env(|env, act| {
+            let cls = bridge_class(env, act)?;
+            let r = env
+                .call_static_method(
+                    &cls,
+                    "diagnostics",
+                    "(Landroid/content/Context;)Ljava/lang/String;",
+                    &[JValue::Object(act)],
+                )?
+                .l()?;
+            Ok(env.get_string(&JString::from(r))?.into())
+        })
+    }
+
     pub fn sdk_int() -> i32 {
         with_env(|env, _| {
             env.get_static_field("android/os/Build$VERSION", "SDK_INT", "I")?
@@ -292,11 +382,47 @@ pub fn open_app_settings() {
     android::open_app_settings();
 }
 
-pub fn init_logging() {
+/// Whether the platform can put text on the clipboard itself (Android). Elsewhere
+/// the UI uses the web view's clipboard.
+pub fn copy_text(label: &str, text: &str) -> bool {
     #[cfg(target_os = "android")]
-    android_logger::init_once(
-        android_logger::Config::default()
-            .with_max_level(log::LevelFilter::Info)
-            .with_tag("Loss"),
-    );
+    {
+        android::copy_text(label, text);
+        true
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (label, text);
+        false
+    }
+}
+
+/// Opens the system share sheet. Returns false where there is none.
+pub fn share_text(subject: &str, text: &str) -> bool {
+    #[cfg(target_os = "android")]
+    {
+        android::share_text(subject, text);
+        true
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (subject, text);
+        false
+    }
+}
+
+/// Device and audio-output details (outputs, sample rates, formats, USB DACs).
+pub fn diagnostics() -> String {
+    #[cfg(target_os = "android")]
+    {
+        android::diagnostics().unwrap_or_else(|| "Device details unavailable".into())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        format!(
+            "Desktop build: {} {}\n",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        )
+    }
 }

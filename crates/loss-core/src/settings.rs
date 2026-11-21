@@ -40,6 +40,8 @@ pub struct Settings {
     /// For "Continue listening" on Home.
     pub last_track: Option<String>,
     pub last_position: f64,
+    /// Record debug-level lines in the log (Settings → Logs).
+    pub detailed_logging: bool,
 }
 
 impl Default for Settings {
@@ -62,6 +64,7 @@ impl Default for Settings {
             dynamic_color: true,
             last_track: None,
             last_position: 0.0,
+            detailed_logging: false,
         }
     }
 }

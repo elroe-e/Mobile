@@ -1,12 +1,14 @@
 //! Loss: a music player and downloader for Android, written in Rust.
 
+mod diag;
 mod media;
+mod nav;
 mod platform;
 mod services;
 mod ui;
 
 fn main() {
-    platform::init_logging();
+    diag::init();
     log::info!("Loss starting");
     #[cfg(feature = "desktop")]
     {

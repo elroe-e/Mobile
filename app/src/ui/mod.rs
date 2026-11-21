@@ -5,6 +5,7 @@ mod downloads;
 mod home;
 mod icons;
 mod library;
+mod logs;
 mod now_playing;
 mod settings;
 pub mod theme;
@@ -78,6 +79,26 @@ impl AppState {
 
 pub fn state() -> AppState {
     use_context::<AppState>()
+}
+
+/// Copies text to the clipboard (Android clipboard, or the web view's
+/// elsewhere) and says so.
+pub fn copy_text(st: AppState, label: &str, text: &str) {
+    if !crate::platform::copy_text(label, text) {
+        let js = format!(
+            "navigator.clipboard && navigator.clipboard.writeText({});",
+            serde_json::to_string(text).unwrap_or_default()
+        );
+        document::eval(&js);
+    }
+    st.toast("Copied");
+}
+
+/// Opens the share sheet; copies instead where there is none.
+pub fn share_text(st: AppState, subject: &str, text: &str) {
+    if !crate::platform::share_text(subject, text) {
+        copy_text(st, subject, text);
+    }
 }
 
 /// Play a list of library tracks starting at `start`.
@@ -173,7 +194,51 @@ pub fn App() -> Element {
         volume,
     });
 
-    library::use_provide_nav();
+    let lib_nav = library::use_provide_nav();
+    let discover_nav = discover::use_provide_nav();
+    let settings_nav = settings::use_provide_nav();
+
+    // Escape works as Back (desktop, keyboards, and UI tests).
+    use_future(move || async move {
+        let mut keys = document::eval(
+            "document.addEventListener('keydown', (e) => { if (e.key === 'Escape') dioxus.send('back'); });",
+        );
+        while keys.recv::<String>().await.is_ok() {
+            crate::nav::request_back();
+        }
+    });
+
+    // Android Back: close the player, then step back inside the current tab,
+    // then return to Home. At Home, the platform sends the app to the background.
+    use_future(move || async move {
+        let Some(mut requests) = crate::nav::take_back_requests() else {
+            return;
+        };
+        let (mut now_playing, mut tab, mut discover_opened, mut settings_page) =
+            (now_playing, tab, discover_nav.0, settings_nav.0);
+        while requests.recv().await.is_some() {
+            if *now_playing.peek() {
+                now_playing.set(false);
+                continue;
+            }
+            let current = *tab.peek();
+            let handled = match current {
+                Tab::Library => lib_nav.back(),
+                Tab::Discover if discover_opened.peek().is_some() => {
+                    discover_opened.set(None);
+                    true
+                }
+                Tab::Settings if *settings_page.peek() != settings::SettingsPage::Main => {
+                    settings_page.set(settings::SettingsPage::Main);
+                    true
+                }
+                _ => false,
+            };
+            if !handled && current != Tab::Home {
+                tab.set(Tab::Home);
+            }
+        }
+    });
 
     use_hook(|| {
         crate::media::start(services::get());
@@ -265,6 +330,7 @@ pub fn App() -> Element {
     };
     let theme_css = theme::theme_css(seed, &settings.theme);
     let has_player = current_id.is_some();
+    crate::nav::set_can_go_back(now_playing() || tab() != Tab::Home);
 
     rsx! {
         style { {font_css()} }
