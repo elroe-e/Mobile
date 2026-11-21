@@ -5,6 +5,8 @@
 //! snapshot of [`PlayerState`].
 
 mod engine;
+mod opus;
+pub use opus::codecs;
 mod resample;
 
 use std::path::PathBuf;

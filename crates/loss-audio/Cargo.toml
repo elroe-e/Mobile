@@ -9,3 +9,4 @@ log.workspace = true
 symphonia = { version = "0.5", features = ["all"] }
 cpal = "0.16"
 rtrb = "0.3"
+opus-decoder = "0.1"

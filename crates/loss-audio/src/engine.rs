@@ -151,7 +151,28 @@ struct Session {
     eof: bool,
     start_offset: f64,
     duration: f64,
+    info: StreamInfo,
+    /// Samples pushed into this ring buffer since it was created, including by
+    /// earlier tracks that handed it over (gapless).
+    pushed: u64,
+}
+
+/// The track the listener hears (it lags behind the decoder by the buffer).
+struct Display {
+    item_id: String,
+    /// `played_samples` value at which this track started.
+    base: u64,
+    start_offset: f64,
+    duration: f64,
     counted: bool,
+}
+
+/// A gapless join waiting for playback to reach it.
+struct Switch {
+    /// `played_samples` value where the next track starts.
+    at: u64,
+    item_id: String,
+    duration: f64,
     info: StreamInfo,
 }
 
@@ -190,7 +211,7 @@ fn open_file(path: &Path) -> Result<OpenedFile, String> {
         .ok_or("no audio track")?;
     let params = track.codec_params.clone();
     let track_id = track.id;
-    let decoder = symphonia::default::get_codecs()
+    let decoder = crate::opus::codecs()
         .make(&params, &DecoderOptions::default())
         .map_err(|e| format!("unsupported codec: {e}"))?;
     let rate = params.sample_rate.unwrap_or(44100);
@@ -202,7 +223,7 @@ fn open_file(path: &Path) -> Result<OpenedFile, String> {
         (Some(n), None) => n as f64 / rate as f64,
         _ => 0.0,
     };
-    let codec = symphonia::default::get_codecs()
+    let codec = crate::opus::codecs()
         .get_codec(params.codec)
         .map(|d| d.short_name.to_string())
         .unwrap_or_else(|| "audio".into());
@@ -228,6 +249,7 @@ impl Session {
                     return Ok(()); // ring full
                 }
                 self.pending_pos += 1;
+                self.pushed += 1;
             }
             self.pending.clear();
             self.pending_pos = 0;
@@ -274,8 +296,44 @@ impl Session {
         }
     }
 
+    /// Everything is decoded and in the ring (it may still be playing).
+    fn decoded_all(&self) -> bool {
+        self.eof && self.pending_pos >= self.pending.len()
+    }
+
     fn drained(&self) -> bool {
-        self.eof && self.pending_pos >= self.pending.len() && self.producer.slots() == self.capacity
+        self.decoded_all() && self.producer.slots() == self.capacity
+    }
+
+    /// Starts decoding the next track into the same ring buffer, so playback
+    /// continues without a gap.
+    fn handover(
+        prev: Session,
+        item: QueueItem,
+        opened: OpenedFile,
+        out_rate: u32,
+        out_channels: usize,
+    ) -> Session {
+        let (format, decoder, track_id, mut info, duration) = opened;
+        info.output_rate = out_rate;
+        Session {
+            item,
+            format,
+            decoder,
+            track_id,
+            src_rate: info.sample_rate,
+            src_channels: info.channels.max(1) as usize,
+            resampler: Resampler::new(info.sample_rate, out_rate, out_channels),
+            producer: prev.producer,
+            capacity: prev.capacity,
+            pending: Vec::new(),
+            pending_pos: 0,
+            eof: false,
+            start_offset: 0.0,
+            duration,
+            info,
+            pushed: prev.pushed,
+        }
     }
 }
 
@@ -283,6 +341,10 @@ struct Engine {
     state: Arc<Mutex<PlayerState>>,
     output: Option<Output>,
     session: Option<Session>,
+    display: Option<Display>,
+    switch: Option<Switch>,
+    /// The next track couldn't be joined gaplessly (different rate, error).
+    no_preload: bool,
     volume: Arc<AtomicU32>,
     /// Queue order before shuffle was turned on.
     unshuffled: Option<Vec<QueueItem>>,
@@ -320,6 +382,16 @@ impl Engine {
                     let s = self.session.as_ref().unwrap();
                     (s.duration, s.info.clone())
                 };
+                let s = self.session.as_ref().unwrap();
+                self.display = Some(Display {
+                    item_id: s.item.id.clone(),
+                    base: 0,
+                    start_offset: s.start_offset,
+                    duration: s.duration,
+                    counted: false,
+                });
+                self.switch = None;
+                self.no_preload = false;
                 if let Some(out) = &self.output {
                     if autoplay {
                         let _ = out.stream.play();
@@ -391,8 +463,8 @@ impl Engine {
             eof: false,
             start_offset,
             duration,
-            counted: false,
             info,
+            pushed: 0,
         };
         session.pump(out.channels, out.rate)?;
         self.session = Some(session);
@@ -401,6 +473,8 @@ impl Engine {
 
     fn stop(&mut self) {
         self.session = None;
+        self.display = None;
+        self.switch = None;
         if let Some(o) = &self.output {
             let _ = o.stream.pause();
             *o.slot.lock().unwrap_or_else(|p| p.into_inner()) = None;
@@ -411,11 +485,13 @@ impl Engine {
     }
 
     fn position(&self) -> f64 {
-        match (&self.session, &self.output) {
-            (Some(s), Some(o)) => {
-                s.start_offset
-                    + o.played_samples.load(Ordering::Relaxed) as f64
-                        / (o.rate as f64 * o.channels as f64)
+        match (&self.display, &self.output) {
+            (Some(d), Some(o)) => {
+                let played = o
+                    .played_samples
+                    .load(Ordering::Relaxed)
+                    .saturating_sub(d.base);
+                d.start_offset + played as f64 / (o.rate as f64 * o.channels as f64)
             }
             _ => 0.0,
         }
@@ -633,29 +709,57 @@ impl Engine {
     fn tick(&mut self) {
         let Some(out) = &self.output else { return };
         let (ch, rate) = (out.channels, out.rate);
+        let played = out.played_samples.load(Ordering::Relaxed);
+
+        // A gapless join reached the speaker: show the next track.
+        if self.switch.as_ref().is_some_and(|sw| played >= sw.at) {
+            let sw = self.switch.take().unwrap();
+            let mut st = self.st();
+            let current = st.index.unwrap_or(0);
+            // Look the track up by id: the queue may have changed meanwhile.
+            let idx = st
+                .queue
+                .iter()
+                .enumerate()
+                .skip(current)
+                .chain(st.queue.iter().enumerate().take(current))
+                .find(|(i, q)| q.id == sw.item_id && (*i != current || st.repeat == Repeat::One))
+                .map(|(i, _)| i)
+                .unwrap_or(current);
+            st.index = Some(idx);
+            st.duration = sw.duration;
+            st.info = sw.info;
+            st.position = 0.0;
+            drop(st);
+            self.display = Some(Display {
+                item_id: sw.item_id,
+                base: sw.at,
+                start_offset: 0.0,
+                duration: sw.duration,
+                counted: false,
+            });
+        }
+
         let pos = self.position();
-        let mut finished = false;
-        let state = self.state.clone();
         if let Some(s) = &mut self.session {
             if let Err(e) = s.pump(ch, rate) {
                 log::error!("decode error: {e}");
                 s.eof = true;
             }
-            let threshold = if s.duration > 0.0 {
-                (s.duration * 0.5).min(30.0)
+        }
+
+        // Count a play after 30 s or half the track.
+        if let Some(d) = &mut self.display {
+            let threshold = if d.duration > 0.0 {
+                (d.duration * 0.5).min(30.0)
             } else {
                 30.0
             };
-            if !s.counted && pos >= threshold {
-                s.counted = true;
-                let id = s.item.id.clone();
-                state
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner())
-                    .play_events
-                    .push(id);
+            if !d.counted && pos >= threshold {
+                d.counted = true;
+                let id = d.item_id.clone();
+                self.st().play_events.push(id);
             }
-            finished = s.drained();
         }
         {
             let mut st = self.st();
@@ -667,6 +771,15 @@ impl Engine {
                 };
             }
         }
+
+        // Gapless: once this track is fully decoded, start decoding the next
+        // one into the same buffer.
+        let decoded_all = self.session.as_ref().is_some_and(|s| s.decoded_all());
+        if decoded_all && self.switch.is_none() && !self.no_preload {
+            self.preload_next(rate, ch);
+        }
+
+        let finished = self.session.as_ref().is_some_and(|s| s.drained()) && self.switch.is_none();
         if finished {
             match self.next_index(false) {
                 Some(i) => self.load(i, 0.0, true),
@@ -676,6 +789,36 @@ impl Engine {
                     s.position = 0.0;
                 }
             }
+        }
+    }
+
+    fn preload_next(&mut self, out_rate: u32, out_channels: usize) {
+        let Some(i) = self.next_index(false) else {
+            self.no_preload = true;
+            return;
+        };
+        let Some(item) = self.st().queue.get(i).cloned() else {
+            self.no_preload = true;
+            return;
+        };
+        let current_rate = self.session.as_ref().map(|s| s.src_rate).unwrap_or(0);
+        match open_file(&item.path) {
+            // Same source rate: the output stays as it is, so join seamlessly.
+            Ok(opened) if opened.3.sample_rate == current_rate => {
+                let prev = self.session.take().unwrap();
+                let at = prev.pushed;
+                let next = Session::handover(prev, item, opened, out_rate, out_channels);
+                self.switch = Some(Switch {
+                    at,
+                    item_id: next.item.id.clone(),
+                    duration: next.duration,
+                    info: next.info.clone(),
+                });
+                self.session = Some(next);
+            }
+            // Different rate (the output must reopen) or an error (shown when
+            // the track is loaded normally).
+            _ => self.no_preload = true,
         }
     }
 }
@@ -691,6 +834,9 @@ pub fn run(rx: Receiver<Command>, state: Arc<Mutex<PlayerState>>) {
         state,
         output: None,
         session: None,
+        display: None,
+        switch: None,
+        no_preload: false,
         volume: Arc::new(AtomicU32::new(vol.to_bits())),
         unshuffled: None,
         rng: seed,
@@ -716,9 +862,11 @@ pub fn run(rx: Receiver<Command>, state: Arc<Mutex<PlayerState>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
-    fn write_wav(path: &Path, rate: u32, secs: f32) {
-        let frames = (rate as f32 * secs) as u32;
+    /// 16-bit stereo 440 Hz WAV holding samples `from..to` of a continuous sine.
+    fn write_wav(path: &Path, rate: u32, _secs: f32, from: u32, to: u32) {
+        let frames = to - from;
         let data_len = frames * 4;
         let mut b = Vec::new();
         b.extend_from_slice(b"RIFF");
@@ -733,7 +881,7 @@ mod tests {
         b.extend_from_slice(&16u16.to_le_bytes());
         b.extend_from_slice(b"data");
         b.extend_from_slice(&data_len.to_le_bytes());
-        for i in 0..frames {
+        for i in from..to {
             let v =
                 ((i as f32 * 440.0 * std::f32::consts::TAU / rate as f32).sin() * 8000.0) as i16;
             b.extend_from_slice(&v.to_le_bytes());
@@ -742,29 +890,25 @@ mod tests {
         std::fs::write(path, b).unwrap();
     }
 
-    #[test]
-    fn decodes_wav_fully_with_resampling() {
-        let dir = std::env::temp_dir().join(format!("loss-audio-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("tone.wav");
-        write_wav(&path, 44100, 1.0);
-        let (format, decoder, track_id, info, duration) = open_file(&path).unwrap();
-        assert_eq!(info.sample_rate, 44100);
-        assert_eq!(info.bits_per_sample, Some(16));
-        assert!((duration - 1.0).abs() < 0.01, "{duration}");
-        let capacity = 48000 * 2 * 2;
+    /// Decodes `paths` back to back the way the engine does (gapless handover
+    /// into one ring buffer). Returns interleaved samples and the sample index
+    /// where each later track starts.
+    fn decode_chain(paths: &[PathBuf], out_rate: u32, out_ch: usize) -> (Vec<f32>, Vec<u64>) {
+        let capacity = out_rate as usize * out_ch;
         let (producer, mut consumer) = rtrb::RingBuffer::new(capacity);
+        let item = |p: &PathBuf| QueueItem {
+            id: p.display().to_string(),
+            path: p.clone(),
+        };
+        let (format, decoder, track_id, info, duration) = open_file(&paths[0]).unwrap();
         let mut s = Session {
-            item: QueueItem {
-                id: "x".into(),
-                path: path.clone(),
-            },
+            item: item(&paths[0]),
             format,
             decoder,
             track_id,
-            src_rate: 44100,
-            src_channels: 2,
-            resampler: Resampler::new(44100, 48000, 2),
+            src_rate: info.sample_rate,
+            src_channels: info.channels as usize,
+            resampler: Resampler::new(info.sample_rate, out_rate, out_ch),
             producer,
             capacity,
             pending: vec![],
@@ -772,22 +916,110 @@ mod tests {
             eof: false,
             start_offset: 0.0,
             duration,
-            counted: false,
             info,
+            pushed: 0,
         };
-        let mut total = 0usize;
-        for _ in 0..1000 {
-            s.pump(2, 48000).unwrap();
-            while consumer.pop().is_ok() {
-                total += 1;
+        let mut out = Vec::new();
+        let mut joins = Vec::new();
+        let mut next = 1;
+        for _ in 0..100_000 {
+            s.pump(out_ch, out_rate).unwrap();
+            while let Ok(v) = consumer.pop() {
+                out.push(v);
             }
-            if s.drained() {
+            if s.decoded_all() && next < paths.len() {
+                joins.push(s.pushed);
+                let opened = open_file(&paths[next]).unwrap();
+                s = Session::handover(s, item(&paths[next]), opened, out_rate, out_ch);
+                next += 1;
+            } else if s.drained() {
                 break;
             }
         }
-        assert!(s.drained());
-        let frames = total / 2;
+        assert!(s.drained(), "decoding did not finish");
+        (out, joins)
+    }
+
+    fn fixture(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name)
+    }
+
+    fn rms(v: &[f32]) -> f32 {
+        (v.iter().map(|x| x * x).sum::<f32>() / v.len().max(1) as f32).sqrt()
+    }
+
+    #[test]
+    fn decodes_wav_fully_with_resampling() {
+        let dir = std::env::temp_dir().join(format!("loss-audio-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("tone.wav");
+        write_wav(&path, 44100, 1.0, 0, 44100);
+        let (_, _, _, info, duration) = open_file(&path).unwrap();
+        assert_eq!(info.sample_rate, 44100);
+        assert_eq!(info.bits_per_sample, Some(16));
+        assert!((duration - 1.0).abs() < 0.01, "{duration}");
+        let (out, _) = decode_chain(&[path], 48000, 2);
+        let frames = out.len() / 2;
         assert!((frames as i64 - 48000).abs() < 50, "{frames}");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn plays_opus_in_ogg_and_webm() {
+        for name in ["tone.opus", "tone.webm"] {
+            let path = fixture(name);
+            let (_, _, _, info, _) = open_file(&path).unwrap();
+            assert_eq!(info.codec, "opus", "{name}");
+            assert_eq!(info.sample_rate, 48000, "{name}");
+            let (out, _) = decode_chain(&[path], 48000, 2);
+            let frames = out.len() / 2;
+            // One second of audio, with the encoder pre-skip removed.
+            assert!(
+                (frames as i64 - 48000).abs() <= 960,
+                "{name}: {frames} frames"
+            );
+            // A 440 Hz tone at the generator's level, not silence or noise.
+            let level = rms(&out[4800..out.len() - 4800]);
+            assert!(level > 0.05 && level < 0.6, "{name}: rms {level}");
+        }
+    }
+
+    #[test]
+    fn opus_seeks() {
+        let (mut format, _, track_id, _, _) = open_file(&fixture("tone.opus")).unwrap();
+        let seeked = format.seek(
+            SeekMode::Accurate,
+            SeekTo::Time {
+                time: Time::from(0.5),
+                track_id: Some(track_id),
+            },
+        );
+        assert!(seeked.is_ok(), "{seeked:?}");
+    }
+
+    #[test]
+    fn gapless_join_is_sample_exact() {
+        // One continuous sine split into two files at an arbitrary sample, so a
+        // gap or overlap at the join shows up as a jump in the waveform.
+        let dir = std::env::temp_dir().join(format!("loss-gapless-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (a, b) = (dir.join("a.wav"), dir.join("b.wav"));
+        let total = 44100;
+        let split = 30_011;
+        write_wav(&a, 44100, 0.0, 0, split);
+        write_wav(&b, 44100, 0.0, split, total);
+        let (out, joins) = decode_chain(&[a, b], 44100, 2);
+        assert_eq!(joins, vec![split as u64 * 2]);
+        assert_eq!(out.len(), total as usize * 2, "no samples lost or added");
+        let left: Vec<f32> = out.iter().step_by(2).copied().collect();
+        let max_step = left
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0, f32::max);
+        // 440 Hz at 8000/32768 amplitude moves at most ~0.016 per sample.
+        assert!(max_step < 0.02, "discontinuity {max_step}");
         std::fs::remove_dir_all(dir).ok();
     }
 }
