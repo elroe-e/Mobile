@@ -1,0 +1,291 @@
+# Loss target architecture
+
+How Loss is built once the plan in [PLAN.md](PLAN.md) is complete. Each milestone moves the code toward
+this shape; when a decision here changes, update this file in the same commit.
+
+## 1. Principles
+
+1. **Rust for everything that is logic.** Player, DSP, USB driver, library, tags, lyrics, downloads,
+   networking, analysis, stats, sync, UI state: all Rust.
+2. **Platform glue only where the OS demands it.** Android entry points (activities, services,
+   broadcast receivers, widgets, Android Auto browser, Keystore) are Kotlin in `android/glue/`. Glue
+   classes only marshal data to and from Rust, with no decisions in Kotlin. Budget is about 1,500 lines total.
+   iOS uses Rust through `objc2` bindings. The only Swift exception is iOS WidgetKit, which is optional.
+3. **Pure-Rust libraries first.** C libraries are acceptable only when no pure-Rust option of
+   comparable quality exists, and each one is listed in §12.
+4. **Legal sources only.** No downloading from streaming services, no DRM or decryption code, and no
+   extension host functions meant for that. Free and Creative Commons catalogues, podcasts, your own
+   servers, and files you bought.
+5. **Private by default.** No telemetry. Statistics, learning and analysis stay on the device. Secrets
+   live in the OS keystore.
+6. **Testable without a phone.** Every crate has unit tests. The engine runs against a fake sink.
+   The UI runs as a desktop window under Xvfb. Android runs on a CI emulator. The owner's phone is the
+   final check, not the first.
+
+## 2. Workspace layout (target)
+
+```
+Cargo.toml                 workspace
+crates/
+  loss-core/               shared types, text utils, ids, formatting (exists)
+  loss-store/              redb database: schema, migrations, typed tables, settings storage
+  loss-audio/              engine: sources, scheduler (gapless/crossfade), DSP graph, sinks
+  loss-usb/                USB Audio Class descriptors + isochronous streaming over usbdevfs
+  loss-dsp/                resampler (rubato), EQ, dynamics, crossfeed, time-stretch, dither, meters
+  loss-library/            scanner, index, search, collections, playlists, smart playlists, duplicates
+  loss-tags/               tag read/write (lofty), cover ops, CUE parsing, templates
+  loss-lyrics/             lyrics model, parsers (LRC/eLRC/TTML/SYLT), providers, romanization, translation
+  loss-download/           download manager, legal sources, post-processing (exists, grows)
+  loss-net/                Subsonic, SMB (smb crate), WebDAV, HTTP sources, cert pinning, streaming reader
+  loss-meta/               MusicBrainz, Cover Art Archive, AcoustID, Song.link, Last.fm, ListenBrainz,
+                           concerts, new releases
+  loss-analysis/           spectrum, loudness (ebur128), DR, hi-res check, null test, tempo/beat, song features
+  loss-ext/                extension runtime (wasmi), manifests, repositories, store
+  loss-link/               device pairing, mDNS, TLS, sync protocol, Subsonic-compatible server
+  loss-cast/               Google Cast sender (CASTV2), discovery, local media server
+  loss-stats/              listening events, aggregations, Rewind
+  loss-i18n/               Fluent bundles, locale negotiation
+  loss-platform/           platform abstraction: Android JNI bridge, desktop, iOS
+app/                       Dioxus UI: screens, components, theme, routing
+android/glue/              Kotlin + res + AndroidManifest fragment (Gradle library module)
+docs/plan/                 this plan
+scripts/                   setup, build, fixtures, UI smoke tests, reference fetch
+.github/workflows/         CI, emulator smoke test, releases
+```
+
+New crates are created when their milestone starts; until then code stays where it is.
+
+## 3. Runtime and threads
+
+| Thread or runtime | Owns | Rules |
+|---|---|---|
+| UI (Dioxus main) | rendering, signals | never blocks; reads snapshots; sends commands |
+| Engine control | queue, scheduler, decoders, DSP | single owner of playback state |
+| Audio callback (AAudio / USB / cpal) | pulls from lock-free ring buffer | no allocation, no locks, no syscalls |
+| USB I/O thread | isochronous URB submit/reap | real-time priority where allowed |
+| Tokio runtime (shared) | HTTP, SMB, WebDAV, Link, Cast, providers | one runtime for the whole app |
+| Job runner | scans, analysis, conversion, tagging, ReplayGain | priorities, cancellation, "only while charging" |
+| JNI event thread | Kotlin → Rust events | attached permanently; forwards into channels |
+
+UI state moves from 250 ms polling to **push events**: the engine and services publish changes on a
+`tokio::sync::broadcast` bus, and a single UI task coalesces them into signals (max 30 updates/s for
+position).
+
+## 4. Audio engine
+
+### 4.1 Pipeline
+
+```
+Source (decoder) ─► Scheduler ─► DSP graph (f64) ─────────────────────────────► Sink
+  Symphonia            gapless      ReplayGain → EQ / parametric / AutoEq →       AAudio (shared / exclusive)
+  opus-decoder         preroll      crossfeed → speed/pitch → crossfade mixer →   Android bit-perfect mixer
+  ape-decoder          crossfade    volume (only when no system/hw volume) →      Direct USB (loss-usb)
+  DSF/DFF reader       AutoMix      limiter → resample to sink rate →             cpal (desktop shared)
+  network readers      decks        dither to sink bit depth                      WASAPI excl. / ALSA hw / CoreAudio
+                                                                                  Cast / Link (network)
+```
+
+* **Bit-perfect path**: when no DSP is active and the sink accepts the source rate and depth, samples
+  pass as integers without float conversion. Any active stage marks the path "not bit-perfect", with
+  the reason shown in the audio-info sheet.
+* **Sample-accurate position**: position = frames delivered to the sink minus sink latency, so seek,
+  lyrics and gapless joins line up exactly.
+* **Gapless**: the scheduler opens the next track early, applies encoder delay and padding (LAME/Xing,
+  iTunSMPB, Opus pre-skip), and writes it into the same ring buffer. When rates differ it reopens the
+  sink in under 100 ms.
+* **Formats**: MP3, AAC/M4A, ALAC, FLAC (up to 32-bit/768 kHz), Ogg Vorbis, Opus (Ogg/WebM/MKV),
+  WAV/AIFF/CAF (int and float), APE, DSD (DSF/DFF → DoP or PCM), and WavPack (see §12). CUE sheets,
+  external and embedded, become virtual tracks.
+
+### 4.2 Output selection and the owner's setup
+
+Phone: **Xiaomi 14 Ultra** (HyperOS, Android 14/15). Headphones: **Beats Studio Pro over USB-C**. Its
+built-in DAC accepts up to **24-bit / 48 kHz** over USB-C, and noise cancelling is off while wired.
+
+Output modes, chosen per device and remembered (M2-20):
+
+| Mode | How | Bit-perfect |
+|---|---|---|
+| Standard | AAudio shared through the system mixer | no (Android mixes and resamples) |
+| Hi-Res | AAudio at the source rate and 24/32-bit; Android may still resample | sometimes |
+| Bit-perfect (Android 14+) | `AudioManager.setPreferredMixerAttributes(MIXER_BEHAVIOR_BIT_PERFECT)` for the USB device, then AAudio at the track's rate | yes, if the phone supports it (checked at runtime) |
+| Direct USB | Loss claims the USB audio interface and streams over usbdevfs itself | yes |
+| Exclusive (DAPs) | AAudio MMAP exclusive at the track's rate | yes, where supported |
+
+Rate negotiation for a 48 kHz-maximum DAC like the Beats:
+
+* 44.1 kHz and 48 kHz sources play at their own rate (bit-perfect at 16 or 24 bit).
+* 88.2 and 176.4 kHz → 44.1 kHz; 96 and 192 kHz → 48 kHz. These are integer-ratio, high-quality sinc
+  downsampling (rubato), staying in 24-bit with TPDF dither only where precision is lost.
+* DSD → PCM at 44.1 kHz family (DoP needs a DAC that supports it; the Beats doesn't).
+* Volume: Direct USB uses the DAC's hardware volume (UAC feature unit) when present. Otherwise the
+  phone's media volume. Digital volume is only a fallback, and then with dither.
+
+### 4.3 DSP blocks (loss-dsp)
+
+Biquad EQ (graphic 5/10/15/31 ISO bands plus parametric peaking/shelf/HP/LP), bass and treble shelves,
+balance, pre-amp, auto headroom, true-peak limiter (−0.5 dBFS), compressor, BS2B crossfeed, WSOLA and
+phase-vocoder time-stretch, rubato resampler presets (Fast/Medium/High/Best), TPDF and high-pass TPDF
+dither, silence detector, beat/onset tracker. Every block has tests for frequency response, gain and
+latency, using generated sine sweeps.
+
+### 4.4 Direct USB (loss-usb)
+
+1. Kotlin asks `UsbManager` for permission, then passes the opened file descriptor to Rust.
+2. Rust parses descriptors (UAC 1/2/3: interfaces, alt settings, formats, bit resolutions, clock
+   sources and ranges, feature units, endpoints and sync type).
+3. It claims the streaming interface (detaching the kernel driver), selects the alt setting, and sets
+   the sample rate.
+4. It streams isochronous OUT URBs through `USBDEVFS_SUBMITURB`/`REAPURB` ioctls (`rustix`). It
+   honours the asynchronous feedback endpoint and sizes packets for the 44.1 kHz family.
+5. On stop or unplug it releases the interface so Android's own driver takes the DAC back.
+
+`nusb` handles control transfers and descriptors if it can wrap an Android fd; otherwise the same ioctls
+are used directly. Fallback if a phone blocks usbdevfs isochronous transfers: `libusb1-sys` (vendored C).
+
+## 5. Data storage (loss-store, redb)
+
+| Table | Key → value |
+|---|---|
+| tracks | track id → path/URI, tags, format, bit depth, rate, duration, ReplayGain, mtime, source, ISRC, fingerprint |
+| albums / artists | derived ids → aggregates (rebuilt incrementally) |
+| folders | folder id → URI, last scan, state (online/offline) |
+| playlists, playlist_items | playlist id → name, cover, rules (smart), ordered track ids |
+| collections | (kind, id) → loved / wishlist / favourite artist entries |
+| play_events | timestamp → track id, ms listened, source, completed/skipped |
+| downloads, download_history | job id → request, status; history entries |
+| lyrics_cache, translations | track id → parsed lyrics, provider, offset, translations |
+| analysis | track id → loudness, DR, spectrum summary, song features, hi-res verdict |
+| network_sources | connection id → protocol, host, options (secrets in the vault) |
+| settings | key → typed value (see §7) |
+| kv | misc (schema version, last run times) |
+
+The library loads into memory-light indexes at startup: 50,000 tracks in under 1 s on the Xiaomi.
+Migrations are versioned and tested with fixture databases.
+
+## 6. UI (app/)
+
+* Dioxus 0.7 in the Android System WebView (Chromium). The decision is to stay on Dioxus. Revisit only
+  if virtualized lists can't hold 60 fps on the Xiaomi; the fallback would be Dioxus Native (Blitz).
+* **Router**: a stack per tab plus modal layers (sheets, dialogs, player). Android Back pops the top
+  layer; at the root of Home it moves the task to the background. Predictive back on Android 14+.
+* **Components**: virtualized list/grid, bottom sheet, dialog, context menu (long-press and
+  right-click), snackbar with undo, swipe rows, pinch-zoom grid, fast scroller, marquee text, wavy
+  slider, chips, segmented buttons, switches, steppers, cookie button, cover with fly-in (FLIP) transition.
+* **Theme**: Material 3 tokens generated in Rust (`ui/theme.rs`) from the album art, wallpaper (Material
+  You) or accent; light, dark and AMOLED; Material and Glass styles; interface scale; animation-speed
+  multiplier; reduced motion.
+* **Icons**: Material Symbols Rounded, embedded as a subsetted font.
+* **Text**: every string goes through Fluent (`t!("key")`); RTL layouts for Arabic.
+* **Layouts**: phone portrait, phone landscape, tablet (navigation rail, two-pane), TV (D-pad focus),
+  desktop (tables, menus, window modes, mini-player window).
+* **Haptics**: `HapticFeedbackConstants` and `Vibrator` through the bridge.
+
+## 7. Settings
+
+A single registry describes every setting: key, type, default, section, title and description keys,
+search keywords, platforms, and whether it needs a restart. The registry drives the settings screens,
+settings search, backup/restore and migration. All 174 Mornye settings are mapped in
+[PARITY.md](PARITY.md) Appendix A.
+
+## 8. Android glue (android/glue)
+
+A Gradle library module merged into the app. Preferred: bundle it through Dioxus' Android artifact
+mechanism (the `dx` CLI 0.7.10 copies Gradle source modules declared through manganis
+`AndroidArtifactMetadata`). Fallback: `scripts/build-android.sh` patches the generated Gradle project.
+
+| Class | Job |
+|---|---|
+| `MainActivity` | permissions, Back → Rust, keep-screen-on, window flags, intents (VIEW/SEND/PROCESS_TEXT) |
+| `LossBridge` / `LossNative` | static calls from Rust; native `onEvent(kind, json)` into Rust |
+| `PlaybackService` | MediaSession, media notification, audio focus, becoming-noisy, wake lock |
+| `DownloadService` | dataSync foreground service and notifications for downloads, scans and conversions |
+| `UsbAccess` | USB permission, attach/detach events, fd hand-off |
+| `AudioRoutes` | AudioDeviceCallback, mixer attributes (bit-perfect), spatializer info |
+| `Vault` | Android Keystore key wrap/unwrap |
+| `PlayerWidget`, `DownloadsWidget` (+ config activity) | RemoteViews from Rust state |
+| `AutoBrowserService` | Android Auto media browsing |
+| `CoverProvider` | content:// artwork for Auto, widgets and notification |
+| `Saf` | tree picker, persisted permissions, fd opening, MediaStore delete requests |
+| `Installer` | PackageInstaller sessions for the in-app updater |
+
+## 9. Networking
+
+* One `reqwest` client (rustls). Per-connection certificate pinning for self-signed servers
+  (custom `ServerCertVerifier`). Cleartext HTTP only for approved hosts and the local network; this
+  replaces today's allow-all manifest flag.
+* Polite clients: MusicBrainz at 1 request/s with a generic `Loss/<version>` user agent and no personal
+  data, caching, and backoff on 429 and 503.
+* Streaming reader: HTTP Range and SMB reads behind `symphonia::MediaSource`, with read-ahead and
+  reconnect.
+
+## 10. Extensions (loss-ext)
+
+WebAssembly modules run in `wasmi` (pure Rust), with fuel and memory limits. A manifest declares id,
+version, minimum app version, capabilities and allowed network domains. Capabilities: metadata, lyrics,
+artwork, home feed, search, URL handler, and legal download catalogue (returns direct file URLs plus
+licence). Host API: HTTP fetch (allow-listed), storage, settings and account forms, browser sign-in
+callback, logging. There are **no crypto or decryption host functions**. Repositories are GitHub repos
+with a signed `registry.json` (ed25519).
+
+## 11. Security
+
+* Vault: AES-GCM file whose key is wrapped by Android Keystore (desktop: OS keyring via `keyring`).
+* Link: pairing code plus TLS with pinned self-signed certificates (`rcgen`/`rustls`); per-device
+  revocation.
+* Extensions are sandboxed (see §10). Zip extraction is guarded against path traversal (exists).
+  Every network input is size-limited.
+
+## 12. Third-party code that isn't pure Rust
+
+| Piece | Why | Status |
+|---|---|---|
+| Android Kotlin glue | Android entry points require JVM classes | planned, kept minimal |
+| SQLite | not used; redb instead | — |
+| ring (rustls crypto) | assembly for speed | already used |
+| libusb (fallback only) | only if usbdevfs isochronous transfers fail on a device | contingency |
+| WavPack | no mature pure-Rust decoder yet | M2-08 decides: port vs `wavpack` binding |
+| MP3 / AAC / Opus encoders (conversion) | no mature pure-Rust encoders | M4-20 decides: Android MediaCodec (platform) first |
+| Discord Social SDK (Android) | Discord's mobile presence needs it | M8-13 |
+| iOS WidgetKit (Swift) | Apple requires Swift for widgets | optional, M10-11 |
+
+## 13. External services
+
+| Service | Used for | Key |
+|---|---|---|
+| LRCLIB | lyrics | none |
+| NetEase, QQ Music | lyrics (word-synced, translation) | none (unofficial; optional, user-enabled) |
+| Musixmatch | lyrics | user's API key |
+| MusicBrainz + Cover Art Archive | tags, covers, releases, events | none (rate limit) |
+| AcoustID | fingerprint lookups | free app key (owner registers) |
+| Song.link (Odesli) | open in other services | none |
+| Last.fm | scrobbling, artist info | owner's API key and secret |
+| ListenBrainz | scrobbling, fresh releases | user token |
+| AudD or ACRCloud | identify a song from the mic | user's key |
+| Bandsintown / Ticketmaster, setlist.fm | concerts, set lists | keys |
+| OpenAI-compatible (incl. Ollama, LM Studio) | lyrics translation | user's key or local server |
+| Internet Archive, Jamendo, iTunes podcast search | legal downloads (exist) | Jamendo client id |
+| Discord | status | owner's application id |
+
+## 14. Testing and CI
+
+* `cargo test` for every crate. DSP and engine tests use generated signals: frequency response,
+  gapless joins at sample level, resampler passband and aliasing, dither statistics.
+* Desktop UI smoke test: `scripts/ui-smoke.sh` (Xvfb, PulseAudio null sink, xdotool tour, screenshots).
+* GitHub Actions: fmt, clippy, tests, Android APK build (arm64 and x86_64). Emulator smoke test with
+  screenshot and logcat. Tagged releases with a signed APK.
+* Device checks on the owner's phone: [DEVICE-TESTS.md](DEVICE-TESTS.md).
+
+## 15. Reference: Mornye
+
+Pinned at commit `c4a1c7b` (5.4.0). `scripts/fetch-mornye.sh` clones it to a scratch folder, never into
+this repo. Useful paths when implementing a feature:
+
+* UI text, as the best spec of behaviour: `lib/l10n/arb/app_en.arb`
+* Settings and defaults: `lib/models/settings.dart`, `theme_settings.dart`, `equalizer_settings.dart`
+* Screens: `lib/screens/`. Widgets: `lib/widgets/`. Services: `lib/services/`
+* Android: `android/app/src/main/` (manifest, Kotlin, widget layouts)
+* Rust backend: `rust_backend/crates/` (core, network, providers, link, cast, mobile)
+
+Mornye is LGPL-3.0. Loss re-implements behaviour; it doesn't copy Mornye's code, names, logos or theme
+branding.

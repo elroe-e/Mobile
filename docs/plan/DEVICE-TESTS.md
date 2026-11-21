@@ -1,0 +1,66 @@
+# Phone checks
+
+Things that can only be confirmed on the owner's phone. After a milestone lands, Claude lists the round
+to run, and the owner reports results (or sends logs). Phone: **Xiaomi 14 Ultra** (HyperOS).
+Headphones: **Beats Studio Pro** on the USB-C cable. Their own DAC handles up to 24-bit/48 kHz, and noise
+cancelling is off while wired, which is normal for these headphones.
+
+## Before every round
+
+1. Install the newest APK over the old one (from the chat, or later from CI/releases).
+2. HyperOS: Settings → Apps → Loss → **Autostart: on**, **Battery saver: No restrictions**.
+3. Sending logs:
+   - until M0-11 lands, connect a computer with USB debugging on and run
+     `adb logcat -d -s Loss AndroidRuntime > loss-log.txt`;
+   - after M0-11, use Settings → Logs → Share.
+
+Mark each line ✅ or ❌, with a note for anything odd.
+
+## Round M1 (problems fixed + first full phone check)
+
+Playback and controls
+- [ ] Play an album. The notification shows title, artist and cover, and its buttons work.
+- [ ] Lock the phone: lock-screen controls work, and seeking from the lock screen works.
+- [ ] Beats buttons on the cable (play/pause, next) control Loss.
+- [ ] The volume slider in Loss moves the phone's volume and the % matches; the phone's volume buttons
+      move Loss' slider.
+- [ ] Press Back on an album page: you return to the library (the app doesn't close).
+
+Interruptions
+- [ ] Receive a phone call while playing: music pauses, then resumes after the call.
+- [ ] Start a video in another app: Loss pauses.
+- [ ] Unplug the USB-C cable while playing: music **pauses** and doesn't come out of the speaker.
+
+Formats and gapless
+- [ ] An `.opus` file plays and seeks.
+- [ ] A live or continuous album (tracks that flow into each other) plays with no gap between tracks.
+
+Background
+- [ ] Start a 20-song download, turn the screen off for 10 minutes: the downloads finish, and a
+      notification shows progress.
+- [ ] Play music with the screen off for 30 minutes: it doesn't stop.
+
+Security
+- [ ] Settings → My server: after restarting the phone, the server still connects without retyping the
+      password.
+
+## Round M2 (hi-fi audio with the Beats)
+
+- [ ] Settings → Audio output → **DAC probe** with the Beats plugged in → Copy report → send it to
+      Claude. This tells us exactly what the Beats accept.
+- [ ] Output mode **Bit-perfect** (if offered): a 16/44.1 FLAC shows "Bit-perfect: yes" in audio info.
+- [ ] Output mode **Direct USB**: Android asks for USB permission once; 16/44.1, 24/44.1, 16/48 and
+      24/48 files show "Bit-perfect: yes".
+- [ ] A 24/96 file shows "resampled to 48 kHz (Best)" and sounds clean (no clicks or crackle).
+- [ ] Unplug and replug during playback: playback pauses, then works again after pressing play.
+- [ ] Direct USB volume: the hardware volume control changes loudness smoothly; first-use loudness
+      warning appears.
+- [ ] Equalizer and AutoEq "Beats Studio Pro" profile: on/off sounds different; in Bit-perfect mode the
+      app explains that EQ is bypassed.
+- [ ] ReplayGain album mode: loud and quiet albums play at similar loudness.
+- [ ] Battery: one hour of FLAC playback with the screen off, note the battery drop.
+
+## Later rounds
+
+Claude adds a section here for each milestone with phone-only behaviour (widgets, Android Auto, Cast,
+Link, TV, haptics, scrobbling…).

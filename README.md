@@ -92,8 +92,8 @@ cargo test -p loss-download --test manager -- --ignored   # live Internet Archiv
 Google Sans Flex is © The Google Sans Flex Authors and is used under the SIL
 Open Font License 1.1 (`app/assets/fonts/OFL.txt`).
 
-## Not done yet
+## Roadmap
 
-- Equalizer, home-screen widgets, Android Auto, and USB DAC bit-perfect output.
-- An Android folder picker. For now, folders are typed in or picked from
-  suggestions.
+Loss is working toward full parity with Mornye 5.4, and beyond, in pure Rust. The plan, the feature-by-feature
+parity matrix and progress live in [`docs/plan/`](docs/plan/PLAN.md); `CLAUDE.md` explains how each
+work session picks up where the last one stopped.
