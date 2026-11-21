@@ -8,8 +8,10 @@ pub struct SubsonicConfig {
     /// e.g. https://music.example.com
     pub url: String,
     pub username: String,
-    /// Stored in the app's private storage. Used to build salted tokens;
-    /// never sent in clear text.
+    /// Lives in the encrypted vault, never in the settings file (it is filled
+    /// in when the app reads settings). Used to build salted tokens; never
+    /// sent in clear text.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub password: String,
 }
 

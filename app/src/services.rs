@@ -4,6 +4,7 @@
 use crate::platform::{self, Paths};
 use base64::Engine as _;
 use loss_audio::Player;
+use loss_core::vault::{names, Vault};
 use loss_core::{Library, Settings, TrackOrigin};
 use loss_download::{DownloadManager, ManagerConfig};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -16,6 +17,10 @@ pub struct Services {
     pub player: Player,
     pub downloads: DownloadManager,
     library: Mutex<Library>,
+    /// Encrypted secrets; None if the platform couldn't provide a key.
+    vault: Mutex<Option<Vault>>,
+    /// Fallback when there is no vault: secrets kept only while the app runs.
+    memory_secrets: Mutex<HashMap<String, String>>,
     settings: Mutex<Settings>,
     /// Bumped whenever the library changes, so the UI knows to refresh.
     pub library_version: AtomicU64,
@@ -42,7 +47,7 @@ impl Services {
         let _ = std::fs::create_dir_all(&paths.data);
         crate::diag::set_dir(&paths.data.join("logs"));
         let settings_path = paths.data.join("settings.json");
-        let settings = Settings::load(&settings_path).unwrap_or_else(|| {
+        let mut settings = Settings::load(&settings_path).unwrap_or_else(|| {
             let s = Settings {
                 download_dir: paths.downloads.clone(),
                 music_folders: paths
@@ -59,6 +64,16 @@ impl Services {
         });
         let _ = std::fs::create_dir_all(&settings.download_dir);
         crate::diag::set_detailed(settings.detailed_logging);
+
+        // Secrets live in the encrypted vault; move any left in settings.json.
+        let mut vault = platform::vault_key(&paths.data)
+            .map(|key| Vault::open(&paths.data.join("vault.bin"), key));
+        if vault.is_none() {
+            log::warn!("encrypted storage unavailable; passwords last until the app closes");
+        }
+        if move_secrets(&mut settings, vault.as_mut()) {
+            let _ = settings.save(&settings_path);
+        }
         log::info!(
             "Loss {} starting; data in {}",
             env!("CARGO_PKG_VERSION"),
@@ -80,6 +95,8 @@ impl Services {
             downloads,
             library: Mutex::new(library),
             settings: Mutex::new(settings),
+            vault: Mutex::new(vault),
+            memory_secrets: Mutex::new(Default::default()),
             library_version: AtomicU64::new(1),
             scanning: AtomicBool::new(false),
             system_volume: std::sync::atomic::AtomicU32::new(
@@ -94,14 +111,46 @@ impl Services {
         lock(&self.library)
     }
 
+    /// Settings with secrets filled in from the vault.
     pub fn settings(&self) -> Settings {
-        lock(&self.settings).clone()
+        let mut s = lock(&self.settings).clone();
+        if let Some(sub) = s.subsonic.as_mut() {
+            sub.password = self.secret(names::SUBSONIC_PASSWORD).unwrap_or_default();
+        }
+        s
     }
 
+    fn secret(&self, name: &str) -> Option<String> {
+        match lock(&self.vault).as_ref() {
+            Some(v) => v.get(name).map(str::to_string),
+            None => lock(&self.memory_secrets).get(name).cloned(),
+        }
+    }
+
+    /// Changes settings and saves them. Secrets set by `f` go to the vault,
+    /// never to settings.json.
     pub fn update_settings(&self, f: impl FnOnce(&mut Settings)) {
         let s = {
             let mut s = lock(&self.settings);
             f(&mut s);
+            let mut vault = lock(&self.vault);
+            if vault.is_some() {
+                move_secrets(&mut s, vault.as_mut());
+            } else {
+                let mut mem = lock(&self.memory_secrets);
+                match s.subsonic.as_mut() {
+                    Some(sub) if !sub.password.is_empty() => {
+                        mem.insert(
+                            names::SUBSONIC_PASSWORD.into(),
+                            std::mem::take(&mut sub.password),
+                        );
+                    }
+                    Some(_) => {}
+                    None => {
+                        mem.remove(names::SUBSONIC_PASSWORD);
+                    }
+                }
+            }
             s.clone()
         };
         let _ = s.save(&self.paths.data.join("settings.json"));
@@ -240,6 +289,29 @@ impl Services {
     }
 }
 
+/// Moves secrets out of `s` into the vault. Removing the server removes its
+/// password. Returns whether `s` changed.
+fn move_secrets(s: &mut Settings, vault: Option<&mut Vault>) -> bool {
+    let Some(vault) = vault else { return false };
+    match s.subsonic.as_mut() {
+        Some(sub) if !sub.password.is_empty() => {
+            if let Err(e) = vault.set(names::SUBSONIC_PASSWORD, &sub.password) {
+                log::error!("can't store the server password: {e}");
+                return false;
+            }
+            sub.password.clear();
+            true
+        }
+        Some(_) => false,
+        None => {
+            if vault.get(names::SUBSONIC_PASSWORD).is_some() {
+                let _ = vault.set(names::SUBSONIC_PASSWORD, "");
+            }
+            false
+        }
+    }
+}
+
 fn manager_config(s: &Settings) -> ManagerConfig {
     ManagerConfig {
         dir: s.download_dir.clone(),
@@ -375,4 +447,40 @@ fn load_cover(
         base64::engine::general_purpose::STANDARD.encode(bytes)
     );
     (Some(uri), color)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use loss_core::SubsonicConfig;
+
+    #[test]
+    fn passwords_move_to_the_vault_and_never_reach_settings_json() {
+        let dir = std::env::temp_dir().join(format!("loss-secrets-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut vault = Vault::open(&dir.join("vault.bin"), loss_core::vault::new_key().unwrap());
+        let mut s = Settings {
+            subsonic: Some(SubsonicConfig {
+                url: "https://music.example".into(),
+                username: "me".into(),
+                password: "hunter2".into(),
+            }),
+            ..Default::default()
+        };
+        assert!(move_secrets(&mut s, Some(&mut vault)));
+        assert_eq!(vault.get(names::SUBSONIC_PASSWORD), Some("hunter2"));
+        let path = dir.join("settings.json");
+        s.save(&path).unwrap();
+        let json = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !json.contains("hunter2") && !json.contains("password"),
+            "{json}"
+        );
+
+        // Removing the server removes its password.
+        s.subsonic = None;
+        move_secrets(&mut s, Some(&mut vault));
+        assert_eq!(vault.get(names::SUBSONIC_PASSWORD), None);
+        std::fs::remove_dir_all(dir).ok();
+    }
 }

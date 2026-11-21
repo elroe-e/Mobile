@@ -6,6 +6,7 @@ pub mod lrc;
 pub mod playlist;
 pub mod settings;
 pub mod tags;
+pub mod vault;
 
 pub use library::{Album, Artist, Library, ScanReport, Track, TrackOrigin};
 pub use settings::{Settings, SubsonicConfig};

@@ -144,6 +144,31 @@ pub mod android {
         });
     }
 
+    fn call_bytes(method: &str, input: &[u8]) -> Option<Vec<u8>> {
+        with_env(|env, act| {
+            let cls = bridge_class(env, act)?;
+            let arr = env.byte_array_from_slice(input)?;
+            let out = env
+                .call_static_method(&cls, method, "([B)[B", &[JValue::Object(&arr)])?
+                .l()?;
+            if out.is_null() {
+                return Ok(None);
+            }
+            Ok(Some(
+                env.convert_byte_array(jni::objects::JByteArray::from(out))?,
+            ))
+        })
+        .flatten()
+    }
+
+    pub fn wrap_key(raw: &[u8]) -> Option<Vec<u8>> {
+        call_bytes("wrapKey", raw)
+    }
+
+    pub fn unwrap_key(wrapped: &[u8]) -> Option<Vec<u8>> {
+        call_bytes("unwrapKey", wrapped)
+    }
+
     pub fn diagnostics() -> Option<String> {
         with_env(|env, act| {
             let cls = bridge_class(env, act)?;
@@ -408,6 +433,45 @@ pub fn share_text(subject: &str, text: &str) -> bool {
     {
         let _ = (subject, text);
         false
+    }
+}
+
+/// The vault's key. On Android it is stored encrypted by an Android Keystore
+/// key (`vault.key` holds only the wrapped form); on desktop development
+/// builds it is a private file. None if no key can be made or recovered.
+pub fn vault_key(data_dir: &std::path::Path) -> Option<[u8; 32]> {
+    use loss_core::vault::{new_key, KEY_LEN};
+    let path = data_dir.join("vault.key");
+    let to_key = |v: Vec<u8>| -> Option<[u8; 32]> { v.try_into().ok() };
+    #[cfg(target_os = "android")]
+    {
+        if let Ok(wrapped) = std::fs::read(&path) {
+            if let Some(key) = android::unwrap_key(&wrapped).and_then(to_key) {
+                return Some(key);
+            }
+            log::warn!("vault key can't be unlocked; making a new one");
+        }
+        let key = new_key().ok()?;
+        let wrapped = android::wrap_key(&key)?;
+        std::fs::write(&path, wrapped).ok()?;
+        let _ = KEY_LEN;
+        Some(key)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        if let Ok(raw) = std::fs::read(&path) {
+            if raw.len() == KEY_LEN {
+                return to_key(raw);
+            }
+        }
+        let key = new_key().ok()?;
+        std::fs::write(&path, key).ok()?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        }
+        Some(key)
     }
 }
 

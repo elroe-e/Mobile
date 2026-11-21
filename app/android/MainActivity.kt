@@ -42,6 +42,13 @@ import android.os.Looper
 import android.os.PowerManager
 import android.view.KeyEvent
 import java.io.File
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
 import java.util.concurrent.ConcurrentLinkedQueue
 
 typealias BuildConfig = app.loss.player.BuildConfig
@@ -175,6 +182,44 @@ object LossBridge {
                 else -> LossDownloadService.notifyIdle(app)
             }
         }
+    }
+
+    // ---- Vault key (M1-07): Rust's vault key, encrypted by an Android Keystore key ----
+
+    private fun keystoreKey(): SecretKey {
+        val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (ks.getKey("loss_vault", null) as? SecretKey)?.let { return it }
+        val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        gen.init(
+            KeyGenParameterSpec.Builder("loss_vault", KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build()
+        )
+        return gen.generateKey()
+    }
+
+    /** Rust: encrypt the vault key. Returns IV (12 bytes) + ciphertext, or null. */
+    @JvmStatic
+    fun wrapKey(raw: ByteArray): ByteArray? = try {
+        val c = Cipher.getInstance("AES/GCM/NoPadding")
+        c.init(Cipher.ENCRYPT_MODE, keystoreKey())
+        c.iv + c.doFinal(raw)
+    } catch (e: Exception) {
+        android.util.Log.w("Loss", "vault key wrap failed: $e")
+        null
+    }
+
+    /** Rust: decrypt the vault key, or null if it can't be (e.g. Keystore reset). */
+    @JvmStatic
+    fun unwrapKey(wrapped: ByteArray): ByteArray? = try {
+        val c = Cipher.getInstance("AES/GCM/NoPadding")
+        c.init(Cipher.DECRYPT_MODE, keystoreKey(), GCMParameterSpec(128, wrapped, 0, 12))
+        c.doFinal(wrapped, 12, wrapped.size - 12)
+    } catch (e: Exception) {
+        android.util.Log.w("Loss", "vault key unwrap failed: $e")
+        null
     }
 
     /** Rust: put text on the clipboard. */
