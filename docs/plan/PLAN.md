@@ -25,7 +25,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 
 | Milestone | What it delivers | Tasks | Done | Rough size |
 |---|---|---|---|---|
-| M0 | Foundations: CI, glue module, bridge, store, settings, i18n, UI kit, diagnostics | 13 | 5 | 4–5 sessions |
+| M0 | Foundations: CI, glue module, bridge, store, settings, i18n, UI kit, diagnostics | 13 | 6 | 4–5 sessions |
 | M1 | The 7 problems fixed + phone verification | 8 | 7 | 2–3 sessions |
 | M2 | Audio engine v2, hi-fi output, USB, DSP | 24 | 0 | 8–10 sessions |
 | M3 | Player and queue | 16 | 0 | 3–4 sessions |
@@ -36,7 +36,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 | M8 | Home, discovery, stats, social, audio tools | 13 | 0 | 5–6 sessions |
 | M9 | Devices and platform integrations | 8 | 0 | 5–6 sessions |
 | M10 | Look, app shell, desktop, iOS, languages, release | 14 | 0 | 6–7 sessions |
-| **Total** | | **155** | **12** | **≈ 50–60 sessions** |
+| **Total** | | **155** | **13** | **≈ 50–60 sessions** |
 
 A "session" here means one working session of the length used so far. Numbers are estimates.
 
@@ -83,7 +83,7 @@ updated; this file's checkbox is ticked. Commit messages start with the task ID 
 - [x] **M0-02 CI.** GitHub Actions: `cargo fmt --check`, `clippy -D warnings`, `cargo test` for all
   crates; Android APK build with `dx` for arm64 and x86_64 (cache cargo, Gradle, SDK); upload APKs as
   artifacts. *Done when:* the workflow is green on push and the APK artifact installs.
-- [ ] **M0-03 Emulator smoke test.** CI job on ubuntu with KVM: API 34 x86_64 emulator; install, launch,
+- [x] **M0-03 Emulator smoke test.** CI job on ubuntu with KVM: API 34 x86_64 emulator; install, launch,
   wait 20 s, screenshot, `dumpsys media_session`, logcat; fail on `FATAL EXCEPTION` or Rust panic.
   *Done when:* the job uploads a screenshot showing Home.
 - [ ] **M0-04 Release workflow.** Tag `v*` → signed release APK + GitHub Release with notes from
