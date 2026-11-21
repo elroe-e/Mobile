@@ -3,6 +3,38 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-21 (session 3): foundations (M0-03, M0-05, M0-06, M0-07)
+
+- **M0-03** CI's Android job is a matrix (arm64 for the phone, x86_64 for the emulator). The x86_64
+  leg boots an API 34 emulator, installs with permissions granted, launches, and runs
+  `scripts/emulator-smoke.sh` (fails on Java/Rust/native crashes, a dead process, a missing start
+  line or a missing "platform bridge ready" line). Artifact `emulator-smoke` has the screenshot,
+  logcat, media sessions. Android jobs run on PRs, main and manual runs: trigger `ci.yml` with
+  workflow_dispatch on the branch to get them. The screenshot showed one UI flaw: at 320 px the
+  "Discover"/"Downloads" tab labels touch (fix in M0-10/M10).
+- **M0-05** Kotlin lives in `android/glue/` (package `app.loss.glue`), bundled by dx via the
+  `manganis::ffi` block in `app/src/glue.rs` (becomes `:plugins:lossglue`). The glue manifest holds
+  permissions and services; `MainActivity` stays in `app/android/` (it must extend `WryActivity`).
+  First glue resource: the music-note notification icon.
+- **M0-06** New `crates/loss-platform`: `Event` parsing and `FocusPolicy` (pause/resume decisions for
+  calls, other apps and unplugging, 13 tests). Kotlin `LossBridge.emit` → `LossNative.onEvent`,
+  registered with `RegisterNatives`; events from before registration are queued and flushed by
+  `nativeReady`. The `loss-events` thread blocks on a channel; polling of commands and volume is
+  gone. The `loss-media` thread still ticks (300 ms) to push state out, until M2-01 adds engine
+  events. New behaviour: pausing during a call cancels the resume afterwards.
+- **M0-07** New `crates/loss-store` (redb 5, `loss.redb`): `tracks`, `settings`, `kv`, schema 1,
+  JSON values, migrations, newer-schema refusal, reset-aside for unreadable files, one-time import
+  of `library.json`/`settings.json` (kept as `*.json.imported`; passwords scrubbed into the vault
+  first). The app saves only changed songs. 50k songs load in ~0.1 s (release desktop); CI runs it.
+- Device report from the owner is in `docs/plan/reports/`: the Beats take 32/48 kHz only and the phone
+  has no bit-perfect mixer; M2 was re-planned around that (Loss resamples 44.1 → 48 itself).
+- Not verified on the phone yet: everything Kotlin (Round M1, now including the bridge, storage
+  migration and the new notification icon). The owner hasn't sent Round M1 results.
+- Gotchas: a push cancels a running CI run on the same branch (concurrency group), so wait for a
+  manual run to finish before pushing. `cargo clippy --target aarch64-linux-android` works locally
+  with the NDK clang in `CC_aarch64_linux_android` and catches Android-only lints CI doesn't see.
+- Next: M0-08 settings registry (with search), then M0-09 i18n, M0-10 UI kit, M0-12, M0-13.
+
 ## 2026-11-21 (session 2): CI and the seven problems (M0-02, M0-11, M1-01 … M1-07)
 
 - **Device report received** (`docs/plan/reports/2026-11-21-xiaomi-beats.txt`). Android 16. The Beats

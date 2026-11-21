@@ -42,14 +42,12 @@ A "session" here means one working session of the length used so far. Numbers ar
 
 ## Next up
 
-1. **M1-08** Phone round on the Xiaomi with the Beats (DEVICE-TESTS "Round M1"). The APK with all
-   M1 fixes is built; fix whatever the owner reports first.
-2. **M0-03** Emulator smoke test in CI (needs an x86_64 APK build in CI).
-3. **M0-05** Android glue module, then **M0-06** bridge (events are already direct native calls;
-   finish by removing the polling fallback).
-4. **M0-07** Database, **M0-08** settings registry, **M0-09** i18n, **M0-10** UI kit (the minimal
-   router from M1-04 grows into it), **M0-12** test harness, **M0-13** HyperOS reliability.
-5. Then **M2** (audio engine, hi-fi output for the Beats). The device report is in
+1. **M1-08** Phone round on the Xiaomi with the Beats (DEVICE-TESTS "Round M1"). Fix whatever the
+   owner reports first. The newest APK also carries the glue module, the event bridge and the database.
+2. **M0-08** Settings registry with search, then **M0-09** i18n, **M0-10** UI kit (fix the tab labels
+   touching at 320 px, seen in the emulator screenshot), **M0-12** test harness, **M0-13** HyperOS
+   reliability, **M0-04** release workflow (needs decision D3, the signing key).
+3. Then **M2** (audio engine, hi-fi output for the Beats). The device report is in
    (`docs/plan/reports/2026-11-21-xiaomi-beats.txt`): the Beats take 32/48 kHz only and this phone has
    no bit-perfect mixer. So the order is **M2-01**, **M2-07** (our own 44.1 → 48 kHz resampling, which
    affects most of the library), **M2-02**, **M2-03**, **M2-06** (raw descriptors), then **M2-05**
