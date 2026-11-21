@@ -2890,6 +2890,7 @@ dependencies = [
  "loss-audio",
  "loss-core",
  "loss-download",
+ "manganis",
  "ndk-context",
  "serde_json",
  "tokio",

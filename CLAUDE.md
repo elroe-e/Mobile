@@ -27,8 +27,9 @@ no bit-perfect mixer on this phone, see `docs/plan/reports/`).
 
 ## Rules
 
-* **Rust for all logic.** Kotlin only for Android entry points, kept in `app/android/` now and
-  `android/glue/` after M0-05; Kotlin forwards to Rust and decides nothing. Prefer pure-Rust crates;
+* **Rust for all logic.** Kotlin only for Android entry points: the activity in
+  `app/android/MainActivity.kt`, everything else in `android/glue/` (package `app.loss.glue`).
+  Kotlin forwards to Rust and decides nothing. Prefer pure-Rust crates;
   any C dependency goes in ARCHITECTURE §12 with a reason.
 * **Legal sources only.** Never add downloading from streaming services, DRM circumvention, stream
   decryption, or extension host functions for that. Mornye's streaming downloads are out of scope.
@@ -48,6 +49,7 @@ app/src/ui/            Dioxus screens (home, library, now_playing, discover, dow
 app/src/{services,media,platform}.rs   app services, Android media bridge, JNI helpers
 app/src/{diag,nav,notify}.rs           logging/crash reports, Back plumbing, downloads notification
 app/android/           AndroidManifest.xml + MainActivity.kt (used verbatim by dx, see Dioxus.toml)
+android/glue/          Kotlin glue as a Gradle library: services, bridge, manifest fragment, res/
 app/assets/            style.css (embedded with include_str!), fonts
 docs/plan/             PLAN, PARITY, ARCHITECTURE, DEVICE-TESTS, PROGRESS
 scripts/               setup-env, build-android, check-plan, fetch-mornye
@@ -89,6 +91,10 @@ plays instantly. Set `HOME`/`LOSS_DATA_DIR` to a scratch dir, drive it with `xdo
   `with_local_frame`.
 * Gradle sometimes gets HTTP 429 from Maven Central: rerun `./gradlew assembleRelease` inside
   `target/dx/loss/release/android/app`.
+* The glue module is bundled by `dx` because `app/src/glue.rs` has a `manganis::ffi` block pointing at
+  `android/glue` (it becomes `:plugins:lossglue`). Permissions and services go in the glue's manifest;
+  Rust looks classes up as `app.loss.glue.*` and JNI exports are `Java_app_loss_glue_*`.
+* `scripts/emulator-smoke.sh <apk>` checks a build on an emulator or a phone over adb (M0-03).
 * cpal 0.16 uses AAudio on Android (0.15 needed C++ Oboe). Symphonia 0.5/0.6 have no Opus decoder.
 * The desktop test environment's WebKitGTK reports a light theme; set the theme in settings for
   dark-mode screenshots.

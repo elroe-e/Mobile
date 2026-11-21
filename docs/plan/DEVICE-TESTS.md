@@ -23,7 +23,8 @@ the text to Claude. It lists what Android reports for the Beats (sample rates, f
 this phone offers bit-perfect playback to them), which shapes M2.
 
 Playback and controls
-- [ ] Play an album. The notification shows title, artist and cover, and its buttons work.
+- [ ] Play an album. The notification shows title, artist and cover, and its buttons work. The
+      status-bar icon is a music note.
 - [ ] Lock the phone: lock-screen controls work, and seeking from the lock screen works.
 - [ ] Beats buttons on the cable (play/pause, next) control Loss.
 - [ ] The volume slider in Loss moves the phone's volume and the % matches; the phone's volume buttons

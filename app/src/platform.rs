@@ -74,7 +74,7 @@ pub mod android {
     /// `LossNative.command(cmd)`: playback commands from the notification,
     /// lock screen, headset buttons, audio focus and unplug events.
     #[no_mangle]
-    pub extern "system" fn Java_dev_dioxus_main_LossNative_command<'local>(
+    pub extern "system" fn Java_app_loss_glue_LossNative_command<'local>(
         mut env: jni::JNIEnv<'local>,
         _class: jni::objects::JClass<'local>,
         cmd: JString<'local>,
@@ -88,14 +88,14 @@ pub mod android {
 
     /// `LossNative.back()`: returns whether the app handled Back itself.
     #[no_mangle]
-    pub extern "system" fn Java_dev_dioxus_main_LossNative_back<'local>(
+    pub extern "system" fn Java_app_loss_glue_LossNative_back<'local>(
         _env: jni::JNIEnv<'local>,
         _class: jni::objects::JClass<'local>,
     ) -> jni::sys::jboolean {
         crate::nav::request_back() as jni::sys::jboolean
     }
 
-    /// `dev.dioxus.main.LossBridge`, loaded through the activity's class loader
+    /// `app.loss.glue.LossBridge`, loaded through the activity's class loader
     /// (works from threads Rust created, where `FindClass` can't see app classes).
     pub fn bridge_class<'a>(
         env: &mut jni::JNIEnv<'a>,
@@ -104,7 +104,7 @@ pub mod android {
         let loader = env
             .call_method(act, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
             .l()?;
-        let name = env.new_string("dev.dioxus.main.LossBridge")?;
+        let name = env.new_string("app.loss.glue.LossBridge")?;
         let cls = env
             .call_method(
                 &loader,
