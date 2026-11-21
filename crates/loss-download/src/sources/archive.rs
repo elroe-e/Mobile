@@ -26,7 +26,10 @@ pub async fn search(
         page.max(1)
     );
     let v = get_json(client, &url).await?;
-    let docs = v["response"]["docs"].as_array().cloned().unwrap_or_default();
+    let docs = v["response"]["docs"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     Ok(docs
         .iter()
         .filter_map(|d| {
@@ -82,7 +85,11 @@ fn ext_of(name: &str) -> &str {
 
 /// Lists the audio files of one archive.org item, best format per track.
 pub async fn open(client: &reqwest::Client, id: &str) -> crate::Result<Vec<SearchItem>> {
-    let v = get_json(client, &format!("https://archive.org/metadata/{}", encode(id))).await?;
+    let v = get_json(
+        client,
+        &format!("https://archive.org/metadata/{}", encode(id)),
+    )
+    .await?;
     let md = &v["metadata"];
     let item_title = as_string(&md["title"]).unwrap_or_else(|| id.to_string());
     let item_creator = as_string(&md["creator"]);
@@ -97,7 +104,9 @@ pub async fn open(client: &reqwest::Client, id: &str) -> crate::Result<Vec<Searc
     let mut best: HashMap<String, (u8, serde_json::Value)> = HashMap::new();
     let mut order: Vec<String> = Vec::new();
     for f in files {
-        let Some(name) = as_string(&f["name"]) else { continue };
+        let Some(name) = as_string(&f["name"]) else {
+            continue;
+        };
         let Some(rank) = as_string(&f["format"]).and_then(|fm| format_rank(&fm)) else {
             continue;
         };
@@ -124,10 +133,13 @@ pub async fn open(client: &reqwest::Client, id: &str) -> crate::Result<Vec<Searc
             let name = as_string(&f["name"])?;
             let format = as_string(&f["format"]);
             let track_no = as_u32(&f["track"]);
-            let title = as_string(&f["title"]).unwrap_or_else(|| base.rsplit('/').next().unwrap_or(&base).to_string());
+            let title = as_string(&f["title"])
+                .unwrap_or_else(|| base.rsplit('/').next().unwrap_or(&base).to_string());
             let meta = TrackMeta {
                 title: Some(title.clone()),
-                artist: as_string(&f["creator"]).or_else(|| as_string(&f["artist"])).or(item_creator.clone()),
+                artist: as_string(&f["creator"])
+                    .or_else(|| as_string(&f["artist"]))
+                    .or(item_creator.clone()),
                 album: as_string(&f["album"]).or(Some(item_title.clone())),
                 album_artist: item_creator.clone(),
                 year: item_year,
@@ -138,7 +150,10 @@ pub async fn open(client: &reqwest::Client, id: &str) -> crate::Result<Vec<Searc
             let url = format!(
                 "https://archive.org/download/{}/{}",
                 encode(id),
-                name.split('/').map(|p| encode(p).into_owned()).collect::<Vec<_>>().join("/")
+                name.split('/')
+                    .map(|p| encode(p).into_owned())
+                    .collect::<Vec<_>>()
+                    .join("/")
             );
             let duration = as_f64(&f["length"]);
             let subtitle = meta.artist.clone().unwrap_or_default();

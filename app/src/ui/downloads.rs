@@ -17,7 +17,11 @@ pub fn DownloadsTab() -> Element {
         .iter()
         .any(|j| j.status.is_active() || j.status == JobStatus::Queued);
     let total_speed: f64 = jobs.iter().map(|j| j.speed_bps).sum();
-    let dir = services::get().settings().download_dir.display().to_string();
+    let dir = services::get()
+        .settings()
+        .download_dir
+        .display()
+        .to_string();
 
     rsx! {
         header { class: "page-header",

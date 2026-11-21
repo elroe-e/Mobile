@@ -1,7 +1,7 @@
 //! Library: songs, albums and artists from your folders and downloads.
 
 use super::icons::Icon;
-use super::{play_tracks, queue_items, shuffle_tracks, state, Cover, CookieButton, Tab};
+use super::{play_tracks, queue_items, shuffle_tracks, state, CookieButton, Cover, Tab};
 use crate::services;
 use dioxus::prelude::*;
 use loss_audio::Command;
@@ -85,7 +85,7 @@ fn LibraryMain(view: Signal<View>) -> Element {
     let (n_songs, n_albums, n_artists) = (songs.len(), albums.len(), artists.len());
     match sort() {
         Sort::Latest => {
-            songs.sort_by(|a, b| b.added_at.cmp(&a.added_at));
+            songs.sort_by_key(|t| std::cmp::Reverse(t.added_at));
             let added: std::collections::HashMap<String, u64> = lib
                 .tracks
                 .iter()
@@ -275,7 +275,12 @@ fn EmptyLibrary() -> Element {
 }
 
 #[component]
-pub fn SongRow(track: Track, ids: Vec<String>, index: usize, #[props(default = false)] show_cover: bool) -> Element {
+pub fn SongRow(
+    track: Track,
+    ids: Vec<String>,
+    index: usize,
+    #[props(default = false)] show_cover: bool,
+) -> Element {
     let st = state();
     let playing_id = st.player.read().current().map(|c| c.id.clone());
     let is_current = playing_id.as_deref() == Some(track.id.as_str());
@@ -327,7 +332,7 @@ pub fn SongRow(track: Track, ids: Vec<String>, index: usize, #[props(default = f
                         onclick: {
                             let id = id.clone();
                             move |_| {
-                                services::get().player.send(Command::PlayNext(queue_items(&[id.clone()])));
+                                services::get().player.send(Command::PlayNext(queue_items(std::slice::from_ref(&id))));
                                 menu.set(false);
                                 st.toast("Playing next");
                             }
@@ -339,7 +344,7 @@ pub fn SongRow(track: Track, ids: Vec<String>, index: usize, #[props(default = f
                         onclick: {
                             let id = id.clone();
                             move |_| {
-                                services::get().player.send(Command::Enqueue(queue_items(&[id.clone()])));
+                                services::get().player.send(Command::Enqueue(queue_items(std::slice::from_ref(&id))));
                                 menu.set(false);
                                 st.toast("Added to queue");
                             }
@@ -366,18 +371,26 @@ fn AlbumPage(album_key: String, view: Signal<View>) -> Element {
             p { class: "pad muted", "This album is no longer in your library." }
         };
     };
-    let tracks: Vec<Track> = album.tracks.iter().filter_map(|id| lib.get(id).cloned()).collect();
+    let tracks: Vec<Track> = album
+        .tracks
+        .iter()
+        .filter_map(|id| lib.get(id).cloned())
+        .collect();
     drop(lib);
     let ids = album.tracks.clone();
     let ids2 = ids.clone();
     let ids3 = ids.clone();
     let artist = album.artist.clone();
-    let badge = tracks.first().map(|t| t.quality_badge()).unwrap_or_default();
+    let badge = tracks
+        .first()
+        .map(|t| t.quality_badge())
+        .unwrap_or_default();
     let fmt = tracks.first().map(|t| t.format.clone()).unwrap_or_default();
     let year = album.year.map(|y| format!("{y} · ")).unwrap_or_default();
     let playing_here = {
         let p = st.player.read();
-        p.status == loss_audio::Status::Playing && p.current().map(|c| ids.contains(&c.id)).unwrap_or(false)
+        p.status == loss_audio::Status::Playing
+            && p.current().map(|c| ids.contains(&c.id)).unwrap_or(false)
     };
     rsx! {
         button { class: "back", onclick: move |_| view.set(View::Main), Icon { name: "back" } }
@@ -433,14 +446,21 @@ fn ArtistPage(name: String, view: Signal<View>) -> Element {
         .into_iter()
         .filter(|a| loss_core::normalize(&a.artist) == norm)
         .map(|a| {
-            let b = a.tracks.first().and_then(|id| lib.get(id)).map(|t| t.quality_badge()).unwrap_or_default();
+            let b = a
+                .tracks
+                .first()
+                .and_then(|id| lib.get(id))
+                .map(|t| t.quality_badge())
+                .unwrap_or_default();
             (a, b)
         })
         .collect();
     let songs: Vec<Track> = lib
         .tracks
         .iter()
-        .filter(|t| loss_core::normalize(&t.artist) == norm || loss_core::normalize(&t.album_artist) == norm)
+        .filter(|t| {
+            loss_core::normalize(&t.artist) == norm || loss_core::normalize(&t.album_artist) == norm
+        })
         .cloned()
         .collect();
     drop(lib);

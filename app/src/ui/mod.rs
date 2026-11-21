@@ -66,7 +66,8 @@ pub struct AppState {
 impl AppState {
     /// Show a short message; the app tick hides it after a moment.
     pub fn toast(mut self, msg: impl Into<String>) {
-        self.toast.set(Some((msg.into(), std::time::Instant::now())));
+        self.toast
+            .set(Some((msg.into(), std::time::Instant::now())));
     }
 
     pub fn settings_changed(mut self) {
@@ -148,7 +149,10 @@ pub fn App() -> Element {
     let svc = services::get();
     let mut player = use_signal(|| svc.player.state());
     let mut jobs = use_signal(|| svc.downloads.jobs());
-    let mut lib_version = use_signal(|| svc.library_version.load(std::sync::atomic::Ordering::SeqCst));
+    let mut lib_version = use_signal(|| {
+        svc.library_version
+            .load(std::sync::atomic::Ordering::SeqCst)
+    });
     let mut covers_version = use_signal(|| svc.covers_version());
     let mut scanning = use_signal(|| None);
     let tab = use_signal(|| Tab::Home);
@@ -219,7 +223,9 @@ pub fn App() -> Element {
             if *jobs.peek() != j {
                 jobs.set(j);
             }
-            let v = svc.library_version.load(std::sync::atomic::Ordering::SeqCst);
+            let v = svc
+                .library_version
+                .load(std::sync::atomic::Ordering::SeqCst);
             if *lib_version.peek() != v {
                 lib_version.set(v);
             }
@@ -234,7 +240,8 @@ pub fn App() -> Element {
             if *scanning.peek() != sc {
                 scanning.set(sc);
             }
-            let expired = matches!(&*toast.peek(), Some((_, t)) if t.elapsed() > Duration::from_millis(2600));
+            let expired =
+                matches!(&*toast.peek(), Some((_, t)) if t.elapsed() > Duration::from_millis(2600));
             if expired {
                 toast.set(None);
             }
@@ -250,7 +257,9 @@ pub fn App() -> Element {
     let seed_track = current_id.clone().or(settings.last_track.clone());
     let accent = theme::parse_hex(&settings.accent).unwrap_or([232, 97, 90]);
     let seed = if settings.dynamic_color {
-        seed_track.and_then(|id| svc.cover_color(&id)).unwrap_or(accent)
+        seed_track
+            .and_then(|id| svc.cover_color(&id))
+            .unwrap_or(accent)
     } else {
         accent
     };
@@ -339,11 +348,19 @@ fn MiniPlayer() -> Element {
     let (title, artist) = match &track {
         Some(t) => (t.title.clone(), t.artist.clone()),
         None => (
-            cur.path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string(),
+            cur.path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string(),
             String::new(),
         ),
     };
-    let pct = if p.duration > 0.0 { p.position / p.duration * 100.0 } else { 0.0 };
+    let pct = if p.duration > 0.0 {
+        p.position / p.duration * 100.0
+    } else {
+        0.0
+    };
     let playing = p.status == Status::Playing;
     rsx! {
         div { class: "mini-player", onclick: move |_| st.now_playing.set(true),
@@ -400,13 +417,25 @@ pub fn Slider(
     let tolerance = (max * 0.01).max(step);
     let shown = match (dragging(), held()) {
         (Some(v), _) => v,
-        (None, Some((v, t))) if (v - value).abs() > tolerance && t.elapsed() < Duration::from_millis(1500) => v,
+        (None, Some((v, t)))
+            if (v - value).abs() > tolerance && t.elapsed() < Duration::from_millis(1500) =>
+        {
+            v
+        }
         _ => value,
     };
     let max = max.max(0.0001);
     let pct = (shown / max * 100.0).clamp(0.0, 100.0);
-    let step_attr = if step > 0.0 { step.to_string() } else { "any".to_string() };
-    let cls = if dragging().is_some() { format!("slider dragging {class}") } else { format!("slider {class}") };
+    let step_attr = if step > 0.0 {
+        step.to_string()
+    } else {
+        "any".to_string()
+    };
+    let cls = if dragging().is_some() {
+        format!("slider dragging {class}")
+    } else {
+        format!("slider {class}")
+    };
     rsx! {
         input {
             r#type: "range",
@@ -454,7 +483,11 @@ fn cookie_path() -> &'static str {
 
 /// Big play/pause button on a cookie shape.
 #[component]
-pub fn CookieButton(playing: bool, #[props(default = 64)] size: u32, onclick: EventHandler<MouseEvent>) -> Element {
+pub fn CookieButton(
+    playing: bool,
+    #[props(default = 64)] size: u32,
+    onclick: EventHandler<MouseEvent>,
+) -> Element {
     let icon = (size as f64 * 0.42) as u32;
     rsx! {
         button {
@@ -469,11 +502,19 @@ pub fn CookieButton(playing: bool, #[props(default = 64)] size: u32, onclick: Ev
 
 /// Album art for a library track (falls back to a music note).
 #[component]
-pub fn Cover(track_id: String, #[props(default = "cover".to_string())] class: String, #[props(default = false)] big: bool) -> Element {
+pub fn Cover(
+    track_id: String,
+    #[props(default = "cover".to_string())] class: String,
+    #[props(default = false)] big: bool,
+) -> Element {
     let st = state();
     let _ = (st.covers_version)(); // re-render when covers load
     let svc = services::get();
-    let uri = if big { svc.big_cover(&track_id) } else { svc.thumb(&track_id) };
+    let uri = if big {
+        svc.big_cover(&track_id)
+    } else {
+        svc.thumb(&track_id)
+    };
     rsx! {
         div { class: "{class}",
             if let Some(src) = uri {
@@ -487,7 +528,10 @@ pub fn Cover(track_id: String, #[props(default = "cover".to_string())] class: St
 
 /// A cover image from a URL (search results).
 #[component]
-pub fn RemoteCover(url: Option<String>, #[props(default = "cover".to_string())] class: String) -> Element {
+pub fn RemoteCover(
+    url: Option<String>,
+    #[props(default = "cover".to_string())] class: String,
+) -> Element {
     rsx! {
         div { class: "{class}",
             if let Some(src) = url {

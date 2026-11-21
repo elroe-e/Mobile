@@ -35,7 +35,12 @@ pub fn api_url(cfg: &SubsonicConfig, method: &str, params: &[(&str, &str)]) -> S
     url
 }
 
-async fn call(client: &reqwest::Client, cfg: &SubsonicConfig, method: &str, params: &[(&str, &str)]) -> crate::Result<serde_json::Value> {
+async fn call(
+    client: &reqwest::Client,
+    cfg: &SubsonicConfig,
+    method: &str,
+    params: &[(&str, &str)],
+) -> crate::Result<serde_json::Value> {
     let v = get_json(client, &api_url(cfg, method, params)).await?;
     let resp = v["subsonic-response"].clone();
     if resp["status"].as_str() != Some("ok") {
@@ -66,10 +71,17 @@ fn song_item(cfg: &SubsonicConfig, s: &serde_json::Value) -> Option<SearchItem> 
         disc_no: as_u32(&s["discNumber"]),
         ..Default::default()
     };
-    let cover = as_string(&s["coverArt"]).map(|c| api_url(cfg, "getCoverArt", &[("id", &c), ("size", "600")]));
-    let bitrate = as_u32(&s["bitRate"]).map(|b| format!(" {b}")).unwrap_or_default();
+    let cover = as_string(&s["coverArt"])
+        .map(|c| api_url(cfg, "getCoverArt", &[("id", &c), ("size", "600")]));
+    let bitrate = as_u32(&s["bitRate"])
+        .map(|b| format!(" {b}"))
+        .unwrap_or_default();
     Some(SearchItem {
-        subtitle: [artist, album].into_iter().flatten().collect::<Vec<_>>().join(" · "),
+        subtitle: [artist, album]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" · "),
         cover_url: cover.clone(),
         license: None,
         format: Some(format!("{}{}", suffix.to_uppercase(), bitrate)),
@@ -89,14 +101,17 @@ fn song_item(cfg: &SubsonicConfig, s: &serde_json::Value) -> Option<SearchItem> 
 fn album_item(cfg: &SubsonicConfig, a: &serde_json::Value) -> Option<SearchItem> {
     let id = as_string(&a["id"])?;
     let title = as_string(&a["name"]).or_else(|| as_string(&a["title"]))?;
-    let count = as_u32(&a["songCount"]).map(|n| format!("{n} songs")).unwrap_or_default();
+    let count = as_u32(&a["songCount"])
+        .map(|n| format!("{n} songs"))
+        .unwrap_or_default();
     Some(SearchItem {
         subtitle: [as_string(&a["artist"]).unwrap_or_default(), count]
             .into_iter()
             .filter(|s| !s.is_empty())
             .collect::<Vec<_>>()
             .join(" · "),
-        cover_url: as_string(&a["coverArt"]).map(|c| api_url(cfg, "getCoverArt", &[("id", &c), ("size", "300")])),
+        cover_url: as_string(&a["coverArt"])
+            .map(|c| api_url(cfg, "getCoverArt", &[("id", &c), ("size", "300")])),
         license: None,
         format: Some("Album".into()),
         duration: as_f64(&a["duration"]),
@@ -109,12 +124,21 @@ fn album_item(cfg: &SubsonicConfig, a: &serde_json::Value) -> Option<SearchItem>
     })
 }
 
-pub async fn search(client: &reqwest::Client, cfg: &SubsonicConfig, query: &str) -> crate::Result<Vec<SearchItem>> {
+pub async fn search(
+    client: &reqwest::Client,
+    cfg: &SubsonicConfig,
+    query: &str,
+) -> crate::Result<Vec<SearchItem>> {
     let r = call(
         client,
         cfg,
         "search3",
-        &[("query", query), ("albumCount", "20"), ("songCount", "40"), ("artistCount", "0")],
+        &[
+            ("query", query),
+            ("albumCount", "20"),
+            ("songCount", "40"),
+            ("artistCount", "0"),
+        ],
     )
     .await?;
     let res = &r["searchResult3"];
@@ -125,22 +149,39 @@ pub async fn search(client: &reqwest::Client, cfg: &SubsonicConfig, query: &str)
     out.extend(
         res["song"]
             .as_array()
-            .map(|a| a.iter().filter_map(|x| song_item(cfg, x)).collect::<Vec<_>>())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| song_item(cfg, x))
+                    .collect::<Vec<_>>()
+            })
             .unwrap_or_default(),
     );
     Ok(out)
 }
 
 /// Recently added albums, shown before the user searches.
-pub async fn recent_albums(client: &reqwest::Client, cfg: &SubsonicConfig) -> crate::Result<Vec<SearchItem>> {
-    let r = call(client, cfg, "getAlbumList2", &[("type", "newest"), ("size", "40")]).await?;
+pub async fn recent_albums(
+    client: &reqwest::Client,
+    cfg: &SubsonicConfig,
+) -> crate::Result<Vec<SearchItem>> {
+    let r = call(
+        client,
+        cfg,
+        "getAlbumList2",
+        &[("type", "newest"), ("size", "40")],
+    )
+    .await?;
     Ok(r["albumList2"]["album"]
         .as_array()
         .map(|a| a.iter().filter_map(|x| album_item(cfg, x)).collect())
         .unwrap_or_default())
 }
 
-pub async fn open_album(client: &reqwest::Client, cfg: &SubsonicConfig, id: &str) -> crate::Result<Vec<SearchItem>> {
+pub async fn open_album(
+    client: &reqwest::Client,
+    cfg: &SubsonicConfig,
+    id: &str,
+) -> crate::Result<Vec<SearchItem>> {
     let r = call(client, cfg, "getAlbum", &[("id", id)]).await?;
     Ok(r["album"]["song"]
         .as_array()

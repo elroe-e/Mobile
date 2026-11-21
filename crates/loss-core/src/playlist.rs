@@ -97,7 +97,10 @@ fn parse_csv(text: &str) -> Vec<PlaylistEntry> {
         .into_iter()
         .map(|c| c.to_lowercase())
         .collect();
-    let find = |names: &[&str]| cols.iter().position(|c| names.iter().any(|n| c.contains(n)));
+    let find = |names: &[&str]| {
+        cols.iter()
+            .position(|c| names.iter().any(|n| c.contains(n)))
+    };
     let title_i = find(&["track name", "title", "song", "name"]);
     let artist_i = find(&["artist"]);
     let Some(title_i) = title_i else {
@@ -146,7 +149,8 @@ mod tests {
 
     #[test]
     fn m3u() {
-        let e = parse("#EXTM3U\n#EXTINF:123,Band - Song\nmusic/song.mp3\nother/Artist - Tune.flac\n");
+        let e =
+            parse("#EXTM3U\n#EXTINF:123,Band - Song\nmusic/song.mp3\nother/Artist - Tune.flac\n");
         assert_eq!(e.len(), 2);
         assert_eq!(e[0].artist, "Band");
         assert_eq!(e[1].title, "Tune");

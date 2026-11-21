@@ -21,7 +21,10 @@ pub async fn search(
         encode(query)
     );
     let v = get_json(client, &url).await?;
-    if let Some(err) = v["headers"]["error_message"].as_str().filter(|s| !s.is_empty()) {
+    if let Some(err) = v["headers"]["error_message"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+    {
         return Err(format!("Jamendo: {err}").into());
     }
     let results = v["results"].as_array().cloned().unwrap_or_default();
@@ -35,7 +38,8 @@ pub async fn search(
             let title = as_string(&t["name"])?;
             let artist = as_string(&t["artist_name"]);
             let album = as_string(&t["album_name"]);
-            let year = as_string(&t["releasedate"]).and_then(|d| d.get(..4).and_then(|y| y.parse().ok()));
+            let year =
+                as_string(&t["releasedate"]).and_then(|d| d.get(..4).and_then(|y| y.parse().ok()));
             let meta = TrackMeta {
                 title: Some(title.clone()),
                 artist: artist.clone(),
@@ -45,10 +49,18 @@ pub async fn search(
                 track_no: as_u32(&t["position"]),
                 ..Default::default()
             };
-            let ext = if url.contains("format=flac") || url.contains("flac") { "flac" } else { "mp3" };
+            let ext = if url.contains("format=flac") || url.contains("flac") {
+                "flac"
+            } else {
+                "mp3"
+            };
             let cover = as_string(&t["album_image"]).or_else(|| as_string(&t["image"]));
             Some(SearchItem {
-                subtitle: [artist, album].into_iter().flatten().collect::<Vec<_>>().join(" · "),
+                subtitle: [artist, album]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+                    .join(" · "),
                 cover_url: cover.clone(),
                 license: as_string(&t["license_ccurl"]).map(|l| license_label(&l)),
                 format: Some(ext.to_uppercase()),

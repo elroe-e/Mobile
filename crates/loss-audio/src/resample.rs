@@ -57,7 +57,7 @@ pub fn map_channels(input: &[f32], src: usize, dst: usize, out: &mut Vec<f32>) {
         if dst == 1 {
             out.push(frame.iter().sum::<f32>() / src as f32);
         } else if src == 1 {
-            out.extend(std::iter::repeat(frame[0]).take(dst));
+            out.extend(std::iter::repeat_n(frame[0], dst));
         } else {
             for c in 0..dst {
                 out.push(frame[c.min(src - 1)]);

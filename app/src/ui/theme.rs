@@ -28,7 +28,8 @@ pub fn seed_from_image(img: &image::DynamicImage) -> [u8; 3] {
     // Merge each bin with its neighbours so a hue split across two bins wins.
     let best = (0..36)
         .max_by(|&a, &b| {
-            let score = |i: usize| bins[(i + 35) % 36].0 * 0.5 + bins[i].0 + bins[(i + 1) % 36].0 * 0.5;
+            let score =
+                |i: usize| bins[(i + 35) % 36].0 * 0.5 + bins[i].0 + bins[(i + 1) % 36].0 * 0.5;
             score(a).total_cmp(&score(b))
         })
         .unwrap_or(0);
@@ -64,17 +65,30 @@ fn rgb_to_hsv(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
 
 /// Hue (degrees) and saturation (0..1) of an RGB colour.
 fn hue_sat(rgb: [u8; 3]) -> (f64, f64) {
-    let (r, g, b) = (rgb[0] as f64 / 255.0, rgb[1] as f64 / 255.0, rgb[2] as f64 / 255.0);
+    let (r, g, b) = (
+        rgb[0] as f64 / 255.0,
+        rgb[1] as f64 / 255.0,
+        rgb[2] as f64 / 255.0,
+    );
     let max = r.max(g).max(b);
     let min = r.min(g).min(b);
     let l = (max + min) / 2.0;
     let d = max - min;
-    let s = if d == 0.0 { 0.0 } else { d / (1.0 - (2.0 * l - 1.0).abs()) };
+    let s = if d == 0.0 {
+        0.0
+    } else {
+        d / (1.0 - (2.0 * l - 1.0).abs())
+    };
     (rgb_to_hsv(rgb[0], rgb[1], rgb[2]).0, s.clamp(0.0, 1.0))
 }
 
 fn hsl(h: f64, s: f64, l: f64) -> String {
-    format!("hsl({:.0} {:.0}% {:.1}%)", h.rem_euclid(360.0), (s * 100.0).clamp(0.0, 100.0), l)
+    format!(
+        "hsl({:.0} {:.0}% {:.1}%)",
+        h.rem_euclid(360.0),
+        (s * 100.0).clamp(0.0, 100.0),
+        l
+    )
 }
 
 pub fn parse_hex(hex: &str) -> Option<[u8; 3]> {
@@ -94,11 +108,15 @@ pub fn palette(seed: [u8; 3], dark: bool) -> String {
     let s = (s0 * 0.85).clamp(0.06, 0.62);
     let n = (s * 0.28).clamp(0.04, 0.14); // neutral surfaces
     let nv = (s * 0.4).clamp(0.06, 0.2); // neutral variant
-    // Tertiary hue: +60° like Material, but dark yellows look muddy, so
-    // steer that range the other way round the wheel.
+                                         // Tertiary hue: +60° like Material, but dark yellows look muddy, so
+                                         // steer that range the other way round the wheel.
     let t = {
         let t = (h + 60.0).rem_euclid(360.0);
-        if (40.0..=100.0).contains(&t) { (h - 50.0).rem_euclid(360.0) } else { t }
+        if (40.0..=100.0).contains(&t) {
+            (h - 50.0).rem_euclid(360.0)
+        } else {
+            t
+        }
     };
     let vars: Vec<(&str, String)> = if dark {
         vec![
@@ -153,7 +171,11 @@ pub fn palette(seed: [u8; 3], dark: bool) -> String {
     for (k, v) in vars {
         css.push_str(&format!("--{k}:{v};"));
     }
-    css.push_str(if dark { "color-scheme:dark;" } else { "color-scheme:light;" });
+    css.push_str(if dark {
+        "color-scheme:dark;"
+    } else {
+        "color-scheme:light;"
+    });
     css
 }
 
@@ -191,7 +213,10 @@ mod tests {
         let img = image::RgbImage::from_pixel(10, 10, image::Rgb([120, 120, 120]));
         let seed = seed_from_image(&image::DynamicImage::ImageRgb8(img));
         // Neutral: all channels equal, close to the input (resizing may round).
-        assert!(seed[0] == seed[1] && seed[1] == seed[2] && seed[0].abs_diff(120) <= 2, "{seed:?}");
+        assert!(
+            seed[0] == seed[1] && seed[1] == seed[2] && seed[0].abs_diff(120) <= 2,
+            "{seed:?}"
+        );
         assert!(palette(seed, true).contains("--surface:"));
     }
 }

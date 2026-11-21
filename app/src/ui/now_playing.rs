@@ -29,7 +29,11 @@ pub fn NowPlaying() -> Element {
     let svc = services::get();
     let track = svc.library().get(&cur.id).cloned();
     let title = track.as_ref().map(|t| t.title.clone()).unwrap_or_else(|| {
-        cur.path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string()
+        cur.path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string()
     });
     let artist = track.as_ref().map(|t| t.artist.clone()).unwrap_or_default();
     let album = track.as_ref().map(|t| t.album.clone()).unwrap_or_default();
@@ -43,7 +47,11 @@ pub fn NowPlaying() -> Element {
     let quality = p.info.label();
     let lossless = p.info.is_lossless();
     let vol_now = (st.volume)();
-    let repeat_icon = if p.repeat == Repeat::One { "repeat_one" } else { "repeat" };
+    let repeat_icon = if p.repeat == Repeat::One {
+        "repeat_one"
+    } else {
+        "repeat"
+    };
     let (shuffle, repeat) = (p.shuffle, p.repeat);
     let pn = pane();
     let np_class = format!(
@@ -64,7 +72,11 @@ pub fn NowPlaying() -> Element {
     };
     let toggle = move |target: Pane| {
         let mut pane = pane;
-        pane.set(if pane() == target { Pane::Cover } else { target });
+        pane.set(if pane() == target {
+            Pane::Cover
+        } else {
+            target
+        });
     };
     let next_up = p
         .index
@@ -194,7 +206,8 @@ fn LyricsPane(track_id: String, position: f64) -> Element {
     let st = state();
     let svc = services::get();
     let path = svc.library().get(&track_id).map(|t| t.path.clone());
-    let mut text: Signal<Option<String>> = use_signal(|| path.as_ref().and_then(|p| services::get().local_lyrics(p)));
+    let mut text: Signal<Option<String>> =
+        use_signal(|| path.as_ref().and_then(|p| services::get().local_lyrics(p)));
     let mut searching = use_signal(|| false);
     let mut status = use_signal(|| None::<String>);
     let lyrics = use_memo(move || text().map(|t| lrc::parse(&t)));
@@ -208,17 +221,25 @@ fn LyricsPane(track_id: String, position: f64) -> Element {
     let tid = track_id.clone();
     let fetch = move |_| {
         let svc = services::get();
-        let Some(t) = svc.library().get(&tid).cloned() else { return };
+        let Some(t) = svc.library().get(&tid).cloned() else {
+            return;
+        };
         searching.set(true);
         status.set(None);
         let client = svc.downloads.client();
         spawn(async move {
-            let (artist, title, album, dur) = (t.artist.clone(), t.title.clone(), t.album.clone(), t.duration_secs);
+            let (artist, title, album, dur) = (
+                t.artist.clone(),
+                t.title.clone(),
+                t.album.clone(),
+                t.duration_secs,
+            );
             let res = services::get()
                 .downloads
                 .runtime()
                 .spawn(async move {
-                    loss_download::lyrics::fetch(&client, &artist, &title, Some(&album), Some(dur)).await
+                    loss_download::lyrics::fetch(&client, &artist, &title, Some(&album), Some(dur))
+                        .await
                 })
                 .await;
             searching.set(false);
@@ -300,7 +321,16 @@ fn QueuePane() -> Element {
             let (t, a) = lib
                 .get(&q.id)
                 .map(|t| (t.title.clone(), t.artist.clone()))
-                .unwrap_or_else(|| (q.path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string(), String::new()));
+                .unwrap_or_else(|| {
+                    (
+                        q.path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        String::new(),
+                    )
+                });
             (i, q.id.clone(), t, a)
         })
         .collect();

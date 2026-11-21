@@ -80,7 +80,9 @@ pub fn read_cover(path: &Path) -> Option<(Vec<u8>, String)> {
 /// Looks for cover.jpg / folder.jpg etc. next to the file.
 pub fn find_folder_cover(path: &Path) -> Option<std::path::PathBuf> {
     let dir = path.parent()?;
-    for name in ["cover", "folder", "front", "album", "Cover", "Folder", "Front", "AlbumArt"] {
+    for name in [
+        "cover", "folder", "front", "album", "Cover", "Folder", "Front", "AlbumArt",
+    ] {
         for ext in ["jpg", "jpeg", "png", "webp"] {
             let p = dir.join(format!("{name}.{ext}"));
             if p.is_file() {

@@ -33,7 +33,10 @@ impl JobStatus {
         matches!(self, JobStatus::Downloading | JobStatus::Processing)
     }
     pub fn is_finished(&self) -> bool {
-        matches!(self, JobStatus::Done | JobStatus::Failed(_) | JobStatus::Cancelled)
+        matches!(
+            self,
+            JobStatus::Done | JobStatus::Failed(_) | JobStatus::Cancelled
+        )
     }
 }
 
@@ -213,7 +216,10 @@ impl DownloadManager {
 
     pub fn resume(&self, id: u64) {
         self.with_job(id, |j| {
-            if matches!(j.status, JobStatus::Paused | JobStatus::Failed(_) | JobStatus::Cancelled) {
+            if matches!(
+                j.status,
+                JobStatus::Paused | JobStatus::Failed(_) | JobStatus::Cancelled
+            ) {
                 if matches!(j.status, JobStatus::Failed(_)) {
                     j.attempts = 0;
                 }
@@ -339,8 +345,16 @@ fn unique_path(p: PathBuf) -> PathBuf {
     if !p.exists() {
         return p;
     }
-    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("file").to_string();
-    let ext = p.extension().and_then(|s| s.to_str()).map(|e| format!(".{e}")).unwrap_or_default();
+    let stem = p
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file")
+        .to_string();
+    let ext = p
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|e| format!(".{e}"))
+        .unwrap_or_default();
     for n in 2..1000 {
         let cand = p.with_file_name(format!("{stem} ({n}){ext}"));
         if !cand.exists() {
@@ -513,7 +527,10 @@ async fn download_once(
             .await
             .map_err(|e| (Error::from(e), false))?;
     }
-    let have = tokio::fs::metadata(&part).await.map(|m| m.len()).unwrap_or(0);
+    let have = tokio::fs::metadata(&part)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
 
     let mut request = inner.client.get(&req.url);
     for (k, v) in &req.headers {
@@ -549,7 +566,9 @@ async fn download_once(
     }
     if content_type.starts_with("text/html") {
         return Err((
-            Error::Other("the link opens a web page, not a file. Use the page's real download link.".into()),
+            Error::Other(
+                "the link opens a web page, not a file. Use the page's real download link.".into(),
+            ),
             false,
         ));
     }
@@ -587,9 +606,7 @@ async fn download_once(
             }
             _ => {}
         }
-        let chunk = chunk.map_err(|e| {
-            (Error::from(e), true)
-        })?;
+        let chunk = chunk.map_err(|e| (Error::from(e), true))?;
         file.write_all(&chunk)
             .await
             .map_err(|e| (Error::from(e), false))?;
@@ -617,7 +634,12 @@ async fn download_once(
     finish(&part, &req.rel_path, dir, &content_type).await
 }
 
-async fn finish(part: &Path, rel: &str, dir: &Path, content_type: &str) -> Result<Outcome, AttemptError> {
+async fn finish(
+    part: &Path,
+    rel: &str,
+    dir: &Path,
+    content_type: &str,
+) -> Result<Outcome, AttemptError> {
     let mut target = safe_join(dir, rel);
     if target.extension().is_none() {
         if let Some(ext) = ext_for_content_type(content_type) {
@@ -638,7 +660,10 @@ mod tests {
     #[test]
     fn safe_join_blocks_escape() {
         let d = Path::new("/music");
-        assert_eq!(safe_join(d, "../../etc/passwd"), PathBuf::from("/music/etc/passwd"));
+        assert_eq!(
+            safe_join(d, "../../etc/passwd"),
+            PathBuf::from("/music/etc/passwd")
+        );
         assert_eq!(safe_join(d, "A/B/c.mp3"), PathBuf::from("/music/A/B/c.mp3"));
     }
 }

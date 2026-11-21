@@ -75,10 +75,16 @@ async fn open(c: Collection) -> Result<Vec<SearchItem>, String> {
     let svc = services::get();
     let client = svc.downloads.client();
     match c.source {
-        SourceKind::InternetArchive => run(async move { archive::open(&client, &c.id).await }).await,
+        SourceKind::InternetArchive => {
+            run(async move { archive::open(&client, &c.id).await }).await
+        }
         SourceKind::Podcast => run(async move { podcast::open(&client, &c.id).await }).await,
         SourceKind::Subsonic => {
-            let cfg = svc.settings().subsonic.clone().ok_or("Server not configured")?;
+            let cfg = svc
+                .settings()
+                .subsonic
+                .clone()
+                .ok_or("Server not configured")?;
             run(async move { subsonic::open_album(&client, &cfg, &c.id).await }).await
         }
         _ => Ok(vec![]),
@@ -122,7 +128,7 @@ pub fn DiscoverTab() -> Element {
         });
     };
 
-    let mut do_open = move |c: Collection| {
+    let do_open = move |c: Collection| {
         loading.set(true);
         error.set(None);
         spawn(async move {
@@ -252,13 +258,13 @@ pub fn DiscoverTab() -> Element {
             }
             div { class: "list",
                 for (i , item) in items.iter().enumerate() {
-                    ResultRow { key: "{i}", item: item.clone(), queued: queued_titles.contains(&item.title), on_open: move |c| do_open(c) }
+                    ResultRow { key: "{i}", item: item.clone(), queued: queued_titles.contains(&item.title), on_open: do_open }
                 }
             }
         } else {
             div { class: "list",
                 for (i , item) in results().iter().enumerate() {
-                    ResultRow { key: "{i}", item: item.clone(), queued: queued_titles.contains(&item.title), on_open: move |c| do_open(c) }
+                    ResultRow { key: "{i}", item: item.clone(), queued: queued_titles.contains(&item.title), on_open: do_open }
                 }
             }
         }

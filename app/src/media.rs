@@ -25,7 +25,12 @@ mod imp {
             .l()?;
         let name = env.new_string(BRIDGE)?;
         let cls = env
-            .call_method(&loader, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;", &[JValue::Object(&name)])?
+            .call_method(
+                &loader,
+                "loadClass",
+                "(Ljava/lang/String;)Ljava/lang/Class;",
+                &[JValue::Object(&name)],
+            )?
             .l()?;
         Ok(JClass::from(cls))
     }
@@ -39,7 +44,12 @@ mod imp {
             let s: String = env.get_string(&JString::from(s))?.into();
             Ok(s)
         })
-        .map(|s| s.lines().map(str::to_string).filter(|l| !l.is_empty()).collect())
+        .map(|s| {
+            s.lines()
+                .map(str::to_string)
+                .filter(|l| !l.is_empty())
+                .collect()
+        })
         .unwrap_or_default()
     }
 
@@ -124,7 +134,8 @@ mod imp {
             svc.sync();
             // Follow the phone's volume (hardware buttons, other apps).
             if let Some(v) = crate::platform::system_volume() {
-                svc.system_volume.store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
+                svc.system_volume
+                    .store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
             }
 
             let st = svc.player.state();
@@ -144,14 +155,26 @@ mod imp {
             let art = match &track {
                 Some(t) if t.has_cover => {
                     let _ = svc.big_cover(&t.id); // makes sure the file gets created
-                    let p = svc.paths.data.join("covers").join(format!("{}-720.jpg", t.id));
-                    if p.exists() { p.to_string_lossy().into_owned() } else { String::new() }
+                    let p = svc
+                        .paths
+                        .data
+                        .join("covers")
+                        .join(format!("{}-720.jpg", t.id));
+                    if p.exists() {
+                        p.to_string_lossy().into_owned()
+                    } else {
+                        String::new()
+                    }
                 }
                 _ => String::new(),
             };
             let now = Shown {
                 title: track.as_ref().map(|t| t.title.clone()).unwrap_or_else(|| {
-                    cur.path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string()
+                    cur.path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("")
+                        .to_string()
                 }),
                 artist: track.as_ref().map(|t| t.artist.clone()).unwrap_or_default(),
                 album: track.as_ref().map(|t| t.album.clone()).unwrap_or_default(),
@@ -160,9 +183,17 @@ mod imp {
             };
             // Resend when something visible changed, after a seek, or every
             // 10 s so the lock-screen position stays accurate.
-            let expected = last_pos + if now.playing { last_sent.elapsed().as_secs_f64() } else { 0.0 };
+            let expected = last_pos
+                + if now.playing {
+                    last_sent.elapsed().as_secs_f64()
+                } else {
+                    0.0
+                };
             let jumped = (st.position - expected).abs() > 2.0;
-            if shown.as_ref() != Some(&now) || jumped || last_sent.elapsed() > Duration::from_secs(10) {
+            if shown.as_ref() != Some(&now)
+                || jumped
+                || last_sent.elapsed() > Duration::from_secs(10)
+            {
                 update(&now, st.position, st.duration);
                 shown = Some(now);
                 last_sent = Instant::now();

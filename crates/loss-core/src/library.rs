@@ -113,8 +113,10 @@ impl Track {
     }
 
     pub fn is_lossless(&self) -> bool {
-        matches!(self.format.as_str(), "FLAC" | "WAV" | "AIFF" | "ALAC" | "APE" | "WV")
-            || (self.format == "AAC" && self.bit_depth.is_some())
+        matches!(
+            self.format.as_str(),
+            "FLAC" | "WAV" | "AIFF" | "ALAC" | "APE" | "WV"
+        ) || (self.format == "AAC" && self.bit_depth.is_some())
     }
 
     /// Short quality badge: "Hi-Res", "24-bit", "FLAC", "MP3"...
@@ -264,7 +266,7 @@ impl Library {
     /// Recently played tracks, newest first.
     pub fn recently_played(&self, n: usize) -> Vec<&Track> {
         let mut v: Vec<&Track> = self.tracks.iter().filter(|t| t.last_played > 0).collect();
-        v.sort_by(|a, b| b.last_played.cmp(&a.last_played));
+        v.sort_by_key(|t| std::cmp::Reverse(t.last_played));
         v.truncate(n);
         v
     }
@@ -323,7 +325,9 @@ impl Library {
                 }
                 let mtime = file_mtime(path);
                 match existing.get(path) {
-                    Some(&i) if self.tracks[i].mtime == mtime && !self.tracks[i].format.is_empty() => {
+                    Some(&i)
+                        if self.tracks[i].mtime == mtime && !self.tracks[i].format.is_empty() =>
+                    {
                         new_tracks.push(self.tracks[i].clone());
                     }
                     Some(&i) => {
@@ -367,7 +371,10 @@ impl Library {
         self.tracks
             .iter()
             .filter(|t| {
-                let hay = normalize(&format!("{} {} {} {}", t.title, t.artist, t.album, t.album_artist));
+                let hay = normalize(&format!(
+                    "{} {} {} {}",
+                    t.title, t.artist, t.album, t.album_artist
+                ));
                 words.iter().all(|w| hay.contains(w))
             })
             .collect()
@@ -418,14 +425,14 @@ impl Library {
 
     pub fn recently_added(&self, n: usize) -> Vec<&Track> {
         let mut v: Vec<&Track> = self.tracks.iter().collect();
-        v.sort_by(|a, b| b.added_at.cmp(&a.added_at));
+        v.sort_by_key(|t| std::cmp::Reverse(t.added_at));
         v.truncate(n);
         v
     }
 
     pub fn most_played(&self, n: usize) -> Vec<&Track> {
         let mut v: Vec<&Track> = self.tracks.iter().filter(|t| t.play_count > 0).collect();
-        v.sort_by(|a, b| b.play_count.cmp(&a.play_count));
+        v.sort_by_key(|t| std::cmp::Reverse(t.play_count));
         v.truncate(n);
         v
     }

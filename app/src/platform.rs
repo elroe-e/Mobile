@@ -19,7 +19,9 @@ pub mod android {
 
     /// Runs `f` with a JNI env and the activity. Local references are freed
     /// when it returns, so it is safe to call in a loop on a long-lived thread.
-    pub fn with_env<T>(f: impl FnOnce(&mut jni::JNIEnv, &JObject) -> jni::errors::Result<T>) -> Option<T> {
+    pub fn with_env<T>(
+        f: impl FnOnce(&mut jni::JNIEnv, &JObject) -> jni::errors::Result<T>,
+    ) -> Option<T> {
         let ctx = ndk_context::android_context();
         let vm = unsafe { JavaVM::from_raw(ctx.vm().cast()) }.ok()?;
         let mut env = vm.attach_current_thread().ok()?;
@@ -43,7 +45,9 @@ pub mod android {
 
     pub fn files_dir() -> Option<String> {
         with_env(|env, act| {
-            let f = env.call_method(act, "getFilesDir", "()Ljava/io/File;", &[])?.l()?;
+            let f = env
+                .call_method(act, "getFilesDir", "()Ljava/io/File;", &[])?
+                .l()?;
             file_path(env, f)
         })
     }
@@ -66,7 +70,11 @@ pub mod android {
     }
 
     pub fn sdk_int() -> i32 {
-        with_env(|env, _| env.get_static_field("android/os/Build$VERSION", "SDK_INT", "I")?.i()).unwrap_or(0)
+        with_env(|env, _| {
+            env.get_static_field("android/os/Build$VERSION", "SDK_INT", "I")?
+                .i()
+        })
+        .unwrap_or(0)
     }
 
     fn audio_permission() -> &'static str {
@@ -81,8 +89,13 @@ pub mod android {
         let perm = audio_permission();
         with_env(|env, act| {
             let p = env.new_string(perm)?;
-            env.call_method(act, "checkSelfPermission", "(Ljava/lang/String;)I", &[JValue::Object(&p)])?
-                .i()
+            env.call_method(
+                act,
+                "checkSelfPermission",
+                "(Ljava/lang/String;)I",
+                &[JValue::Object(&p)],
+            )?
+            .i()
         })
         .map(|r| r == 0)
         .unwrap_or(false)
@@ -90,10 +103,18 @@ pub mod android {
 
     const STREAM_MUSIC: i32 = 3;
 
-    fn audio_manager<'a>(env: &mut jni::JNIEnv<'a>, act: &JObject) -> jni::errors::Result<JObject<'a>> {
+    fn audio_manager<'a>(
+        env: &mut jni::JNIEnv<'a>,
+        act: &JObject,
+    ) -> jni::errors::Result<JObject<'a>> {
         let name = env.new_string("audio")?;
-        env.call_method(act, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", &[JValue::Object(&name)])?
-            .l()
+        env.call_method(
+            act,
+            "getSystemService",
+            "(Ljava/lang/String;)Ljava/lang/Object;",
+            &[JValue::Object(&name)],
+        )?
+        .l()
     }
 
     /// Android media volume as (current step, max step).
@@ -104,7 +125,12 @@ pub mod android {
                 .call_method(&am, "getStreamVolume", "(I)I", &[JValue::Int(STREAM_MUSIC)])?
                 .i()?;
             let max = env
-                .call_method(&am, "getStreamMaxVolume", "(I)I", &[JValue::Int(STREAM_MUSIC)])?
+                .call_method(
+                    &am,
+                    "getStreamMaxVolume",
+                    "(I)I",
+                    &[JValue::Int(STREAM_MUSIC)],
+                )?
                 .i()?;
             Ok((cur, max))
         })
@@ -127,20 +153,45 @@ pub mod android {
     pub fn open_app_settings() {
         with_env(|env, act| {
             let action = env.new_string("android.settings.APPLICATION_DETAILS_SETTINGS")?;
-            let intent = env.new_object("android/content/Intent", "(Ljava/lang/String;)V", &[JValue::Object(&action)])?;
-            let pkg = env.call_method(act, "getPackageName", "()Ljava/lang/String;", &[])?.l()?;
+            let intent = env.new_object(
+                "android/content/Intent",
+                "(Ljava/lang/String;)V",
+                &[JValue::Object(&action)],
+            )?;
+            let pkg = env
+                .call_method(act, "getPackageName", "()Ljava/lang/String;", &[])?
+                .l()?;
             let scheme = env.new_string("package")?;
             let uri = env
                 .call_static_method(
                     "android/net/Uri",
                     "fromParts",
                     "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Landroid/net/Uri;",
-                    &[JValue::Object(&scheme), JValue::Object(&pkg), JValue::Object(&JObject::null())],
+                    &[
+                        JValue::Object(&scheme),
+                        JValue::Object(&pkg),
+                        JValue::Object(&JObject::null()),
+                    ],
                 )?
                 .l()?;
-            env.call_method(&intent, "setData", "(Landroid/net/Uri;)Landroid/content/Intent;", &[JValue::Object(&uri)])?;
-            env.call_method(&intent, "addFlags", "(I)Landroid/content/Intent;", &[JValue::Int(0x10000000)])?;
-            env.call_method(act, "startActivity", "(Landroid/content/Intent;)V", &[JValue::Object(&intent)])?;
+            env.call_method(
+                &intent,
+                "setData",
+                "(Landroid/net/Uri;)Landroid/content/Intent;",
+                &[JValue::Object(&uri)],
+            )?;
+            env.call_method(
+                &intent,
+                "addFlags",
+                "(I)Landroid/content/Intent;",
+                &[JValue::Int(0x10000000)],
+            )?;
+            env.call_method(
+                act,
+                "startActivity",
+                "(Landroid/content/Intent;)V",
+                &[JValue::Object(&intent)],
+            )?;
             Ok(())
         });
     }
@@ -182,7 +233,9 @@ pub fn paths() -> Paths {
 
 #[cfg(not(target_os = "android"))]
 pub fn paths() -> Paths {
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
     let data = std::env::var_os("LOSS_DATA_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join(".local/share/loss"));

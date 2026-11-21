@@ -59,8 +59,13 @@ impl Services {
         let _ = std::fs::create_dir_all(&settings.download_dir);
         let library = Library::load(&paths.data.join("library.json"));
         let follows_system = crate::platform::system_volume();
-        let player = Player::new(if follows_system.is_some() { 1.0 } else { settings.volume });
-        let downloads = DownloadManager::new(manager_config(&settings), paths.data.join("downloads.json"));
+        let player = Player::new(if follows_system.is_some() {
+            1.0
+        } else {
+            settings.volume
+        });
+        let downloads =
+            DownloadManager::new(manager_config(&settings), paths.data.join("downloads.json"));
         let covers = Covers::new(paths.data.join("covers"));
         Services {
             paths,
@@ -70,7 +75,9 @@ impl Services {
             settings: Mutex::new(settings),
             library_version: AtomicU64::new(1),
             scanning: AtomicBool::new(false),
-            system_volume: std::sync::atomic::AtomicU32::new(follows_system.unwrap_or(f32::NAN).to_bits()),
+            system_volume: std::sync::atomic::AtomicU32::new(
+                follows_system.unwrap_or(f32::NAN).to_bits(),
+            ),
             scan_progress: AtomicU64::new(0),
             covers,
         }
@@ -219,10 +226,10 @@ impl Services {
 
     /// Where fetched lyrics are cached when the music folder isn't writable.
     pub fn lyrics_cache_path(&self, path: &Path) -> PathBuf {
-        self.paths
-            .data
-            .join("lyrics")
-            .join(format!("{}.lrc", loss_core::stable_id(&path.to_string_lossy())))
+        self.paths.data.join("lyrics").join(format!(
+            "{}.lrc",
+            loss_core::stable_id(&path.to_string_lossy())
+        ))
     }
 }
 
@@ -239,8 +246,11 @@ fn manager_config(s: &Settings) -> ManagerConfig {
 
 /// Cover art cache: resized JPEGs on disk + data URIs in memory, generated
 /// on a background thread so scrolling never waits on tag parsing.
+/// Cover data URIs by (track id, size); `None` means the track has no cover.
+type CoverMap = Arc<Mutex<HashMap<(String, u32), Option<String>>>>;
+
 struct Covers {
-    mem: Arc<Mutex<HashMap<(String, u32), Option<String>>>>,
+    mem: CoverMap,
     /// Main colour of each cover, for dynamic theming.
     colors: Arc<Mutex<HashMap<String, [u8; 3]>>>,
     pending: Arc<Mutex<HashSet<(String, u32)>>>,
@@ -254,12 +264,19 @@ impl Covers {
     fn new(dir: PathBuf) -> Covers {
         let _ = std::fs::create_dir_all(&dir);
         let (tx, rx) = std::sync::mpsc::channel::<(String, PathBuf, u32)>();
-        let mem: Arc<Mutex<HashMap<(String, u32), Option<String>>>> = Default::default();
+        let mem: CoverMap = Default::default();
         let order: Arc<Mutex<VecDeque<(String, u32)>>> = Default::default();
         let pending: Arc<Mutex<HashSet<(String, u32)>>> = Default::default();
         let version = Arc::new(AtomicU64::new(0));
         let colors: Arc<Mutex<HashMap<String, [u8; 3]>>> = Default::default();
-        let (m, o, p, v, d, c) = (mem.clone(), order, pending.clone(), version.clone(), dir, colors.clone());
+        let (m, o, p, v, d, c) = (
+            mem.clone(),
+            order,
+            pending.clone(),
+            version.clone(),
+            dir,
+            colors.clone(),
+        );
         std::thread::Builder::new()
             .name("loss-covers".into())
             .spawn(move || {
@@ -307,14 +324,22 @@ impl Covers {
     }
 }
 
-fn load_cover(dir: &Path, id: &str, path: &Path, size: u32, want_color: bool) -> (Option<String>, Option<[u8; 3]>) {
+fn load_cover(
+    dir: &Path,
+    id: &str,
+    path: &Path,
+    size: u32,
+    want_color: bool,
+) -> (Option<String>, Option<[u8; 3]>) {
     let cache = dir.join(format!("{id}-{size}.jpg"));
     let bytes = match std::fs::read(&cache) {
         Ok(b) => b,
         Err(_) => {
             let Some(raw) = loss_core::tags::read_cover(path)
                 .map(|(b, _)| b)
-                .or_else(|| loss_core::tags::find_folder_cover(path).and_then(|p| std::fs::read(p).ok()))
+                .or_else(|| {
+                    loss_core::tags::find_folder_cover(path).and_then(|p| std::fs::read(p).ok())
+                })
             else {
                 return (None, None);
             };

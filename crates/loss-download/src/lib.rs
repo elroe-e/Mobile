@@ -39,7 +39,10 @@ impl DownloadRequest {
             .or_else(|| meta.artist.clone())
             .unwrap_or_else(|| "Unknown Artist".into());
         let album = meta.album.clone().unwrap_or_else(|| "Singles".into());
-        let title = meta.title.clone().unwrap_or_else(|| fallback_name.to_string());
+        let title = meta
+            .title
+            .clone()
+            .unwrap_or_else(|| fallback_name.to_string());
         let name = match meta.track_no {
             Some(n) => format!("{n:02} {title}"),
             None => title,

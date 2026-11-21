@@ -75,11 +75,20 @@ pub async fn fetch(
         return Ok(None);
     }
     let v: serde_json::Value = resp.json().await?;
-    let mut results: Vec<&serde_json::Value> = v.as_array().map(|a| a.iter().collect()).unwrap_or_default();
+    let mut results: Vec<&serde_json::Value> =
+        v.as_array().map(|a| a.iter().collect()).unwrap_or_default();
     if let Some(d) = duration.filter(|d| *d > 0.0) {
         results.sort_by(|a, b| {
-            let da = a.get("duration").and_then(as_f64).map(|x| (x - d).abs()).unwrap_or(1e9);
-            let db = b.get("duration").and_then(as_f64).map(|x| (x - d).abs()).unwrap_or(1e9);
+            let da = a
+                .get("duration")
+                .and_then(as_f64)
+                .map(|x| (x - d).abs())
+                .unwrap_or(1e9);
+            let db = b
+                .get("duration")
+                .and_then(as_f64)
+                .map(|x| (x - d).abs())
+                .unwrap_or(1e9);
             da.total_cmp(&db)
         });
     }

@@ -1,7 +1,7 @@
 //! Home: greeting, continue listening, shortcuts, recent albums, top songs.
 
 use super::icons::Icon;
-use super::{play_tracks, resume_last, shuffle_tracks, state, Cover, CookieButton, Tab};
+use super::{play_tracks, resume_last, shuffle_tracks, state, CookieButton, Cover, Tab};
 use crate::services;
 use dioxus::prelude::*;
 use loss_audio::{Command, Status};
@@ -30,15 +30,25 @@ pub fn HomeTab() -> Element {
     let plays: u32 = lib.tracks.iter().map(|t| t.play_count).sum();
 
     // "Continue listening": what's loaded in the player, else the last song.
-    let cont_id = p.current().map(|c| c.id.clone()).or(settings.last_track.clone());
+    let cont_id = p
+        .current()
+        .map(|c| c.id.clone())
+        .or(settings.last_track.clone());
     let cont: Option<Track> = cont_id.and_then(|id| lib.get(&id).cloned());
     let (pos, dur) = if p.current().is_some() {
         (p.position, p.duration)
     } else {
-        (settings.last_position, cont.as_ref().map(|t| t.duration_secs).unwrap_or(0.0))
+        (
+            settings.last_position,
+            cont.as_ref().map(|t| t.duration_secs).unwrap_or(0.0),
+        )
     };
     let playing = p.status == Status::Playing;
-    let pct = if dur > 0.0 { (pos / dur * 100.0).min(100.0) } else { 0.0 };
+    let pct = if dur > 0.0 {
+        (pos / dur * 100.0).min(100.0)
+    } else {
+        0.0
+    };
     let has_queue = p.current().is_some();
 
     let mut seen = std::collections::HashSet::new();
@@ -61,7 +71,12 @@ pub fn HomeTab() -> Element {
     let all_ids: Vec<String> = lib.tracks.iter().map(|t| t.id.clone()).collect();
     drop(lib);
 
-    let running = st.jobs.read().iter().filter(|j| !j.status.is_finished()).count();
+    let running = st
+        .jobs
+        .read()
+        .iter()
+        .filter(|j| !j.status.is_finished())
+        .count();
     let top_ids: Vec<String> = top.iter().map(|t| t.id.clone()).collect();
 
     rsx! {

@@ -29,7 +29,10 @@ pub fn requests_from_text(text: &str) -> Result<Vec<DownloadRequest>, String> {
             return Err(format!("not a web link: {line}"));
         }
         let name = name_from_url(line);
-        let title = name.rsplit_once('.').map(|x| x.0.to_string()).unwrap_or(name.clone());
+        let title = name
+            .rsplit_once('.')
+            .map(|x| x.0.to_string())
+            .unwrap_or(name.clone());
         let (artist, title) = match title.split_once(" - ") {
             Some((a, t)) => (Some(a.trim().to_string()), t.trim().to_string()),
             None => (None, title),
@@ -59,7 +62,10 @@ mod tests {
 
     #[test]
     fn parses_links() {
-        let r = requests_from_text("https://x.com/a/My%20Band%20-%20Song.flac?token=1\n\nhttps://y.org/album.zip").unwrap();
+        let r = requests_from_text(
+            "https://x.com/a/My%20Band%20-%20Song.flac?token=1\n\nhttps://y.org/album.zip",
+        )
+        .unwrap();
         assert_eq!(r.len(), 2);
         assert_eq!(r[0].rel_path, "Direct/My Band - Song.flac");
         assert_eq!(r[0].meta.artist.as_deref(), Some("My Band"));

@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "ccr-*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  NDK_VERSION: 27.2.12479018
+  DX_VERSION: 0.7.10
+
+jobs:
+  check:
+    name: Format, lint, test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libasound2-dev pkg-config libwebkit2gtk-4.1-dev libxdo-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy (crates)
+        run: cargo clippy -p loss-core -p loss-audio -p loss-download --all-targets -- -D warnings
+      - name: Clippy (app, desktop build)
+        run: cargo clippy -p loss --no-default-features --features desktop --all-targets -- -D warnings
+      - name: Tests (crates)
+        run: cargo test -p loss-core -p loss-audio -p loss-download
+      - name: Tests (app)
+        run: cargo test -p loss --no-default-features --features desktop
+      - name: Plan consistency
+        run: python3 scripts/check-plan.py
+
+  android:
+    name: Android APK
+    needs: check
+    # Saves Actions minutes: the APK is built on PRs, main and manual runs, not on every branch push.
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android
+      - name: Android SDK packages
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+      - name: Cache Dioxus CLI
+        id: dx-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/dx
+          key: dx-${{ env.DX_VERSION }}-${{ runner.os }}
+      - name: Install Dioxus CLI
+        if: steps.dx-cache.outputs.cache-hit != 'true'
+        run: cargo install dioxus-cli --version "$DX_VERSION" --locked
+      - name: Build APK (arm64)
+        working-directory: app
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
+          dx bundle --platform android --release --target aarch64-linux-android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Loss-arm64-apk
+          path: target/dx/loss/release/android/app/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

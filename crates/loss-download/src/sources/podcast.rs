@@ -21,7 +21,8 @@ pub async fn search(client: &reqwest::Client, query: &str) -> crate::Result<Vec<
             let title = as_string(&p["collectionName"]).unwrap_or_else(|| feed.clone());
             Some(SearchItem {
                 subtitle: as_string(&p["artistName"]).unwrap_or_default(),
-                cover_url: as_string(&p["artworkUrl600"]).or_else(|| as_string(&p["artworkUrl100"])),
+                cover_url: as_string(&p["artworkUrl600"])
+                    .or_else(|| as_string(&p["artworkUrl100"])),
                 license: None,
                 format: Some("Podcast".into()),
                 duration: None,
@@ -47,7 +48,8 @@ pub async fn open(client: &reqwest::Client, feed_url: &str) -> crate::Result<Vec
 }
 
 pub fn parse_feed(bytes: &[u8]) -> crate::Result<Vec<SearchItem>> {
-    let channel = rss::Channel::read_from(bytes).map_err(|e| format!("not a valid podcast feed: {e}"))?;
+    let channel =
+        rss::Channel::read_from(bytes).map_err(|e| format!("not a valid podcast feed: {e}"))?;
     let show = channel.title().to_string();
     let author = channel
         .itunes_ext()

@@ -110,7 +110,10 @@ impl PlayerState {
 #[derive(Debug)]
 pub enum Command {
     /// Replace the queue and start playing at `start`.
-    SetQueue { items: Vec<QueueItem>, start: usize },
+    SetQueue {
+        items: Vec<QueueItem>,
+        start: usize,
+    },
     /// Append to the end of the queue.
     Enqueue(Vec<QueueItem>),
     /// Insert right after the current track.

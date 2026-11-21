@@ -13,11 +13,13 @@ fn main() {
         use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
         // Desktop build is for development: open a phone-sized window.
         dioxus::LaunchBuilder::desktop()
-            .with_cfg(Config::new().with_window(
-                WindowBuilder::new()
-                    .with_title("Loss")
-                    .with_inner_size(LogicalSize::new(412.0, 880.0)),
-            ))
+            .with_cfg(
+                Config::new().with_window(
+                    WindowBuilder::new()
+                        .with_title("Loss")
+                        .with_inner_size(LogicalSize::new(412.0, 880.0)),
+                ),
+            )
             .launch(ui::App);
     }
     #[cfg(not(feature = "desktop"))]

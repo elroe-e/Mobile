@@ -29,9 +29,12 @@ struct Output {
     channels: usize,
 }
 
-fn pick_config(device: &cpal::Device, want_rate: u32) -> Result<cpal::SupportedStreamConfig, String> {
+fn pick_config(
+    device: &cpal::Device,
+    want_rate: u32,
+) -> Result<cpal::SupportedStreamConfig, String> {
     let default = device.default_output_config().map_err(|e| e.to_string())?;
-    let want_ch = default.channels().min(2).max(1);
+    let want_ch = default.channels().clamp(1, 2);
     if let Ok(configs) = device.supported_output_configs() {
         let mut best: Option<cpal::SupportedStreamConfig> = None;
         for c in configs {
@@ -152,7 +155,10 @@ struct Session {
     info: StreamInfo,
 }
 
-fn open_file(path: &Path) -> Result<(Box<dyn FormatReader>, Box<dyn Decoder>, u32, StreamInfo, f64), String> {
+/// An opened file: reader, decoder, track id, stream info, duration in seconds.
+type OpenedFile = (Box<dyn FormatReader>, Box<dyn Decoder>, u32, StreamInfo, f64);
+
+fn open_file(path: &Path) -> Result<OpenedFile, String> {
     let file = File::open(path).map_err(|e| format!("cannot open file: {e}"))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
@@ -318,7 +324,11 @@ impl Engine {
                 let mut s = self.st();
                 s.duration = dur;
                 s.info = info;
-                s.status = if autoplay { Status::Playing } else { Status::Paused };
+                s.status = if autoplay {
+                    Status::Playing
+                } else {
+                    Status::Paused
+                };
             }
             Err(e) => {
                 log::error!("cannot play: {e}");
@@ -558,7 +568,11 @@ impl Engine {
                 };
                 if let Some(i) = idx {
                     let dur = self.st().duration;
-                    let t = if dur > 0.0 { t.clamp(0.0, dur - 0.25) } else { t.max(0.0) };
+                    let t = if dur > 0.0 {
+                        t.clamp(0.0, dur - 0.25)
+                    } else {
+                        t.max(0.0)
+                    };
                     self.load(i, t, playing);
                 }
             }
@@ -621,18 +635,30 @@ impl Engine {
                 log::error!("decode error: {e}");
                 s.eof = true;
             }
-            let threshold = if s.duration > 0.0 { (s.duration * 0.5).min(30.0) } else { 30.0 };
+            let threshold = if s.duration > 0.0 {
+                (s.duration * 0.5).min(30.0)
+            } else {
+                30.0
+            };
             if !s.counted && pos >= threshold {
                 s.counted = true;
                 let id = s.item.id.clone();
-                state.lock().unwrap_or_else(|p| p.into_inner()).play_events.push(id);
+                state
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .play_events
+                    .push(id);
             }
             finished = s.drained();
         }
         {
             let mut st = self.st();
             if st.status == Status::Playing {
-                st.position = if st.duration > 0.0 { pos.min(st.duration) } else { pos };
+                st.position = if st.duration > 0.0 {
+                    pos.min(st.duration)
+                } else {
+                    pos
+                };
             }
         }
         if finished {
@@ -702,7 +728,7 @@ mod tests {
         b.extend_from_slice(b"data");
         b.extend_from_slice(&data_len.to_le_bytes());
         for i in 0..frames {
-            let v = ((i as f32 * 440.0 * 6.283 / rate as f32).sin() * 8000.0) as i16;
+            let v = ((i as f32 * 440.0 * std::f32::consts::TAU / rate as f32).sin() * 8000.0) as i16;
             b.extend_from_slice(&v.to_le_bytes());
             b.extend_from_slice(&v.to_le_bytes());
         }
@@ -722,7 +748,10 @@ mod tests {
         let capacity = 48000 * 2 * 2;
         let (producer, mut consumer) = rtrb::RingBuffer::new(capacity);
         let mut s = Session {
-            item: QueueItem { id: "x".into(), path: path.clone() },
+            item: QueueItem {
+                id: "x".into(),
+                path: path.clone(),
+            },
             format,
             decoder,
             track_id,

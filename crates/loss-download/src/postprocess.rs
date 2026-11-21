@@ -39,7 +39,9 @@ pub fn extract_zip(zip_path: &Path) -> Result<Vec<PathBuf>, String> {
         };
         let out = dest.join(file_name);
         let lower = out.to_string_lossy().to_lowercase();
-        let is_image = [".jpg", ".jpeg", ".png", ".webp"].iter().any(|e| lower.ends_with(e));
+        let is_image = [".jpg", ".jpeg", ".png", ".webp"]
+            .iter()
+            .any(|e| lower.ends_with(e));
         if !is_audio_file(&out) && !is_image {
             continue;
         }
@@ -95,9 +97,11 @@ pub async fn run(
         }
         if opts.auto_tag && !is_zip {
             let (f, meta, cover) = (file.clone(), req.meta.clone(), cover.clone());
-            let res = tokio::task::spawn_blocking(move || tags::write_missing(&f, &meta, cover.as_deref()))
-                .await
-                .map_err(|e| e.to_string())?;
+            let res = tokio::task::spawn_blocking(move || {
+                tags::write_missing(&f, &meta, cover.as_deref())
+            })
+            .await
+            .map_err(|e| e.to_string())?;
             if let Err(e) = res {
                 log::warn!("could not tag {}: {e}", file.display());
             }
@@ -111,7 +115,10 @@ pub async fn run(
             if meta.embedded_lyrics.is_some() {
                 continue;
             }
-            let (Some(artist), Some(title)) = (meta.artist.or(req.meta.artist.clone()), meta.title.or(req.meta.title.clone())) else {
+            let (Some(artist), Some(title)) = (
+                meta.artist.or(req.meta.artist.clone()),
+                meta.title.or(req.meta.title.clone()),
+            ) else {
                 continue;
             };
             let dur = (meta.duration_secs > 0.0).then_some(meta.duration_secs);

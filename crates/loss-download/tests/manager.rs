@@ -33,7 +33,9 @@ fn serve(body: Vec<u8>, fail_first: usize) -> (String, Arc<AtomicUsize>) {
                     }
                 }
                 if n < fail_first {
-                    let _ = s.write_all(b"HTTP/1.1 503 Busy\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                    let _ = s.write_all(
+                        b"HTTP/1.1 503 Busy\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    );
                     return;
                 }
                 let part = &body[range_start.min(body.len())..];
@@ -148,10 +150,17 @@ fn downloads_pauses_resumes_and_tags() {
     assert!(m.wait_idle(Duration::from_secs(30)));
     let done = m.jobs()[0].clone();
     assert_eq!(done.status, JobStatus::Done, "{:?}", done.status);
-    assert!(hits.load(Ordering::SeqCst) >= 2, "resume should use a second (Range) request");
+    assert!(
+        hits.load(Ordering::SeqCst) >= 2,
+        "resume should use a second (Range) request"
+    );
 
     let out = &done.outputs[0];
-    assert!(out.ends_with("music/Loss Lab/Signals/01 Test Tone.wav"), "{}", out.display());
+    assert!(
+        out.ends_with("music/Loss Lab/Signals/01 Test Tone.wav"),
+        "{}",
+        out.display()
+    );
     let meta = loss_core::tags::read_meta(out).unwrap();
     assert_eq!(meta.title.as_deref(), Some("Test Tone"));
     assert_eq!(meta.artist.as_deref(), Some("Loss Lab"));
@@ -193,14 +202,20 @@ fn gives_up_on_404() {
             let mut s = s;
             let mut buf = [0u8; 1024];
             let _ = s.read(&mut buf);
-            let _ = s.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            let _ = s.write_all(
+                b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
         }
     });
     let m = manager(&dir, 3);
     m.enqueue(vec![request(&format!("http://{addr}/missing.mp3"))]);
     assert!(m.wait_idle(Duration::from_secs(10)));
     let j = m.jobs()[0].clone();
-    assert!(matches!(j.status, JobStatus::Failed(ref e) if e.contains("404")), "{:?}", j.status);
+    assert!(
+        matches!(j.status, JobStatus::Failed(ref e) if e.contains("404")),
+        "{:?}",
+        j.status
+    );
     assert_eq!(j.attempts, 1, "404 must not be retried");
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -213,14 +228,25 @@ fn live_internet_archive() {
     let client = m.client();
     let items = m
         .runtime()
-        .block_on(loss_download::sources::archive::search(&client, "netlabel electronic", true, 1))
+        .block_on(loss_download::sources::archive::search(
+            &client,
+            "netlabel electronic",
+            true,
+            1,
+        ))
         .unwrap();
     assert!(!items.is_empty());
     println!("first result: {} — {:?}", items[0].title, items[0].license);
-    let loss_download::sources::ItemAction::Open(c) = &items[0].action else { panic!() };
+    let loss_download::sources::ItemAction::Open(c) = &items[0].action else {
+        panic!()
+    };
     let files = m
         .runtime()
         .block_on(loss_download::sources::archive::open(&client, &c.id))
         .unwrap();
-    println!("{} files, first: {:?}", files.len(), files.first().map(|f| (&f.title, &f.format)));
+    println!(
+        "{} files, first: {:?}",
+        files.len(),
+        files.first().map(|f| (&f.title, &f.format))
+    );
 }

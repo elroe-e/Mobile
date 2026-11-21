@@ -87,7 +87,9 @@ pub fn license_label(url: &str) -> String {
         let kind = parts.next().unwrap_or("");
         let ver = parts.next().unwrap_or("");
         if !kind.is_empty() {
-            return format!("CC {} {}", kind.to_uppercase(), ver).trim().to_string();
+            return format!("CC {} {}", kind.to_uppercase(), ver)
+                .trim()
+                .to_string();
         }
     }
     url.to_string()
@@ -97,7 +99,13 @@ pub fn license_label(url: &str) -> String {
 mod tests {
     #[test]
     fn license_names() {
-        assert_eq!(super::license_label("http://creativecommons.org/licenses/by-nc-sa/2.5/"), "CC BY-NC-SA 2.5");
-        assert_eq!(super::license_label("https://creativecommons.org/publicdomain/zero/1.0/"), "CC0");
+        assert_eq!(
+            super::license_label("http://creativecommons.org/licenses/by-nc-sa/2.5/"),
+            "CC BY-NC-SA 2.5"
+        );
+        assert_eq!(
+            super::license_label("https://creativecommons.org/publicdomain/zero/1.0/"),
+            "CC0"
+        );
     }
 }
