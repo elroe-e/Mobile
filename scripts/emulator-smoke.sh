@@ -6,7 +6,7 @@
 #
 # Writes screenshot.png, logcat.txt, media_session.txt and processes.txt to out-dir
 # (default target/emulator-smoke). Fails on a Java FATAL EXCEPTION, a Rust panic, a native crash,
-# or if the app isn't running after the wait.
+# if the app isn't running after the wait, or if the Rust↔Kotlin bridge didn't start.
 set -uo pipefail
 
 APK="${1:?usage: emulator-smoke.sh app.apk [out-dir]}"
@@ -51,6 +51,10 @@ if grep -Eq "Fatal signal [0-9]+ .*\($PKG|>>> $PKG <<<" "$OUT/logcat.txt"; then
 fi
 if ! adb shell pidof "$PKG" > /dev/null; then
   echo "::error::Loss is not running after ${WAIT}s"
+  fail=1
+fi
+if ! grep -q "platform bridge ready" "$OUT/logcat.txt"; then
+  echo "::error::Rust didn't register its native methods (no 'platform bridge ready' line)"
   fail=1
 fi
 if ! grep -q "Loss .* starting" "$OUT/logcat.txt"; then

@@ -25,7 +25,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 
 | Milestone | What it delivers | Tasks | Done | Rough size |
 |---|---|---|---|---|
-| M0 | Foundations: CI, glue module, bridge, store, settings, i18n, UI kit, diagnostics | 13 | 4 | 4–5 sessions |
+| M0 | Foundations: CI, glue module, bridge, store, settings, i18n, UI kit, diagnostics | 13 | 5 | 4–5 sessions |
 | M1 | The 7 problems fixed + phone verification | 8 | 7 | 2–3 sessions |
 | M2 | Audio engine v2, hi-fi output, USB, DSP | 24 | 0 | 8–10 sessions |
 | M3 | Player and queue | 16 | 0 | 3–4 sessions |
@@ -36,7 +36,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 | M8 | Home, discovery, stats, social, audio tools | 13 | 0 | 5–6 sessions |
 | M9 | Devices and platform integrations | 8 | 0 | 5–6 sessions |
 | M10 | Look, app shell, desktop, iOS, languages, release | 14 | 0 | 6–7 sessions |
-| **Total** | | **155** | **11** | **≈ 50–60 sessions** |
+| **Total** | | **155** | **12** | **≈ 50–60 sessions** |
 
 A "session" here means one working session of the length used so far. Numbers are estimates.
 
@@ -92,7 +92,7 @@ updated; this file's checkbox is ticked. Commit messages start with the task ID 
   files, `res/`, manifest fragment merged by Gradle). Bundle through Dioxus' Android artifact mechanism,
   with `scripts/build-android.sh` patching as fallback. *Done when:* the APK contains glue classes and a
   glue resource (the notification icon), and the existing media service still works (Round M1).
-- [ ] **M0-06 Rust↔Kotlin bridge (`loss-platform`).** Typed JNI calls with cached classes loaded through
+- [x] **M0-06 Rust↔Kotlin bridge (`loss-platform`).** Typed JNI calls with cached classes loaded through
   the activity class loader. Events from Kotlin through a native `LossNative.onEvent(kind, json)`
   (registered with `RegisterNatives`), replacing command polling. Migrate media.rs. *Done when:* media
   buttons reach the engine with no polling loop.

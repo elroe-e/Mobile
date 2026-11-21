@@ -206,9 +206,25 @@ settings search, backup/restore and migration. All 174 Mornye settings are mappe
 
 ## 8. Android glue (android/glue)
 
-A Gradle library module merged into the app. Preferred: bundle it through Dioxus' Android artifact
-mechanism (the `dx` CLI 0.7.10 copies Gradle source modules declared through manganis
-`AndroidArtifactMetadata`). Fallback: `scripts/build-android.sh` patches the generated Gradle project.
+A Gradle library module merged into the app (package `app.loss.glue`). It is bundled through Dioxus'
+Android artifact mechanism: `app/src/glue.rs` holds a `manganis::ffi` block naming `android/glue`, and
+`dx` 0.7.10 copies the folder into its Gradle project as `:plugins:lossglue` (done in M0-05). Only
+`MainActivity` stays in `app/android/`, because it must extend dx's `WryActivity`.
+
+The bridge (M0-06, `crates/loss-platform`):
+
+* Kotlin → Rust: `LossBridge.emit(kind, json)` calls `LossNative.onEvent`, which Rust registers with
+  `RegisterNatives` at startup (then calls `LossBridge.nativeReady`, which flushes anything queued
+  before). Kinds: `media {cmd}`, `focus {change}`, `noisy`, `outputs_added/removed {types}`,
+  `volume {level, max}`. `LossNative.back()` returns whether Rust handled Back.
+* Rust parses them into `loss_platform::Event` and hands them to the `loss-events` thread, which
+  blocks on a channel. Focus and unplug decisions are `loss_platform::FocusPolicy` (unit-tested);
+  Kotlin only holds the focus request and reports.
+* Rust → Kotlin: typed functions in `loss_platform::android` (`update_playback`, `stop_playback`,
+  `update_downloads`) and app helpers in `app/src/platform.rs`, all through cached global class
+  references loaded with the activity's class loader.
+* The `loss-media` thread still ticks every 300 ms to push player state out; it becomes event-driven
+  when the engine publishes state changes (M2-01).
 
 | Class | Job |
 |---|---|

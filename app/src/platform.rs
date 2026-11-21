@@ -15,26 +15,8 @@ pub struct Paths {
 #[cfg(target_os = "android")]
 pub mod android {
     use jni::objects::{JObject, JString, JValue};
-    use jni::JavaVM;
 
-    /// Runs `f` with a JNI env and the activity. Local references are freed
-    /// when it returns, so it is safe to call in a loop on a long-lived thread.
-    pub fn with_env<T>(
-        f: impl FnOnce(&mut jni::JNIEnv, &JObject) -> jni::errors::Result<T>,
-    ) -> Option<T> {
-        let ctx = ndk_context::android_context();
-        let vm = unsafe { JavaVM::from_raw(ctx.vm().cast()) }.ok()?;
-        let mut env = vm.attach_current_thread().ok()?;
-        let activity = unsafe { JObject::from_raw(ctx.context().cast()) };
-        let out = env.with_local_frame(32, |env| f(env, &activity));
-        if env.exception_check().unwrap_or(false) {
-            let _ = env.exception_describe();
-            let _ = env.exception_clear();
-        }
-        // The activity reference is owned by the NDK; don't delete it.
-        std::mem::forget(activity);
-        out.map_err(|e| log::error!("jni: {e}")).ok()
-    }
+    pub use loss_platform::android::{bridge_class, with_env};
 
     fn file_path(env: &mut jni::JNIEnv, file: JObject) -> jni::errors::Result<String> {
         let s = env
@@ -67,53 +49,6 @@ pub mod android {
             }
             file_path(env, f)
         })
-    }
-
-    // ---- Calls from Kotlin (LossNative) ----
-
-    /// `LossNative.command(cmd)`: playback commands from the notification,
-    /// lock screen, headset buttons, audio focus and unplug events.
-    #[no_mangle]
-    pub extern "system" fn Java_app_loss_glue_LossNative_command<'local>(
-        mut env: jni::JNIEnv<'local>,
-        _class: jni::objects::JClass<'local>,
-        cmd: JString<'local>,
-    ) {
-        let cmd: String = match env.get_string(&cmd) {
-            Ok(s) => s.into(),
-            Err(_) => return,
-        };
-        crate::media::apply_command(crate::services::get(), &cmd);
-    }
-
-    /// `LossNative.back()`: returns whether the app handled Back itself.
-    #[no_mangle]
-    pub extern "system" fn Java_app_loss_glue_LossNative_back<'local>(
-        _env: jni::JNIEnv<'local>,
-        _class: jni::objects::JClass<'local>,
-    ) -> jni::sys::jboolean {
-        crate::nav::request_back() as jni::sys::jboolean
-    }
-
-    /// `app.loss.glue.LossBridge`, loaded through the activity's class loader
-    /// (works from threads Rust created, where `FindClass` can't see app classes).
-    pub fn bridge_class<'a>(
-        env: &mut jni::JNIEnv<'a>,
-        act: &JObject,
-    ) -> jni::errors::Result<jni::objects::JClass<'a>> {
-        let loader = env
-            .call_method(act, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
-            .l()?;
-        let name = env.new_string("app.loss.glue.LossBridge")?;
-        let cls = env
-            .call_method(
-                &loader,
-                "loadClass",
-                "(Ljava/lang/String;)Ljava/lang/Class;",
-                &[JValue::Object(&name)],
-            )?
-            .l()?;
-        Ok(jni::objects::JClass::from(cls))
     }
 
     pub fn copy_text(label: &str, text: &str) {

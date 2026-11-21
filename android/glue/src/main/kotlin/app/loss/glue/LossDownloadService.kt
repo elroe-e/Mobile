@@ -89,8 +89,8 @@ class LossDownloadService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            "loss.DL_PAUSE" -> LossBridge.push("dl_pause_all")
-            "loss.DL_RESUME" -> LossBridge.push("dl_resume_all")
+            "loss.DL_PAUSE" -> LossBridge.command("dl_pause_all")
+            "loss.DL_RESUME" -> LossBridge.command("dl_resume_all")
         }
         refresh()
         return START_NOT_STICKY

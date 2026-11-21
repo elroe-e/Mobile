@@ -2890,6 +2890,7 @@ dependencies = [
  "loss-audio",
  "loss-core",
  "loss-download",
+ "loss-platform",
  "manganis",
  "ndk-context",
  "serde_json",
@@ -2939,6 +2940,17 @@ dependencies = [
  "tokio",
  "urlencoding",
  "zip",
+]
+
+[[package]]
+name = "loss-platform"
+version = "0.1.0"
+dependencies = [
+ "jni 0.21.1",
+ "log",
+ "ndk-context",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

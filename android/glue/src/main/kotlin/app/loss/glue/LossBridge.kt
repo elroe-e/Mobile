@@ -3,8 +3,10 @@
 
 package app.loss.glue
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.hardware.usb.UsbManager
 import android.media.AudioFormat
@@ -21,11 +23,12 @@ import javax.crypto.spec.GCMParameterSpec
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import java.util.concurrent.ConcurrentLinkedQueue
+import org.json.JSONArray
+import org.json.JSONObject
 
 /** Shared state between Rust and the playback service. */
 object LossBridge {
     @Volatile var appContext: Context? = null
-    private val commands = ConcurrentLinkedQueue<String>()
     private val main = Handler(Looper.getMainLooper())
 
     @Volatile var title: String = ""
@@ -36,36 +39,87 @@ object LossBridge {
     @Volatile var positionMs: Long = 0
     @Volatile var durationMs: Long = 0
     @Volatile var hasNext: Boolean = true
+    /** Rust: keep the audio-focus request while paused, because a call paused us. */
+    @Volatile var keepFocus: Boolean = false
 
-    /** Sends a command to Rust right away; queues it if the native call isn't available. */
-    fun push(cmd: String) {
-        try {
-            LossNative.command(cmd)
-        } catch (e: UnsatisfiedLinkError) {
-            commands.add(cmd)
+    // ---- Events to Rust ----
+
+    @Volatile private var nativeReady = false
+    private val pending = ConcurrentLinkedQueue<Pair<String, String>>()
+
+    /** Sends an event to Rust; queues it (up to 64) until Rust has registered its natives. */
+    fun emit(kind: String, json: String = "{}") {
+        if (nativeReady) {
+            try {
+                LossNative.onEvent(kind, json)
+                return
+            } catch (e: UnsatisfiedLinkError) {
+                nativeReady = false
+            }
         }
+        if (pending.size < 64) pending.add(kind to json)
     }
 
-    /** Rust: newline-separated commands since the last call ("" if none). */
+    /** A playback or download command: play, pause, toggle, next, prev, "seek <ms>", dl_*. */
+    fun command(cmd: String) = emit("media", JSONObject().put("cmd", cmd).toString())
+
+    fun outputs(kind: String, devices: Array<out AudioDeviceInfo>) {
+        val types = JSONArray()
+        devices.filter { it.isSink }.forEach { types.put(it.type) }
+        if (types.length() > 0) emit(kind, JSONObject().put("types", types).toString())
+    }
+
+    private fun emitVolume(ctx: Context) {
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        emit(
+            "volume",
+            JSONObject()
+                .put("level", am.getStreamVolume(AudioManager.STREAM_MUSIC))
+                .put("max", am.getStreamMaxVolume(AudioManager.STREAM_MUSIC))
+                .toString()
+        )
+    }
+
+    // The phone's media volume changed (buttons, other apps, Loss itself). The broadcast only
+    // triggers a fresh read, so its contents don't matter.
+    private val volumeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) = emitVolume(context)
+    }
+    private var volumeRegistered = false
+
+    /** Rust: natives are registered. Delivers queued events and starts reporting volume. */
     @JvmStatic
-    fun pollCommands(): String {
-        val sb = StringBuilder()
+    fun nativeReady(ctx: Context) {
+        val app = ctx.applicationContext
+        appContext = app
+        nativeReady = true
         while (true) {
-            val c = commands.poll() ?: break
-            if (sb.isNotEmpty()) sb.append('\n')
-            sb.append(c)
+            val (kind, json) = pending.poll() ?: break
+            emit(kind, json)
         }
-        return sb.toString()
+        main.post {
+            if (!volumeRegistered) {
+                val filter = IntentFilter("android.media.VOLUME_CHANGED_ACTION")
+                if (Build.VERSION.SDK_INT >= 33) {
+                    app.registerReceiver(volumeReceiver, filter, Context.RECEIVER_EXPORTED)
+                } else {
+                    app.registerReceiver(volumeReceiver, filter)
+                }
+                volumeRegistered = true
+            }
+            emitVolume(app)
+        }
     }
 
     /** Rust: something changed. Starts the service if needed and refreshes it. */
     @JvmStatic
     fun update(
         ctx: Context, title: String, artist: String, album: String, artPath: String,
-        playing: Boolean, positionMs: Long, durationMs: Long
+        playing: Boolean, positionMs: Long, durationMs: Long, keepFocus: Boolean
     ) {
         this.title = title; this.artist = artist; this.album = album; this.artPath = artPath
         this.playing = playing; this.positionMs = positionMs; this.durationMs = durationMs
+        this.keepFocus = keepFocus
         val app = ctx.applicationContext
         appContext = app
         main.post {

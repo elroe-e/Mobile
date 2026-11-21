@@ -32,11 +32,11 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy (crates)
-        run: cargo clippy -p loss-core -p loss-audio -p loss-download --all-targets -- -D warnings
+        run: cargo clippy -p loss-core -p loss-audio -p loss-download -p loss-platform --all-targets -- -D warnings
       - name: Clippy (app, desktop build)
         run: cargo clippy -p loss --no-default-features --features desktop --all-targets -- -D warnings
       - name: Tests (crates)
-        run: cargo test -p loss-core -p loss-audio -p loss-download
+        run: cargo test -p loss-core -p loss-audio -p loss-download -p loss-platform
       - name: Tests (app)
         run: cargo test -p loss --no-default-features --features desktop
       - name: Plan consistency

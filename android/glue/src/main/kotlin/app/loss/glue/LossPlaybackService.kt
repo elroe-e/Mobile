@@ -31,6 +31,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import java.io.File
+import org.json.JSONObject
 
 class LossPlaybackService : Service() {
     companion object {
@@ -46,73 +47,52 @@ class LossPlaybackService : Service() {
     private var isForeground = false
     private var everForeground = false
 
-    // Audio focus: pause for calls and other apps (PRB-1).
+    // Audio focus (PRB-1) and unplugging (PRB-2). Kotlin holds the focus request and reports
+    // changes; Rust (loss-platform policy) decides whether to pause or resume.
     private lateinit var audioManager: AudioManager
     private var focusRequest: AudioFocusRequest? = null
+    /** A focus request is outstanding (not abandoned). */
+    private var requested = false
+    /** We hold focus right now (false during a call even while `requested`). */
     private var hasFocus = false
-    /** We paused because of a temporary focus loss (e.g. a call) and resume when it ends. */
-    private var pausedForFocus = false
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    private fun focusEvent(change: String) =
+        LossBridge.emit("focus", JSONObject().put("change", change).toString())
 
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
         when (change) {
             AudioManager.AUDIOFOCUS_LOSS -> {
-                // Another app took over for good: pause and let go.
-                hasFocus = false
-                pausedForFocus = false
-                if (LossBridge.playing) LossBridge.push("pause")
+                // The request is finished for good; let go of it.
                 abandonFocus()
+                focusEvent("loss")
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                // A call or a short sound: pause now, resume afterwards. We don't
-                // hold focus meanwhile, so pressing play during a call asks again
-                // (and is refused) instead of playing over it.
+                // Keep the request so Android tells us when the call ends.
                 hasFocus = false
-                if (LossBridge.playing) {
-                    pausedForFocus = true
-                    LossBridge.push("pause")
-                }
+                focusEvent("loss_transient")
             }
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                // Android lowers our volume by itself (setWillPauseWhenDucked(false)).
-            }
+            // Android lowers our volume by itself (setWillPauseWhenDucked(false)).
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> focusEvent("duck")
             AudioManager.AUDIOFOCUS_GAIN -> {
                 hasFocus = true
-                if (pausedForFocus) {
-                    pausedForFocus = false
-                    LossBridge.push("play")
-                }
+                focusEvent("gain")
             }
         }
     }
 
-    // Pause when headphones, the USB DAC or Bluetooth disconnect, instead of
-    // switching to the speaker (PRB-2).
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) pauseForUnplug()
+            if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) LossBridge.emit("noisy")
         }
     }
 
     private val deviceCallback = object : AudioDeviceCallback() {
-        override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) {
-            val external = removed.any {
-                it.isSink && it.type in setOf(
-                    AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE,
-                    AudioDeviceInfo.TYPE_USB_ACCESSORY, AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
-                    AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
-                    AudioDeviceInfo.TYPE_LINE_ANALOG, AudioDeviceInfo.TYPE_LINE_DIGITAL
-                )
-            }
-            if (external) pauseForUnplug()
-        }
-    }
+        override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) =
+            LossBridge.outputs("outputs_added", added)
 
-    private fun pauseForUnplug() {
-        if (LossBridge.playing) {
-            pausedForFocus = false
-            LossBridge.push("pause")
-        }
+        override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) =
+            LossBridge.outputs("outputs_removed", removed)
     }
 
     private fun requestFocus(): Boolean {
@@ -135,6 +115,7 @@ class LossPlaybackService : Service() {
             audioManager.requestAudioFocus(focusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
         }
         hasFocus = granted == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        requested = hasFocus
         return hasFocus
     }
 
@@ -146,16 +127,15 @@ class LossPlaybackService : Service() {
             audioManager.abandonAudioFocus(focusListener)
         }
         hasFocus = false
+        requested = false
     }
 
-    /** Called on every state update from Rust. */
-    private fun syncFocus(playing: Boolean) {
+    /** Called on every state update from Rust: hold focus while playing, or while Rust waits
+     *  for a call to end (keepFocus); otherwise let other apps play. */
+    private fun syncFocus(playing: Boolean, keepFocus: Boolean) {
         if (playing) {
-            pausedForFocus = false
-            // Refused, e.g. during a phone call: don't play over it.
-            if (!requestFocus()) LossBridge.push("pause")
-        } else if (hasFocus && !pausedForFocus) {
-            // Paused by the user: let other apps play.
+            if (!requestFocus()) focusEvent("refused")
+        } else if (requested && !keepFocus) {
             abandonFocus()
         }
     }
@@ -172,12 +152,12 @@ class LossPlaybackService : Service() {
         }
         session = MediaSession(this, "Loss").apply {
             setCallback(object : MediaSession.Callback() {
-                override fun onPlay() = LossBridge.push("play")
-                override fun onPause() = LossBridge.push("pause")
-                override fun onSkipToNext() = LossBridge.push("next")
-                override fun onSkipToPrevious() = LossBridge.push("prev")
-                override fun onStop() = LossBridge.push("pause")
-                override fun onSeekTo(pos: Long) = LossBridge.push("seek $pos")
+                override fun onPlay() = LossBridge.command("play")
+                override fun onPause() = LossBridge.command("pause")
+                override fun onSkipToNext() = LossBridge.command("next")
+                override fun onSkipToPrevious() = LossBridge.command("prev")
+                override fun onStop() = LossBridge.command("pause")
+                override fun onSeekTo(pos: Long) = LossBridge.command("seek $pos")
             })
             val open = packageManager.getLaunchIntentForPackage(packageName)
             if (open != null) {
@@ -200,9 +180,9 @@ class LossPlaybackService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            "loss.PREV" -> LossBridge.push("prev")
-            "loss.TOGGLE" -> LossBridge.push("toggle")
-            "loss.NEXT" -> LossBridge.push("next")
+            "loss.PREV" -> LossBridge.command("prev")
+            "loss.TOGGLE" -> LossBridge.command("toggle")
+            "loss.NEXT" -> LossBridge.command("next")
         }
         refresh()
         return START_NOT_STICKY
@@ -216,7 +196,7 @@ class LossPlaybackService : Service() {
 
     fun refresh() {
         val b = LossBridge
-        syncFocus(b.playing)
+        syncFocus(b.playing, b.keepFocus)
         if (b.artPath != lastArt) {
             lastArt = b.artPath
             art = if (b.artPath.isNotEmpty() && File(b.artPath).exists()) BitmapFactory.decodeFile(b.artPath) else null

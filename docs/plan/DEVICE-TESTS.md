@@ -36,6 +36,8 @@ Playback and controls
 
 Interruptions
 - [ ] Receive a phone call while playing: music pauses, then resumes after the call.
+- [ ] During a call, press pause in the notification; after the call, music stays paused.
+- [ ] Press the phone's volume buttons with Loss open: Loss' volume slider follows at once.
 - [ ] Start a video in another app: Loss pauses.
 - [ ] Unplug the USB-C cable while playing: music **pauses** and doesn't come out of the speaker.
 
