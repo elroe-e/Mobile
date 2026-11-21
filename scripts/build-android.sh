@@ -8,6 +8,9 @@ cd "$(dirname "$0")/../app"
 export ANDROID_HOME="${ANDROID_HOME:-/opt/android-sdk}"
 export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/27.2.12479018}"
 
+# dx keeps libraries from earlier builds for other ABIs (e.g. an x86_64 emulator build) in the
+# Gradle project, which would bloat the phone APK; drop them first.
+rm -rf ../target/dx/loss/release/android/app/app/src/main/jniLibs/x86_64
 dx bundle --platform android --release --target aarch64-linux-android
 
 APK=../target/dx/loss/release/android/app/app/build/outputs/apk/debug/app-debug.apk
