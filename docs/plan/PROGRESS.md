@@ -46,8 +46,14 @@ next session must know.
   placeholders ("{} songs") and text after icons; four missed strings were translated.
 - Found while testing the kit: container animations with `fill-mode: both` trapped fixed-position
   sheets (hidden under the bottom bar) and dialogs (off-screen); they now use `backwards`.
-- Next: finish M0-10 (fast scroller, swipe rows, pinch-zoom grid, icon font, focus, album grid),
-  M0-04 release (needs D3), then M2. Round M1 results from the owner are still outstanding.
+- **M0-10 done**: plus `VirtualGrid` (Library → Albums; pinch or Ctrl+wheel zoom saved as
+  `album_grid_size`), fast-scroll handle (dragging runs in page JS for smoothness), swipe a song
+  towards the end edge to play next (pointer events; `touch-action: pan-y`), keyboard focus rings
+  and Enter to play, Material Symbols Rounded as a 7 KB subset font (`scripts/make-icon-font.py`;
+  Apache-2.0 notice in `app/assets/fonts/`). Predictive back moved to M10-01, TV D-pad focus to
+  M9-06.
+- Next: M2 (audio engine and hi-fi for the Beats): M2-01, M2-07, M2-02, M2-03, M2-06, M2-05, M2-04.
+  M0-04 waits for D3; M0-13 and M1-08 wait for the owner's phone round.
 
 ## 2026-11-21 (session 3): foundations (M0-03, M0-05, M0-06, M0-07)
 

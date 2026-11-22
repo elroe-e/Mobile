@@ -1,0 +1,3 @@
+material-symbols-loss.woff2 is a subset of Material Symbols Rounded by Google, licensed under the
+Apache License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0
+Source: https://github.com/google/material-design-icons (via the material-symbols npm package 0.27.0).

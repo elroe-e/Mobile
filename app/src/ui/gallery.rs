@@ -2,7 +2,7 @@
 //! page, for checking looks, languages and right-to-left layout. `scripts/ui-smoke.sh` visits it.
 
 use super::icons::Icon;
-use super::kit::{haptic, Dialog, Haptic, Marquee, Sheet, SheetItem, VirtualList};
+use super::kit::{haptic, Dialog, Haptic, Marquee, Sheet, SheetItem, VirtualGrid, VirtualList};
 use super::settings::{SettingsNav, SettingsPage};
 use super::state;
 use dioxus::prelude::*;
@@ -15,6 +15,7 @@ pub fn GalleryPage() -> Element {
     let mut dialog = use_signal(|| false);
     let mut seg = use_signal(|| 1usize);
     let mut on = use_signal(|| true);
+    let mut tile = use_signal(|| 90.0f64);
     rsx! {
         button {
             class: "back",
@@ -94,6 +95,23 @@ pub fn GalleryPage() -> Element {
             div { style: "max-width: 220px",
                 Marquee { text: t!("gallery-marquee-text"), class: "title" }
             }
+        }
+
+        h2 { class: "section-title", {t!("gallery-virtual-grid")} }
+        p { class: "muted small", {t!("gallery-pinch")} }
+        VirtualGrid {
+            id: "gallery-vgrid",
+            len: 60,
+            min_item: tile(),
+            extra: 0.0,
+            render: move |i: usize| rsx! {
+                div {
+                    class: "demo-tile",
+                    style: "background: hsl({(i * 37) % 360} 60% 80%)",
+                    "{i + 1}"
+                }
+            },
+            on_zoom: move |f: f64| tile.set((tile() * f).clamp(60.0, 240.0)),
         }
 
         h2 { class: "section-title", {t!("gallery-virtual-list")} }

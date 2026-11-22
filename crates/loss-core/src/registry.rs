@@ -264,6 +264,7 @@ pub const INTERNAL: &[&str] = &[
     "last_position",
     "podcasts",
     "reliability_notice_dismissed",
+    "album_grid_size",
 ];
 
 pub fn find(key: &str) -> Option<&'static SettingDef> {

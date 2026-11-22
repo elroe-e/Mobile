@@ -25,7 +25,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 
 | Milestone | What it delivers | Tasks | Done | Rough size |
 |---|---|---|---|---|
-| M0 | Foundations: CI, glue module, bridge, store, settings, i18n, UI kit, diagnostics | 13 | 10 | 4–5 sessions |
+| M0 | Foundations: CI, glue module, bridge, store, settings, i18n, UI kit, diagnostics | 13 | 11 | 4–5 sessions |
 | M1 | The 7 problems fixed + phone verification | 8 | 7 | 2–3 sessions |
 | M2 | Audio engine v2, hi-fi output, USB, DSP | 24 | 0 | 8–10 sessions |
 | M3 | Player and queue | 16 | 0 | 3–4 sessions |
@@ -36,7 +36,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 | M8 | Home, discovery, stats, social, audio tools | 13 | 0 | 5–6 sessions |
 | M9 | Devices and platform integrations | 8 | 0 | 5–6 sessions |
 | M10 | Look, app shell, desktop, iOS, languages, release | 14 | 0 | 6–7 sessions |
-| **Total** | | **155** | **17** | **≈ 50–60 sessions** |
+| **Total** | | **155** | **18** | **≈ 50–60 sessions** |
 
 A "session" here means one working session of the length used so far. Numbers are estimates.
 
@@ -44,10 +44,7 @@ A "session" here means one working session of the length used so far. Numbers ar
 
 1. **M1-08** Phone round on the Xiaomi with the Beats (DEVICE-TESTS "Round M1"). Fix whatever the
    owner reports first. The newest APK also carries the glue module, the event bridge and the database.
-2. **M0-10** UI kit, continuing: done so far are layers + Back, sheet, dialog, undo snackbar,
-   long-press menu, haptics, virtual list (library songs), marquee, gallery. Left: fast scroller,
-   swipe rows, pinch-zoom grid, Material Symbols font, focus management (TV/keyboard), virtual grid
-   for albums; then tick it. **M0-13** HyperOS reliability
+2. **M0-04** release workflow when the owner decides D3 (signing key). **M0-13** HyperOS reliability
    (built; waiting for the owner's 30-minute screen-off check in DEVICE-TESTS round M1), **M0-04** release workflow (needs decision D3, the signing key).
 3. Then **M2** (audio engine, hi-fi output for the Beats). The device report is in
    (`docs/plan/reports/2026-11-21-xiaomi-beats.txt`): the Beats take 32/48 kHz only and this phone has
@@ -106,7 +103,7 @@ updated; this file's checkbox is ticked. Commit messages start with the task ID 
 - [x] **M0-09 Internationalisation.** `loss-i18n` with Fluent; `t!()` in the UI; all current strings in
   `en.ftl`; locale from Android (JNI) or the OS; language picker (system default first); RTL direction.
   *Done when:* a script finds no hard-coded UI strings and a pseudo-locale renders everywhere.
-- [ ] **M0-10 UI kit.**
+- [x] **M0-10 UI kit.**
   - Router with per-tab stacks and modal layers; Android Back and predictive back.
   - Bottom sheet, dialog, context menu (long-press and right-click), snackbar with undo.
   - Virtualized list and grid (10k rows at 60 fps), swipe rows, pinch-zoom grid, fast scroller.
@@ -527,7 +524,8 @@ updated; this file's checkbox is ticked. Commit messages start with the task ID 
   (audio → add or play; links → Discover, podcast or direct link), PROCESS_TEXT → search, "Open audio"
   button.
 - [ ] **M9-06 Android TV / Google TV.** Leanback launcher entry and banner, TV shell (navigation rail,
-  D-pad focus, large controls), landscape player, remote media keys.
+  D-pad focus, large controls), landscape player, remote media keys. (From M0-10: D-pad focus
+  order across the kit's components; keyboard focus rings and Enter-to-play exist already.)
 - [ ] **M9-07 Tablets and large screens.** Navigation rail, two-pane list/detail, landscape player,
   multi-window and resizable windows.
 - [ ] **M9-08 Desktop system integration.** OS media controls (`souvlaki`: MPRIS, SMTC, Now Playing),
@@ -535,7 +533,8 @@ updated; this file's checkbox is ticked. Commit messages start with the task ID 
 
 ## M10 Look, app shell, desktop, iOS, languages, release
 
-- [ ] **M10-01 Look v2.** Wallpaper colours (Material You system palette, Android 12+) next to
+- [ ] **M10-01 Look v2.** (From M0-10: Android 14+ predictive back animation, via
+  `OnBackInvokedCallback` in the glue forwarding to `LossNative.back`.) Wallpaper colours (Material You system palette, Android 12+) next to
   album-art colours (keep Loss' whole-app colouring as an option); accent picker; AMOLED black; import
   a TTF/OTF font (≤ 10 MB) or use the system font; interface size; animation speed; blur options
   ("always use blur"); cover fly-in toggle; expressive shapes.

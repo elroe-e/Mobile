@@ -69,6 +69,9 @@ def scan(path: Path):
                 continue
             if NOT_TEXT.search(before) and not re.search(r"[{,]\s*$", before):
                 continue
+            # Inline CSS declarations ("transform: translateX({x}px); transition: none").
+            if re.fullmatch(r"(\s*[a-z-]+\s*:\s*[^;:]+;?)+\s*", text):
+                continue
             # CSS class lists inside `class: if … { "a b" } else { "c" }`.
             if "class:" in before and re.fullmatch(r"[a-z0-9 _-]+", text):
                 continue

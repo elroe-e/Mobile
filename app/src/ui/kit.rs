@@ -177,8 +177,137 @@ pub fn visible_window(
     (start.min(end), end)
 }
 
+/// Where a virtual list or grid is: its top edge relative to the viewport, the viewport height,
+/// and the list's width (px).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct ListView {
+    pub top: f64,
+    pub height: f64,
+    pub width: f64,
+}
+
+/// Watches element `id`: reports its position on scroll and resize, runs the fast-scroll handle
+/// (`{id}-fs`) in the page so dragging stays smooth, and, with `zoom`, turns pinch and
+/// Ctrl+wheel into zoom steps (factor > 1 is bigger) passed to `on_zoom`.
+fn use_list_view(id: String, zoom: Option<Callback<f64>>) -> Signal<ListView> {
+    let mut view = use_signal(|| ListView {
+        top: 0.0,
+        height: 900.0,
+        width: 380.0,
+    });
+    use_future(move || {
+        let id = id.clone();
+        async move {
+            let js = format!(
+                r#"(function() {{
+                    const id = {id};
+                    let queued = false;
+                    const el = () => document.getElementById(id);
+                    const report = () => {{
+                        queued = false;
+                        const e = el();
+                        if (e) {{ const r = e.getBoundingClientRect(); dioxus.send(['view', r.top, window.innerHeight, r.width]); }}
+                    }};
+                    const ask = () => {{ if (!queued) {{ queued = true; requestAnimationFrame(report); }} }};
+                    window.addEventListener('scroll', ask, {{ passive: true }});
+                    window.addEventListener('resize', ask);
+                    setTimeout(report, 50);
+                    // Fast scroller: drag the handle to jump through the list.
+                    document.addEventListener('pointerdown', (ev) => {{
+                        const track = ev.target.closest && ev.target.closest('#' + CSS.escape(id + '-fs'));
+                        const e = el();
+                        if (!track || !e) return;
+                        ev.preventDefault();
+                        track.classList.add('dragging');
+                        const go = (y) => {{
+                            const t = track.getBoundingClientRect();
+                            const f = Math.min(1, Math.max(0, (y - t.top) / t.height));
+                            const top = e.getBoundingClientRect().top + window.scrollY;
+                            const span = Math.max(0, e.offsetHeight - window.innerHeight * 0.6);
+                            window.scrollTo(0, top - 120 + f * span);
+                        }};
+                        go(ev.clientY);
+                        const move = (m) => go(m.clientY);
+                        const up = () => {{
+                            track.classList.remove('dragging');
+                            window.removeEventListener('pointermove', move);
+                            window.removeEventListener('pointerup', up);
+                            window.removeEventListener('pointercancel', up);
+                        }};
+                        window.addEventListener('pointermove', move);
+                        window.addEventListener('pointerup', up);
+                        window.addEventListener('pointercancel', up);
+                    }});
+                    if ({zoom}) {{
+                        // Pinch (two fingers) or Ctrl+wheel resizes the grid.
+                        window.addEventListener('wheel', (ev) => {{
+                            const e = el();
+                            if (!ev.ctrlKey || !e || !e.contains(ev.target)) return;
+                            ev.preventDefault();
+                            dioxus.send(['zoom', ev.deltaY < 0 ? 1.1 : 0.9, 0, 0]);
+                        }}, {{ passive: false }});
+                        let start = 0;
+                        const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+                        window.addEventListener('touchstart', (ev) => {{
+                            if (ev.touches.length === 2 && el() && el().contains(ev.target)) start = dist(ev.touches);
+                        }}, {{ passive: true }});
+                        window.addEventListener('touchmove', (ev) => {{
+                            if (ev.touches.length !== 2 || !start) return;
+                            ev.preventDefault();
+                            const f = dist(ev.touches) / start;
+                            if (f > 1.15 || f < 0.87) {{ dioxus.send(['zoom', f, 0, 0]); start = dist(ev.touches); }}
+                        }}, {{ passive: false }});
+                        window.addEventListener('touchend', () => {{ start = 0; }}, {{ passive: true }});
+                    }}
+                }})();"#,
+                id = serde_json::to_string(&id).unwrap_or_default(),
+                zoom = zoom.is_some(),
+            );
+            let mut ev = document::eval(&js);
+            while let Ok((kind, a, b, c)) = ev.recv::<(String, f64, f64, f64)>().await {
+                match kind.as_str() {
+                    "view" => {
+                        let v = ListView {
+                            top: a,
+                            height: b,
+                            width: c,
+                        };
+                        if *view.peek() != v {
+                            view.set(v);
+                        }
+                    }
+                    "zoom" => {
+                        if let Some(z) = zoom {
+                            z.call(a);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    });
+    view
+}
+
+/// The draggable handle at the screen's edge for jumping through long lists. Shown when the
+/// list is on screen and more than three screens long.
+#[component]
+fn FastScroller(id: String, view: ListView, total: f64) -> Element {
+    let on_screen = view.top < view.height && view.top + total > 0.0;
+    if total < view.height * 3.0 || !on_screen {
+        return rsx! {};
+    }
+    let span = (total - view.height * 0.6).max(1.0);
+    let frac = ((120.0 - view.top) / span).clamp(0.0, 1.0);
+    rsx! {
+        div { id: "{id}-fs", class: "fast-scroll", "aria-hidden": "true",
+            div { class: "fast-scroll-thumb", style: "top: calc({frac} * (100% - 44px))" }
+        }
+    }
+}
+
 /// A list that renders only the rows near the screen. Rows must all be `row_height` px tall.
-/// `render(i)` draws row `i`.
+/// `render(i)` draws row `i`. Long lists get a fast-scroll handle.
 #[component]
 pub fn VirtualList(
     id: String,
@@ -186,37 +315,8 @@ pub fn VirtualList(
     row_height: f64,
     render: Callback<usize, Element>,
 ) -> Element {
-    // Where the list is on screen: (top of the list relative to the viewport, viewport height).
-    let mut view = use_signal(|| (0.0f64, 900.0f64));
-    let el_id = id.clone();
-    use_future(move || {
-        let el_id = el_id.clone();
-        async move {
-            let js = format!(
-                r#"(function() {{
-                    let queued = false;
-                    const report = () => {{
-                        queued = false;
-                        const el = document.getElementById({id});
-                        if (el) dioxus.send([el.getBoundingClientRect().top, window.innerHeight]);
-                    }};
-                    const ask = () => {{ if (!queued) {{ queued = true; requestAnimationFrame(report); }} }};
-                    window.addEventListener('scroll', ask, {{ passive: true }});
-                    window.addEventListener('resize', ask);
-                    setTimeout(report, 50);
-                }})();"#,
-                id = serde_json::to_string(&el_id).unwrap_or_default()
-            );
-            let mut ev = document::eval(&js);
-            while let Ok(v) = ev.recv::<(f64, f64)>().await {
-                if *view.peek() != v {
-                    view.set(v);
-                }
-            }
-        }
-    });
-    let (top, height) = view();
-    let (start, end) = visible_window(len, top, height, row_height, 1.0, 20);
+    let view = use_list_view(id.clone(), None)();
+    let (start, end) = visible_window(len, view.top, view.height, row_height, 1.0, 20);
     let before = start as f64 * row_height;
     let after = (len - end) as f64 * row_height;
     rsx! {
@@ -227,6 +327,53 @@ pub fn VirtualList(
             }
             div { style: "height: {after}px" }
         }
+        FastScroller { id: id.clone(), view, total: len as f64 * row_height }
+    }
+}
+
+/// Grid layout for a width: (columns, item width, row height). Items are squares plus
+/// `extra` px of text below; rows are `gap` apart.
+pub fn grid_layout(width: f64, min_item: f64, extra: f64, gap: f64) -> (usize, f64, f64) {
+    let cols = (((width + gap) / (min_item + gap)).floor() as usize).max(2);
+    let item = ((width - gap * (cols as f64 - 1.0)) / cols as f64).max(1.0);
+    (cols, item, item + extra + gap)
+}
+
+/// A grid that renders only the rows near the screen. Items are squares (cover art) with
+/// `extra` px of text below, at least `min_item` px wide. Pinch or Ctrl+wheel calls `on_zoom`
+/// with a factor (> 1 means bigger items).
+#[component]
+pub fn VirtualGrid(
+    id: String,
+    len: usize,
+    min_item: f64,
+    extra: f64,
+    render: Callback<usize, Element>,
+    #[props(default)] on_zoom: Option<Callback<f64>>,
+) -> Element {
+    let view = use_list_view(id.clone(), on_zoom)();
+    let gap = 14.0;
+    let (cols, _item, row_h) = grid_layout(view.width.max(200.0), min_item, extra, gap);
+    let rows = len.div_ceil(cols);
+    let (start, end) = visible_window(rows, view.top, view.height, row_h, 1.0, 4);
+    let before = start as f64 * row_h;
+    let after = (rows - end) as f64 * row_h;
+    rsx! {
+        div { id: "{id}", class: "vgrid",
+            div { style: "height: {before}px" }
+            for r in start..end {
+                div {
+                    key: "{r}",
+                    class: "vgrid-row",
+                    style: "height: {row_h}px; grid-template-columns: repeat({cols}, minmax(0, 1fr)); column-gap: {gap}px",
+                    for i in (r * cols)..((r + 1) * cols).min(len) {
+                        div { key: "{i}", class: "vgrid-cell", {render.call(i)} }
+                    }
+                }
+            }
+            div { style: "height: {after}px" }
+        }
+        FastScroller { id: id.clone(), view, total: rows as f64 * row_h }
     }
 }
 
@@ -290,6 +437,19 @@ mod tests {
         assert_eq!(visible_window(0, 0.0, 900.0, 64.0, 1.0, 20), (0, 0));
         // List below the screen: starts at 0.
         assert_eq!(visible_window(50, 2000.0, 900.0, 64.0, 1.0, 20).0, 0);
+    }
+
+    #[test]
+    fn grid_layout_fits_columns() {
+        use super::grid_layout;
+        // A phone (380 px wide) with 150 px minimum: 2 columns.
+        let (c, w, h) = grid_layout(380.0, 150.0, 54.0, 14.0);
+        assert_eq!(c, 2);
+        assert!((w * 2.0 + 14.0 - 380.0).abs() < 0.01);
+        assert!((h - (w + 54.0 + 14.0)).abs() < 0.01);
+        // Zoomed out (100 px): 3 columns. Never fewer than 2.
+        assert_eq!(grid_layout(380.0, 100.0, 54.0, 14.0).0, 3);
+        assert_eq!(grid_layout(200.0, 400.0, 54.0, 14.0).0, 2);
     }
 
     #[test]

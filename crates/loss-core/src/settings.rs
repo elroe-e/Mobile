@@ -48,6 +48,8 @@ pub struct Settings {
     pub language: String,
     /// The Home notice about background limits was dismissed.
     pub reliability_notice_dismissed: bool,
+    /// Smallest album-cover width in the library grid (px); pinch changes it.
+    pub album_grid_size: u32,
 }
 
 impl Default for Settings {
@@ -73,6 +75,7 @@ impl Default for Settings {
             detailed_logging: false,
             language: "system".into(),
             reliability_notice_dismissed: false,
+            album_grid_size: 150,
         }
     }
 }

@@ -90,7 +90,10 @@ plays instantly. Set `HOME`/`LOSS_DATA_DIR` to a scratch dir, drive it with `xdo
 
 * UI kit (`app/src/ui/kit.rs`): `Sheet`/`SheetItem`/`Dialog` register as layers that Back closes
   first; `st.toast_undo(msg, closure)` for undoable actions; `VirtualList` (fixed row height) for
-  long lists; `Marquee` for long titles; `haptic(Haptic::…)`. Debug builds have Settings → Help →
+  long lists, `VirtualGrid` (square covers + text; pinch/Ctrl+wheel zoom) for grids, both with a
+  fast-scroll handle; `Marquee` for long titles; `haptic(Haptic::…)`. Icons are Material Symbols
+  Rounded from a 7 KB subset font (`Icon { name, filled }`); a new icon needs a line in
+  `ui/icons.rs` and `python3 scripts/make-icon-font.py` (needs `pip install fonttools brotli`). Debug builds have Settings → Help →
   Component gallery (`LOSS_DEBUG_PAGE=gallery` opens it at start; ui-smoke.sh screenshots it).
 * Sheets and dialogs are `position: fixed` inside the page, so no ancestor may keep a transform,
   filter or `contain` applied: animations on containers use `animation-fill-mode: backwards`, never

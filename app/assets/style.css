@@ -479,3 +479,38 @@ input.seek.dragging::-webkit-slider-thumb { margin-top: -8px; }
 .card > .stepper { align-self: flex-start; }
 /* Notices are read in full: their titles wrap instead of being cut off. */
 .notice-card .title { white-space: normal; }
+/* Icons: Material Symbols Rounded subset (ligatures). */
+.msr {
+  font-family: 'Loss Symbols'; font-weight: normal; font-style: normal; line-height: 1; letter-spacing: normal;
+  text-transform: none; white-space: nowrap; direction: ltr; display: inline-block; overflow: hidden;
+  font-feature-settings: 'liga'; -webkit-font-smoothing: antialiased; user-select: none;
+  font-variation-settings: 'FILL' 0; transition: font-variation-settings .25s var(--ease);
+}
+.msr.filled, .nav-item.active .msr, .np-chip.on .msr { font-variation-settings: 'FILL' 1; }
+[dir="rtl"] .msr.mirror { transform: scaleX(-1); }
+/* Virtual grid and fast scroller (M0-10) */
+.vgrid-row { display: grid; align-content: start; }
+.vgrid-cell { min-width: 0; }
+.fast-scroll {
+  position: fixed; right: 0; width: 28px; z-index: 18; touch-action: none;
+  top: calc(env(safe-area-inset-top) + 140px); bottom: calc(var(--nav-h) + var(--mini-h) + env(safe-area-inset-bottom) + 24px);
+}
+.fast-scroll-thumb {
+  position: absolute; right: 4px; width: 6px; height: 44px; border-radius: 3px; background: var(--outline);
+  opacity: .55; transition: width .15s, opacity .15s, right .15s;
+}
+.fast-scroll.dragging .fast-scroll-thumb, .fast-scroll:hover .fast-scroll-thumb { width: 10px; right: 6px; opacity: 1; background: var(--primary); }
+[dir="rtl"] .fast-scroll { right: auto; left: 0; }
+[dir="rtl"] .fast-scroll-thumb { right: auto; left: 4px; }
+/* Swipe a song to play it next (M0-10) */
+.row { touch-action: pan-y; overflow: hidden; }
+.row-main { transition: transform .2s var(--ease); }
+.swipe-hint {
+  position: absolute; inset: 0; display: flex; align-items: center; padding-inline-start: 18px;
+  background: var(--secondary-container); color: var(--on-secondary-container); border-radius: var(--r-m);
+}
+.row-main:focus-visible, button:focus-visible, .album-card:focus-visible, input:focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--r-m);
+}
+.row, .album-card { -webkit-user-select: none; user-select: none; }
+.demo-tile { aspect-ratio: 1; border-radius: var(--r-m); display: grid; place-items: center; font-weight: 700; color: var(--on-primary-container); }

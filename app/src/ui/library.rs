@@ -122,6 +122,7 @@ fn LibraryMain(nav: LibNav) -> Element {
     let mut sort = use_signal(|| Sort::Latest);
     let mut query = use_signal(String::new);
     let svc = services::get();
+    let mut grid_size = use_signal(|| svc.settings().album_grid_size.clamp(100, 280) as f64);
     let lib = svc.library();
     let total = lib.len();
     let q = query();
@@ -152,7 +153,7 @@ fn LibraryMain(nav: LibNav) -> Element {
         }
     }
     // Badge + first track per album.
-    let album_info: Vec<(Album, String)> = albums
+    let album_info: std::rc::Rc<Vec<(Album, String)>> = albums
         .into_iter()
         .map(|a| {
             let badge = a
@@ -163,7 +164,8 @@ fn LibraryMain(nav: LibNav) -> Element {
                 .unwrap_or_default();
             (a, badge)
         })
-        .collect();
+        .collect::<Vec<_>>()
+        .into();
     drop(lib);
 
     let song_ids: Ids = songs
@@ -228,10 +230,28 @@ fn LibraryMain(nav: LibNav) -> Element {
                 }
             }
             if active == Seg::Albums {
-                div { class: "album-grid",
-                    for (a , badge) in album_info.iter() {
-                        AlbumCard { key: "{a.key}", album: a.clone(), badge: badge.clone(), nav }
-                    }
+                super::kit::VirtualGrid {
+                    id: "library-albums",
+                    len: album_info.len(),
+                    min_item: grid_size(),
+                    // Title and artist lines under the cover.
+                    extra: 54.0,
+                    render: {
+                        let album_info = album_info.clone();
+                        move |i: usize| {
+                            let (a, badge) = &album_info[i];
+                            rsx! { AlbumCard { key: "{a.key}", album: a.clone(), badge: badge.clone(), nav } }
+                        }
+                    },
+                    // Pinch (or Ctrl+wheel) makes covers bigger or smaller; remembered.
+                    on_zoom: move |f: f64| {
+                        let size = (grid_size() * f).clamp(100.0, 280.0);
+                        if (size - grid_size()).abs() >= 1.0 {
+                            grid_size.set(size);
+                            super::kit::haptic(super::kit::Haptic::Tick);
+                            services::get().update_settings(move |s| s.album_grid_size = size as u32);
+                        }
+                    },
                 }
             }
             if active == Seg::Artists {
@@ -343,7 +363,14 @@ pub fn SongRow(
     let playing_id = st.player.read().current().map(|c| c.id.clone());
     let is_current = playing_id.as_deref() == Some(track.id.as_str());
     let mut menu = use_signal(|| false);
+    // Swipe towards the end edge (right, or left in right-to-left languages) to play next.
+    let mut swipe_start = use_signal(|| None::<(f64, f64)>);
+    let mut swipe_x = use_signal(|| 0.0f64);
+    let mut swiped = use_signal(|| false);
+    let rtl = loss_i18n::is_rtl();
     let id = track.id.clone();
+    let id_swipe = track.id.clone();
+    let ids_key = ids.clone();
     let badge = track.quality_badge();
     let lossless = track.is_lossless();
     rsx! {
@@ -355,9 +382,53 @@ pub fn SongRow(
                 super::kit::haptic(super::kit::Haptic::LongPress);
                 menu.set(true);
             },
+            if swipe_x() != 0.0 {
+                div { class: "swipe-hint", Icon { name: "play_next", size: 22 } }
+            }
             div {
                 class: "row-main",
-                onclick: move |_| play_tracks(&ids.0, index),
+                tabindex: "0",
+                style: if swipe_x() != 0.0 { "transform: translateX({swipe_x()}px); transition: none" } else { "" },
+                onclick: move |_| {
+                    // The end of a swipe isn't a tap.
+                    if !swiped() {
+                        play_tracks(&ids.0, index);
+                    }
+                    swiped.set(false);
+                },
+                onkeydown: move |e: KeyboardEvent| {
+                    if e.key() == Key::Enter {
+                        play_tracks(&ids_key.0, index);
+                    }
+                },
+                onpointerdown: move |e: PointerEvent| {
+                    let p = e.client_coordinates();
+                    swipe_start.set(Some((p.x, p.y)));
+                },
+                onpointermove: move |e: PointerEvent| {
+                    let Some((x0, y0)) = swipe_start() else { return };
+                    let p = e.client_coordinates();
+                    let (dx, dy) = (p.x - x0, p.y - y0);
+                    let forward = if rtl { -dx } else { dx };
+                    if swipe_x() != 0.0 || (forward > 12.0 && forward > dy.abs() * 1.5) {
+                        swipe_x.set(dx.clamp(if rtl { -140.0 } else { 0.0 }, if rtl { 0.0 } else { 140.0 }));
+                    }
+                },
+                onpointerup: move |_| {
+                    let moved = swipe_x().abs();
+                    if moved > 90.0 {
+                        super::kit::haptic(super::kit::Haptic::Confirm);
+                        services::get().player.send(Command::PlayNext(queue_items(std::slice::from_ref(&id_swipe))));
+                        st.toast(t!("toast-playing-next"));
+                    }
+                    swiped.set(moved > 12.0);
+                    swipe_x.set(0.0);
+                    swipe_start.set(None);
+                },
+                onpointercancel: move |_| {
+                    swipe_x.set(0.0);
+                    swipe_start.set(None);
+                },
                 if show_cover {
                     div { class: "row-art",
                         Cover { track_id: track.id.clone(), class: "cover row-cover" }

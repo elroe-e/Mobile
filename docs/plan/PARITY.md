@@ -25,7 +25,7 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 | PLT-08 | First-run setup | Setup wizard (language, permissions, download folder) and a tutorial | Asks for music and notification permission | Simpler in Loss | M10-04 | todo |
 | PLT-09 | App updates | Built-in updater with Stable and Preview channels and “What’s new” | Install each new APK yourself | Only in Mornye | M0-04, M10-05 | todo |
 | PLT-10 | Crash reports & logs | Saves crash reports; log viewer with search, filter and share | None inside the app | Only in Mornye | M0-11 | done |
-| PLT-11 | Back button | Goes back through screens (predictive back) | Always leaves the app, even from an album page | Different | M0-10, M1-04 | doing |
+| PLT-11 | Back button | Goes back through screens (predictive back) | Always leaves the app, even from an album page | Different | M0-10, M1-04 | done |
 | PLT-12 | Open files and links from other apps | “Open with” for audio files, share songs or links into the app, search selected text | No | Only in Mornye | M9-05 | todo |
 | PLT-13 | Built with | Flutter/Dart screens, Rust backend, Kotlin and C++ for Android | Rust for screens, player and downloads, plus one small Kotlin file | Different | — | keep |
 | PLT-14 | Licence | Open source, LGPL-3.0 | No licence chosen yet | Different | M10-12 | todo |
@@ -34,7 +34,7 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 
 | ID | Feature | Mornye | Loss today | Status | Tasks | State |
 |---|---|---|---|---|---|---|
-| LOOK-01 | Design style | Material 3 Expressive, drawn with native widgets | Material 3 style recreated inside a web view | Simpler in Loss | M0-10, M10-01 | todo |
+| LOOK-01 | Design style | Material 3 Expressive, drawn with native widgets | Material 3 style recreated inside a web view | Simpler in Loss | M0-10, M10-01 | doing |
 | LOOK-02 | Second theme | “Mornye” glass theme: frosted glass, 7 accent colours, glass clarity and outline settings | One style | Only in Mornye | M10-02 | todo |
 | LOOK-03 | Colours from album art | Player, mini player and album/artist headers | The whole app recolours to the playing song | Different | M10-01 | todo |
 | LOOK-04 | Colours from wallpaper (Material You) | Yes | No | Only in Mornye | M10-01 | todo |
@@ -46,14 +46,14 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 | LOOK-10 | Animation speed | Slower / faster slider | Follows the phone’s “reduce motion” only | Simpler in Loss | M10-01 | todo |
 | LOOK-11 | Cover fly-in animation | Covers fly between screens, for example into the player | Player slides up; artwork fades in | Simpler in Loss | M3-13 | todo |
 | LOOK-12 | Blur | Blurred navigation bar, plus an “always use blur” option | Blur behind lyrics and on the round player buttons | Simpler in Loss | M10-01 | todo |
-| LOOK-13 | Icons | Material Symbols Rounded, plus an iOS-style set | Classic Material icons (45 of them) | Different | M0-10 | todo |
+| LOOK-13 | Icons | Material Symbols Rounded, plus an iOS-style set | Classic Material icons (45 of them) | Different | M0-10 | done |
 | LOOK-14 | Shapes | Squircles, pills, scalloped “cookie” buttons | Rounded rectangles, pills, scalloped play button | Simpler in Loss | M10-01 | todo |
 | LOOK-15 | Wavy seek bar | Squiggly line while playing | Thick flat bar | Only in Mornye | M3-02 | todo |
 | LOOK-16 | Animated album covers | Plays video covers from metadata sources | No | Only in Mornye | M10-03 | todo |
-| LOOK-17 | Vibration feedback | On swipes, selections and buttons (27 places) | None | Only in Mornye | M0-10 | todo |
-| LOOK-18 | Long song titles | Scroll sideways so you can read them | Cut off with “…” | Only in Mornye | M0-10, M3-11 | todo |
+| LOOK-17 | Vibration feedback | On swipes, selections and buttons (27 places) | None | Only in Mornye | M0-10 | done |
+| LOOK-18 | Long song titles | Scroll sideways so you can read them | Cut off with “…” | Only in Mornye | M0-10, M3-11 | doing |
 | LOOK-19 | Grid / list switch, pinch to resize | Yes | Albums are a grid only | Only in Mornye | M4-05 | todo |
-| LOOK-20 | Fast scroller | Drag handle for long lists | No | Only in Mornye | M0-10, M4-05 | todo |
+| LOOK-20 | Fast scroller | Drag handle for long lists | No | Only in Mornye | M0-10, M4-05 | doing |
 | LOOK-21 | Page transitions | Yes | Yes: tab changes, player open/close, song changes | Same | — | keep |
 | LOOK-22 | Navigation bar | Pill behind the active tab | Pill behind the active tab | Same | — | keep |
 

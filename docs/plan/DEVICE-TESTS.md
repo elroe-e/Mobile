@@ -73,6 +73,10 @@ Security
       as before (nothing shows an id like `home-tagline`).
 - [ ] Library → Songs: scrolling a long list is smooth; long-press a song: the phone vibrates and
       a menu slides up from the bottom (Play next, Add to queue); Back closes it.
+- [ ] Swipe a song to the right: it slides, the phone vibrates and it plays next.
+- [ ] Library → Albums: pinch with two fingers to make covers bigger or smaller; it's remembered.
+- [ ] In a long list, a thin handle on the right edge can be dragged to jump through it.
+- [ ] Icons look like before but rounder; the active tab's icon is filled.
 - [ ] Settings → remove a music folder: "Folder removed" with **Undo**; Undo brings it back.
 - [ ] A song with a long title: in the player and the mini player the title scrolls sideways.
 - [ ] Changing a setting's option (Theme, Downloads at once): a light tick vibration.

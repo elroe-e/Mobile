@@ -328,3 +328,6 @@ count-plays = { $count ->
    *[other] { $count } plays
 }
 
+gallery-virtual-grid = A grid you can resize
+gallery-pinch = Pinch with two fingers (or Ctrl + mouse wheel) to make the tiles bigger or smaller.
+
