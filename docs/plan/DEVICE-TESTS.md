@@ -60,6 +60,8 @@ Security
 - [ ] Settings → My server: after restarting the phone, the server still connects without retyping the
       password.
 - [ ] Settings → Logs and diagnostics opens; the log shows lines; Copy and Share work.
+- [ ] Settings → search "dark", "lyrics" and "navidrome": each finds its setting, and changing it
+      there sticks after closing and reopening Loss.
 
 ## Round M2 (hi-fi audio with the Beats)
 

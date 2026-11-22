@@ -219,3 +219,90 @@ fn loads_50k_tracks_quickly() {
     assert!(lib.get("t049999").is_some());
     assert!(took.as_secs_f64() < 1.0, "took {took:?}");
 }
+
+#[test]
+fn settings_are_one_row_per_setting() {
+    let d = TempDir::new("perkey");
+    let s = Store::open(&d.0.join("loss.redb")).unwrap();
+    let mut settings = Settings {
+        theme: "light".into(),
+        ..Default::default()
+    };
+    s.put_settings(&settings).unwrap();
+    assert_eq!(
+        s.setting("theme").unwrap(),
+        Some(serde_json::json!("light"))
+    );
+    settings.auto_tag = false;
+    s.put_settings(&settings).unwrap();
+    assert_eq!(s.settings().unwrap(), Some(settings));
+    assert_eq!(
+        s.setting("auto_tag").unwrap(),
+        Some(serde_json::json!(false))
+    );
+}
+
+#[test]
+fn a_bad_setting_value_falls_back_to_its_default() {
+    let d = TempDir::new("badsetting");
+    let s = Store::open(&d.0.join("loss.redb")).unwrap();
+    s.put_settings(&Settings {
+        theme: "dark".into(),
+        ..Default::default()
+    })
+    .unwrap();
+    {
+        let txn = s.db.begin_write().unwrap();
+        txn.open_table(SETTINGS)
+            .unwrap()
+            .insert("max_retries", b"\"lots\"".as_slice())
+            .unwrap();
+        txn.commit().unwrap();
+    }
+    let got = s.settings().unwrap().unwrap();
+    assert_eq!(got.theme, "dark");
+    assert_eq!(got.max_retries, Settings::default().max_retries);
+}
+
+#[test]
+fn schema_1_settings_row_is_split_into_keys() {
+    let d = TempDir::new("migrate12");
+    let path = d.0.join("loss.redb");
+    {
+        // Build a schema-1 database: everything in one "app" row.
+        let s = Store::open(&path).unwrap();
+        let old = Settings {
+            accent: "#7c8cff".into(),
+            max_retries: 2,
+            ..Default::default()
+        };
+        let txn = s.db.begin_write().unwrap();
+        {
+            let mut t = txn.open_table(SETTINGS).unwrap();
+            let keys: Vec<String> = t
+                .iter()
+                .unwrap()
+                .map(|r| r.unwrap().0.value().to_string())
+                .collect();
+            for k in keys {
+                t.remove(k.as_str()).unwrap();
+            }
+            t.insert(LEGACY_SETTINGS_ROW, to_json(&old).unwrap().as_slice())
+                .unwrap();
+        }
+        txn.open_table(KV)
+            .unwrap()
+            .insert(KEY_SCHEMA, b"1".as_slice())
+            .unwrap();
+        txn.commit().unwrap();
+    }
+    let s = Store::open(&path).unwrap();
+    assert_eq!(s.schema_version().unwrap(), SCHEMA_VERSION);
+    assert_eq!(s.setting(LEGACY_SETTINGS_ROW).unwrap(), None);
+    assert_eq!(
+        s.setting("accent").unwrap(),
+        Some(serde_json::json!("#7c8cff"))
+    );
+    let got = s.settings().unwrap().unwrap();
+    assert_eq!((got.accent.as_str(), got.max_retries), ("#7c8cff", 2));
+}

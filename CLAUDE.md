@@ -97,6 +97,9 @@ plays instantly. Set `HOME`/`LOSS_DATA_DIR` to a scratch dir, drive it with `xdo
   `android/glue` (it becomes `:plugins:lossglue`). Permissions and services go in the glue's manifest;
   Kotlin reaches Rust only through `LossBridge.emit` → `LossNative.onEvent` (registered natives, so
   no `Java_*` symbol names); Rust calls Kotlin through `loss_platform::android`.
+* A new setting: field in `Settings` (`#[serde(default)]` via the struct), entry in
+  `loss_core::registry::SETTINGS` plus its lines in `get`/`set` (or `INTERNAL` if it's app state);
+  the registry tests enforce this. The settings screen picks it up by itself.
 * Data lives in `loss.redb` (loss-store). Values are JSON, so new fields need `#[serde(default)]`; a
   new table or a changed meaning needs a migration step in `loss-store` (bump `SCHEMA_VERSION`).
 * `scripts/emulator-smoke.sh <apk>` checks a build on an emulator or a phone over adb (M0-03).

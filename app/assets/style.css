@@ -430,3 +430,10 @@ input.seek.dragging::-webkit-slider-thumb { margin-top: -8px; }
 .log-level { font-weight: 700; margin-right: 4px; }
 .lvl-error { color: var(--error); }
 .lvl-warn { color: var(--primary); }
+
+/* Settings search (M0-08) */
+.settings-search { margin: 0 0 8px; }
+.search-section { margin: 14px 4px 6px; text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
+.empty-note { padding: 24px 8px; text-align: center; }
+.setting.col .stepper { display: flex; }
+.setting.col .stepper .seg { flex: 1; }

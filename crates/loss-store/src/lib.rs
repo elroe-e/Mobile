@@ -9,7 +9,7 @@
 //! | table | key → value |
 //! |---|---|
 //! | `tracks` | track id → [`Track`] |
-//! | `settings` | `"app"` → [`Settings`] (split per key by the settings registry, M0-08) |
+//! | `settings` | setting key (a [`Settings`] field name, see `loss_core::registry`) → its JSON value |
 //! | `kv` | name → small values (schema version, import marker) |
 
 use loss_core::{Library, Settings, Track};
@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// The schema this build writes. Bump it and add a step to [`MIGRATIONS`] when tables change.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 const TRACKS: TableDefinition<&str, &[u8]> = TableDefinition::new("tracks");
 const SETTINGS: TableDefinition<&str, &[u8]> = TableDefinition::new("settings");
@@ -27,7 +27,8 @@ const KV: TableDefinition<&str, &[u8]> = TableDefinition::new("kv");
 
 const KEY_SCHEMA: &str = "schema_version";
 const KEY_IMPORTED: &str = "imported_json";
-const SETTINGS_KEY: &str = "app";
+/// Schema 1 kept all settings in this one row.
+const LEGACY_SETTINGS_ROW: &str = "app";
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -72,6 +73,23 @@ const MIGRATIONS: &[Migration] = &[
         txn.open_table(TRACKS)?;
         txn.open_table(SETTINGS)?;
         txn.open_table(KV)?;
+        Ok(())
+    },
+    // 1 → 2: settings move from one row to one row per setting.
+    |txn| {
+        let mut t = txn.open_table(SETTINGS)?;
+        let old = t.remove(LEGACY_SETTINGS_ROW)?.map(|g| g.value().to_vec());
+        if let Some(bytes) = old {
+            match serde_json::from_slice::<serde_json::Value>(&bytes) {
+                Ok(serde_json::Value::Object(map)) => {
+                    for (k, v) in map {
+                        t.insert(k.as_str(), to_json(&v)?.as_slice())?;
+                    }
+                }
+                // Unreadable: drop it; the app falls back to default settings.
+                _ => log::error!("database: settings row unreadable, using defaults"),
+            }
+        }
         Ok(())
     },
 ];
@@ -258,17 +276,81 @@ impl Store {
 
     // ---- settings ----
 
+    /// All settings, or None if none were ever saved. Rows that are missing or unreadable get
+    /// their default value.
     pub fn settings(&self) -> Result<Option<Settings>> {
         let txn = self.db.begin_read()?;
         let t = txn.open_table(SETTINGS)?;
-        let v = t.get(SETTINGS_KEY)?.map(|g| from_json(g.value()));
+        let mut map = serde_json::Map::new();
+        for row in t.iter()? {
+            let (k, v) = row?;
+            match serde_json::from_slice::<serde_json::Value>(v.value()) {
+                Ok(v) => {
+                    map.insert(k.value().to_string(), v);
+                }
+                Err(e) => log::warn!("database: setting {} unreadable: {e}", k.value()),
+            }
+        }
+        if map.is_empty() {
+            return Ok(None);
+        }
+        // A value of the wrong type (e.g. after a hand edit) must not lose every setting: each
+        // stored value is checked on its own, and a bad one keeps its default.
+        let serde_json::Value::Object(mut good) = serde_json::to_value(Settings::default())? else {
+            unreachable!("Settings serialises to an object")
+        };
+        for (k, v) in map {
+            let mut trial = good.clone();
+            trial.insert(k.clone(), v.clone());
+            if serde_json::from_value::<Settings>(serde_json::Value::Object(trial)).is_ok() {
+                good.insert(k, v);
+            } else {
+                log::warn!("database: setting {k} has a bad value; using its default");
+            }
+        }
+        Ok(Some(serde_json::from_value(serde_json::Value::Object(
+            good,
+        ))?))
+    }
+
+    /// One setting's stored value.
+    pub fn setting(&self, key: &str) -> Result<Option<serde_json::Value>> {
+        let txn = self.db.begin_read()?;
+        let t = txn.open_table(SETTINGS)?;
+        let v = t.get(key)?.map(|g| from_json(g.value()));
         v.transpose()
     }
 
+    /// Saves all settings, writing only the rows that changed and removing rows for fields that
+    /// no longer exist.
     pub fn put_settings(&self, s: &Settings) -> Result<()> {
+        let serde_json::Value::Object(map) = serde_json::to_value(s)? else {
+            unreachable!("Settings serialises to an object")
+        };
         let txn = self.db.begin_write()?;
-        txn.open_table(SETTINGS)?
-            .insert(SETTINGS_KEY, to_json(s)?.as_slice())?;
+        {
+            let mut t = txn.open_table(SETTINGS)?;
+            let mut stale = Vec::new();
+            let mut same = Vec::new();
+            for row in t.iter()? {
+                let (k, v) = row?;
+                match map.get(k.value()) {
+                    None => stale.push(k.value().to_string()),
+                    Some(new) if to_json(new)?.as_slice() == v.value() => {
+                        same.push(k.value().to_string())
+                    }
+                    Some(_) => {}
+                }
+            }
+            for k in &stale {
+                t.remove(k.as_str())?;
+            }
+            for (k, v) in &map {
+                if !same.contains(k) {
+                    t.insert(k.as_str(), to_json(v)?.as_slice())?;
+                }
+            }
+        }
         txn.commit()?;
         Ok(())
     }

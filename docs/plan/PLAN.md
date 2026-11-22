@@ -25,7 +25,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 
 | Milestone | What it delivers | Tasks | Done | Rough size |
 |---|---|---|---|---|
-| M0 | Foundations: CI, glue module, bridge, store, settings, i18n, UI kit, diagnostics | 13 | 7 | 4–5 sessions |
+| M0 | Foundations: CI, glue module, bridge, store, settings, i18n, UI kit, diagnostics | 13 | 8 | 4–5 sessions |
 | M1 | The 7 problems fixed + phone verification | 8 | 7 | 2–3 sessions |
 | M2 | Audio engine v2, hi-fi output, USB, DSP | 24 | 0 | 8–10 sessions |
 | M3 | Player and queue | 16 | 0 | 3–4 sessions |
@@ -36,7 +36,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 | M8 | Home, discovery, stats, social, audio tools | 13 | 0 | 5–6 sessions |
 | M9 | Devices and platform integrations | 8 | 0 | 5–6 sessions |
 | M10 | Look, app shell, desktop, iOS, languages, release | 14 | 0 | 6–7 sessions |
-| **Total** | | **155** | **14** | **≈ 50–60 sessions** |
+| **Total** | | **155** | **15** | **≈ 50–60 sessions** |
 
 A "session" here means one working session of the length used so far. Numbers are estimates.
 
@@ -44,7 +44,7 @@ A "session" here means one working session of the length used so far. Numbers ar
 
 1. **M1-08** Phone round on the Xiaomi with the Beats (DEVICE-TESTS "Round M1"). Fix whatever the
    owner reports first. The newest APK also carries the glue module, the event bridge and the database.
-2. **M0-08** Settings registry with search, then **M0-09** i18n, **M0-10** UI kit (fix the tab labels
+2. **M0-09** i18n (turn the registry's titles and descriptions into keys first), **M0-10** UI kit (fix the tab labels
    touching at 320 px, seen in the emulator screenshot), **M0-12** test harness, **M0-13** HyperOS
    reliability, **M0-04** release workflow (needs decision D3, the signing key).
 3. Then **M2** (audio engine, hi-fi output for the Beats). The device report is in
@@ -97,7 +97,7 @@ updated; this file's checkbox is ticked. Commit messages start with the task ID 
 - [x] **M0-07 Database (`loss-store`, redb).** Schema from ARCHITECTURE §5, versioned migrations, import
   of `library.json`/`settings.json`, typed accessors. *Done when:* a 50k-track synthetic library loads in
   under 1 s on desktop (under 2 s on the Xiaomi) and migration tests pass.
-- [ ] **M0-08 Settings registry v2.** Typed registry (key, type, default, section, i18n title and
+- [x] **M0-08 Settings registry v2.** Typed registry (key, type, default, section, i18n title and
   description, search keywords, platforms); persisted in the store; migration from current settings;
   generic settings-screen builder; settings search. *Done when:* every existing setting comes from the
   registry and search finds settings by keyword.

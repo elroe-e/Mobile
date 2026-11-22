@@ -210,6 +210,14 @@ search keywords, platforms, and whether it needs a restart. The registry drives 
 settings search, backup/restore and migration. All 174 Mornye settings are mapped in
 [PARITY.md](PARITY.md) Appendix A.
 
+Status (M0-08): `loss_core::registry` lists every user setting (`SETTINGS`), with `get`/`set` by key
+(values checked against the kind), `search` (all words must match title, description, keywords,
+section or choice labels; title matches first) and `INTERNAL` for app state such as volume and the
+last track. Tests fail when a `Settings` field is in neither list. The settings screen is built
+from it (generic rows for toggles, choices, steps, text, folders and colours; custom widgets for
+music folders and the server). The database stores one row per setting (schema 2; the schema-1
+single row is split by a migration). Titles are English until M0-09.
+
 ## 8. Android glue (android/glue)
 
 A Gradle library module merged into the app (package `app.loss.glue`). It is bundled through Dioxus'

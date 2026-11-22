@@ -1,10 +1,12 @@
-//! Settings: folders, downloads, sources, playlist import, stats, about.
+//! Settings, built from the registry (`loss_core::registry`), with search. Plus playlist
+//! import, listening stats, logs and about.
 
 use super::icons::Icon;
 use super::state;
 use crate::services;
 use dioxus::prelude::*;
-use loss_core::{format_duration, playlist, SubsonicConfig};
+use loss_core::registry::{self, Kind, Section, Value};
+use loss_core::{format_duration, playlist, Settings, SubsonicConfig};
 use std::path::PathBuf;
 
 #[component]
@@ -45,25 +47,147 @@ pub fn SettingsTab() -> Element {
     }
 }
 
+/// Applies side effects a setting needs beyond being saved.
+fn after_change(key: &str, st: super::AppState) {
+    match key {
+        "theme" | "dynamic_color" | "accent" => st.settings_changed(),
+        "detailed_logging" => {
+            crate::diag::set_detailed(services::get().settings().detailed_logging)
+        }
+        _ => {}
+    }
+}
+
+/// One setting from the registry, drawn according to its kind. Custom kinds have their own
+/// components (folders, server) and are not drawn here.
+#[component]
+fn SettingRow(
+    setting: &'static str,
+    cur: Settings,
+    on_set: EventHandler<(&'static str, Value)>,
+) -> Element {
+    let key = setting;
+    let Some(d) = registry::find(key) else {
+        return rsx! {};
+    };
+    let value = registry::get(&cur, key);
+    let title = d.title;
+    let hint = d.description;
+    // Buttons go under the title when they wouldn't leave it room on a phone.
+    let options = match &d.kind {
+        Kind::Choice(o) => o.len(),
+        Kind::Steps(o) => o.len(),
+        _ => 0,
+    };
+    let stacked = title.chars().count() + options * 4 > 30 || !hint.is_empty();
+    match (&d.kind, value) {
+        (Kind::Toggle, Some(Value::Bool(on))) => rsx! {
+            Toggle { label: title, hint, on, onchange: move |v| on_set.call((key, Value::Bool(v))) }
+        },
+        (Kind::Choice(opts), Some(Value::Text(v))) => rsx! {
+            div { class: if stacked { "setting col" } else { "setting" },
+                div { class: "row-text",
+                    div { class: "title", "{title}" }
+                    if !hint.is_empty() { div { class: "subtitle", "{hint}" } }
+                }
+                div { class: "stepper",
+                    for (opt , label) in opts.iter().copied() {
+                        button {
+                            class: if v == opt { "seg active" } else { "seg" },
+                            onclick: move |_| on_set.call((key, Value::Text(opt.to_string()))),
+                            "{label}"
+                        }
+                    }
+                }
+            }
+        },
+        (Kind::Steps(opts), Some(Value::Int(v))) => rsx! {
+            div { class: if stacked { "setting col" } else { "setting" },
+                div { class: "row-text",
+                    div { class: "title", "{title}" }
+                    if !hint.is_empty() { div { class: "subtitle", "{hint}" } }
+                }
+                div { class: "stepper",
+                    for n in opts.iter().copied() {
+                        button {
+                            class: if v == n { "seg active" } else { "seg" },
+                            onclick: move |_| on_set.call((key, Value::Int(n))),
+                            "{n}"
+                        }
+                    }
+                }
+            }
+        },
+        (Kind::Text { placeholder }, Some(Value::Text(v))) => rsx! {
+            div { class: "setting col",
+                div { class: "title", "{title}" }
+                input {
+                    placeholder: *placeholder,
+                    initial_value: "{v}",
+                    onchange: move |e: FormEvent| on_set.call((key, Value::Text(e.value()))),
+                }
+                if !hint.is_empty() { div { class: "subtitle", "{hint}" } }
+            }
+        },
+        (Kind::Folder, Some(Value::Text(v))) => rsx! {
+            div { class: "setting col",
+                div { class: "title", "{title}" }
+                input {
+                    class: "mono",
+                    initial_value: "{v}",
+                    onchange: move |e: FormEvent| on_set.call((key, Value::Text(e.value()))),
+                }
+                if !hint.is_empty() { div { class: "subtitle", "{hint}" } }
+            }
+        },
+        (Kind::Color(opts), Some(Value::Text(v))) => rsx! {
+            div { class: "setting col",
+                div { class: "title", "{title}" }
+                div { class: "swatches",
+                    for c in opts.iter().copied() {
+                        button {
+                            class: if v == c { "swatch active" } else { "swatch" },
+                            style: "background: {c}",
+                            "aria-label": "{c}",
+                            onclick: move |_| on_set.call((key, Value::Text(c.to_string()))),
+                        }
+                    }
+                }
+                if !hint.is_empty() { div { class: "subtitle", "{hint}" } }
+            }
+        },
+        _ => rsx! {},
+    }
+}
+
 #[component]
 fn SettingsMain() -> Element {
     let st = state();
     let _ = (st.lib_version)();
     let svc = services::get();
     let mut s = use_signal(|| svc.settings());
-    let mut new_folder = use_signal(String::new);
-    let save = move |f: Box<dyn FnOnce(&mut loss_core::Settings)>| {
-        services::get().update_settings(f);
+    let mut query = use_signal(String::new);
+    let set = move |(key, v): (&'static str, Value)| {
+        services::get().update_settings(move |s| {
+            if let Err(e) = registry::set(s, key, v) {
+                log::warn!("setting {key}: {e:?}");
+            }
+        });
         s.set(services::get().settings());
+        after_change(key, st);
     };
+    let reload = move |_| s.set(services::get().settings());
     let cur = s();
-    let suggestions: Vec<PathBuf> = svc
-        .paths
-        .music_suggestions
-        .iter()
-        .filter(|p| !cur.music_folders.contains(p))
-        .cloned()
-        .collect();
+    let q = query();
+    let results = registry::search(&q);
+    // Results grouped by section, sections in the order their best match appears.
+    let mut groups: Vec<(Section, Vec<&'static registry::SettingDef>)> = Vec::new();
+    for d in results.iter().copied() {
+        match groups.iter_mut().find(|(sec, _)| *sec == d.section) {
+            Some((_, v)) => v.push(d),
+            None => groups.push((d.section, vec![d])),
+        }
+    }
 
     // Stats
     let (count, secs, top): (usize, f64, Vec<(String, String, u32)>) = {
@@ -81,261 +205,217 @@ fn SettingsMain() -> Element {
 
     rsx! {
         header { class: "page-header", h1 { "Settings" } }
+        div { class: "search-box settings-search",
+            Icon { name: "search", size: 20 }
+            input {
+                r#type: "search",
+                placeholder: "Search settings",
+                initial_value: "{q}",
+                oninput: move |e| query.set(e.value()),
+            }
+        }
 
-        h2 { class: "section-title", "Music folders" }
-        div { class: "card",
-            for f in cur.music_folders.clone() {
-                div { class: "setting",
-                    div { class: "row-text", div { class: "title mono", "{f.display()}" } }
-                    button {
-                        class: "icon-btn small",
-                        onclick: {
-                            let f = f.clone();
-                            let mut save = save;
-                            move |_| {
-                                let f = f.clone();
-                                save(Box::new(move |s| s.music_folders.retain(|x| x != &f)));
-                                services::get().rescan();
+        if !q.trim().is_empty() {
+            if results.is_empty() {
+                p { class: "muted empty-note", "No settings match “{q.trim()}”." }
+            }
+            for (section , defs) in groups {
+                div { key: "{section.title()}",
+                    div { class: "search-section muted small", "{section.title()}" }
+                    div { class: "card",
+                        for d in defs.iter().copied().filter(|d| d.key != "subsonic") {
+                            SectionItem { key: "{d.key}", def_key: d.key, cur: cur.clone(), on_set: set, on_saved: reload }
+                        }
+                    }
+                    if defs.iter().any(|d| d.key == "subsonic") {
+                        SectionItem { def_key: "subsonic", cur: cur.clone(), on_set: set, on_saved: reload }
+                    }
+                }
+            }
+        } else {
+            for section in Section::ALL {
+                h2 { class: "section-title", "{section.title()}" }
+                SectionCard { section, cur: cur.clone(), on_set: set, on_saved: reload }
+                if section == Section::Sources {
+                    h2 { class: "section-title", "Import a playlist" }
+                    PlaylistImport {}
+
+                    h2 { class: "section-title", "Your listening" }
+                    div { class: "card",
+                        div { class: "stats",
+                            div { div { class: "big", "{count}" } div { class: "muted small", "songs" } }
+                            div { div { class: "big", "{format_duration(secs)}" } div { class: "muted small", "of music" } }
+                            div { div { class: "big", "{plays}" } div { class: "muted small", "plays" } }
+                        }
+                        if !top.is_empty() {
+                            div { class: "subtitle", "Most played" }
+                            for (i , (t , a , n)) in top.iter().enumerate() {
+                                div { key: "{i}", class: "small", "{i + 1}. {t} — {a} ({n})" }
                             }
-                        },
-                        Icon { name: "delete", size: 20 }
-                    }
-                }
-            }
-            for sug in suggestions {
-                button {
-                    class: "pill",
-                    onclick: {
-                        let mut save = save;
-                        move |_| {
-                            let sug = sug.clone();
-                            save(Box::new(move |s| s.music_folders.push(sug)));
-                            services::get().rescan();
                         }
-                    },
-                    "+ {sug.display()}"
-                }
-            }
-            form {
-                class: "inline-form",
-                onsubmit: {
-                    let mut save = save;
-                    move |e: FormEvent| {
-                        e.prevent_default();
-                        let p = PathBuf::from(new_folder().trim());
-                        if !p.as_os_str().is_empty() {
-                            save(Box::new(move |s| {
-                                if !s.music_folders.contains(&p) {
-                                    s.music_folders.push(p)
-                                }
-                            }));
-                            new_folder.set(String::new());
-                            document::eval("document.getElementById('new-folder').value = ''");
-                            services::get().rescan();
-                        }
-                    }
-                },
-                input {
-                    id: "new-folder",
-                    placeholder: "/storage/emulated/0/Music/…",
-                    initial_value: "{new_folder}",
-                    oninput: move |e| new_folder.set(e.value()),
-                }
-                button { class: "pill", r#type: "submit", "Add" }
-            }
-            button {
-                class: "primary",
-                disabled: (st.scanning)().is_some(),
-                onclick: move |_| services::get().rescan(),
-                Icon { name: "refresh", size: 18 }
-                if (st.scanning)().is_some() { " Scanning…" } else { " Rescan library" }
-            }
-            if !crate::platform::has_audio_permission() {
-                button { class: "pill", onclick: move |_| crate::platform::request_audio_permission(), "Allow access to music" }
-                button { class: "pill", onclick: move |_| crate::platform::open_app_settings(), "Open app settings" }
-            }
-        }
-
-        h2 { class: "section-title", "Downloads" }
-        div { class: "card",
-            div { class: "setting col",
-                div { class: "title", "Download folder" }
-                input {
-                    class: "mono",
-                    initial_value: "{cur.download_dir.display()}",
-                    onchange: {
-                        let mut save = save;
-                        move |e: FormEvent| {
-                            let p = PathBuf::from(e.value().trim());
-                            save(Box::new(move |s| s.download_dir = p));
-                        }
-                    },
-                }
-                div { class: "subtitle", "The default needs no storage permission. Files there are removed if you uninstall Loss." }
-            }
-            div { class: "setting",
-                div { class: "row-text", div { class: "title", "Downloads at once" } }
-                div { class: "stepper",
-                    for n in 1..=5usize {
-                        button {
-                            class: if cur.max_parallel_downloads == n { "seg active" } else { "seg" },
-                            onclick: {
-                                let mut save = save;
-                                move |_| save(Box::new(move |s| s.max_parallel_downloads = n))
-                            },
-                            "{n}"
-                        }
+                        p { class: "muted small", "Statistics stay on your phone." }
                     }
                 }
             }
-            Toggle {
-                label: "Tag downloads",
-                hint: "Add title, artist, album and cover art when missing",
-                on: cur.auto_tag,
-                onchange: { let mut save = save; move |v| save(Box::new(move |s| s.auto_tag = v)) },
-            }
-            Toggle {
-                label: "Fetch lyrics",
-                hint: "Save synced lyrics from LRCLIB next to each download",
-                on: cur.fetch_lyrics,
-                onchange: { let mut save = save; move |v| save(Box::new(move |s| s.fetch_lyrics = v)) },
-            }
-            Toggle {
-                label: "Unpack zip albums",
-                hint: "Extract songs from .zip downloads (e.g. Bandcamp purchases)",
-                on: cur.extract_zips,
-                onchange: { let mut save = save; move |v| save(Box::new(move |s| s.extract_zips = v)) },
-            }
-        }
 
-        h2 { class: "section-title", "Sources" }
-        div { class: "card",
-            Toggle {
-                label: "Internet Archive: Creative Commons only",
-                hint: "Hide items without an open licence",
-                on: cur.archive_cc_only,
-                onchange: { let mut save = save; move |v| save(Box::new(move |s| s.archive_cc_only = v)) },
-            }
-            div { class: "setting col",
-                div { class: "title", "Jamendo client id" }
-                input {
-                    placeholder: "Free from devportal.jamendo.com",
-                    initial_value: "{cur.jamendo_client_id}",
-                    onchange: { let mut save = save; move |e: FormEvent| { let v = e.value(); save(Box::new(move |s| s.jamendo_client_id = v.trim().to_string())) } },
+            h2 { class: "section-title", "About" }
+            div { class: "card",
+                p { "Loss {env!(\"CARGO_PKG_VERSION\")} — a music player and downloader written in Rust." }
+                p { class: "muted small",
+                    "Built with Dioxus, Symphonia, cpal, lofty and reqwest. Lyrics from LRCLIB. "
+                    "Loss downloads only from sources that allow it and never removes copy protection."
                 }
-            }
-        }
-        SubsonicSettings { current: cur.subsonic.clone().unwrap_or_default(), on_saved: move |_| s.set(services::get().settings()) }
-
-        h2 { class: "section-title", "Import a playlist" }
-        PlaylistImport {}
-
-        h2 { class: "section-title", "Your listening" }
-        div { class: "card",
-            div { class: "stats",
-                div { div { class: "big", "{count}" } div { class: "muted small", "songs" } }
-                div { div { class: "big", "{format_duration(secs)}" } div { class: "muted small", "of music" } }
-                div { div { class: "big", "{plays}" } div { class: "muted small", "plays" } }
-            }
-            if !top.is_empty() {
-                div { class: "subtitle", "Most played" }
-                for (i , (t , a , n)) in top.iter().enumerate() {
-                    div { key: "{i}", class: "small", "{i + 1}. {t} — {a} ({n})" }
-                }
-            }
-            p { class: "muted small", "Statistics stay on your phone." }
-        }
-
-        h2 { class: "section-title", "Look" }
-        div { class: "card",
-            div { class: "setting",
-                div { class: "row-text", div { class: "title", "Theme" } }
-                div { class: "stepper",
-                    for (mode , label) in [("system", "Auto"), ("dark", "Dark"), ("light", "Light")] {
-                        button {
-                            class: if cur.theme == mode { "seg active" } else { "seg" },
-                            onclick: {
-                                let mut save = save;
-                                move |_| {
-                                    save(Box::new(move |s| s.theme = mode.to_string()));
-                                    st.settings_changed();
-                                }
-                            },
-                            "{label}"
-                        }
-                    }
-                }
-            }
-            Toggle {
-                label: "Colours from album art",
-                hint: "The whole app takes on the colours of what's playing",
-                on: cur.dynamic_color,
-                onchange: {
-                    let mut save = save;
-                    move |v| {
-                        save(Box::new(move |s| s.dynamic_color = v));
-                        st.settings_changed();
-                    }
-                },
-            }
-            div { class: "setting col",
-                div { class: "title", if cur.dynamic_color { "Colour when nothing is playing" } else { "Accent colour" } }
-                div { class: "swatches",
-                    for c in ["#e8615a", "#4fb3a9", "#7c8cff", "#e3a83b", "#c56bd8", "#5fbf5f"] {
-                        button {
-                            class: if cur.accent == c { "swatch active" } else { "swatch" },
-                            style: "background: {c}",
-                            onclick: {
-                                let mut save = save;
-                                move |_| {
-                                    save(Box::new(move |s| s.accent = c.to_string()));
-                                    st.settings_changed();
-                                }
-                            },
-                        }
-                    }
-                }
-            }
-        }
-
-        h2 { class: "section-title", "Help" }
-        div { class: "card",
-            button {
-                class: "setting nav-row",
-                onclick: move |_| {
-                    let mut page = use_context::<SettingsNav>().0;
-                    page.set(SettingsPage::Logs);
-                },
-                Icon { name: "info", size: 22 }
-                div { class: "row-text",
-                    div { class: "title", "Logs and diagnostics" }
-                    div { class: "subtitle", "See what the app is doing, copy details for a bug report, check your audio outputs" }
-                }
-                Icon { name: "chevron_right" }
-            }
-            Toggle {
-                label: "Detailed logging",
-                hint: "Record more detail. Turn on when reporting a problem.",
-                on: cur.detailed_logging,
-                onchange: {
-                    let mut save = save;
-                    move |v| {
-                        crate::diag::set_detailed(v);
-                        save(Box::new(move |s| s.detailed_logging = v));
-                    }
-                },
-            }
-        }
-
-        h2 { class: "section-title", "About" }
-        div { class: "card",
-            p { "Loss {env!(\"CARGO_PKG_VERSION\")} — a music player and downloader written in Rust." }
-            p { class: "muted small",
-                "Built with Dioxus, Symphonia, cpal, lofty and reqwest. Lyrics from LRCLIB. "
-                "Loss downloads only from sources that allow it and never removes copy protection."
             }
         }
         div { style: "height: 24px" }
+    }
+}
+
+/// A section's settings in one card; the server form gets its own card after it.
+#[component]
+fn SectionCard(
+    section: Section,
+    cur: Settings,
+    on_set: EventHandler<(&'static str, Value)>,
+    on_saved: EventHandler<()>,
+) -> Element {
+    let defs: Vec<&'static str> = registry::in_section(section).map(|d| d.key).collect();
+    let in_card: Vec<&'static str> = defs.iter().copied().filter(|k| *k != "subsonic").collect();
+    let has_server = defs.contains(&"subsonic");
+    rsx! {
+        div { class: "card",
+            if section == Section::Help {
+                LogsRow {}
+            }
+            for k in in_card {
+                SectionItem { key: "{k}", def_key: k, cur: cur.clone(), on_set, on_saved }
+            }
+        }
+        if has_server {
+            SubsonicSettings { current: cur.subsonic.clone().unwrap_or_default(), on_saved: move |_| on_saved.call(()) }
+        }
+    }
+}
+
+/// One registry entry: the generic row, or the custom widget for lists and the server.
+#[component]
+fn SectionItem(
+    def_key: &'static str,
+    cur: Settings,
+    on_set: EventHandler<(&'static str, Value)>,
+    on_saved: EventHandler<()>,
+) -> Element {
+    match def_key {
+        "music_folders" => rsx! { MusicFolders { cur, on_saved } },
+        "subsonic" => rsx! {
+            SubsonicSettings { current: cur.subsonic.clone().unwrap_or_default(), on_saved: move |_| on_saved.call(()) }
+        },
+        _ => rsx! { SettingRow { setting: def_key, cur, on_set } },
+    }
+}
+
+#[component]
+fn LogsRow() -> Element {
+    rsx! {
+        button {
+            class: "setting nav-row",
+            onclick: move |_| {
+                let mut page = use_context::<SettingsNav>().0;
+                page.set(SettingsPage::Logs);
+            },
+            Icon { name: "info", size: 22 }
+            div { class: "row-text",
+                div { class: "title", "Logs and diagnostics" }
+                div { class: "subtitle", "See what the app is doing, copy details for a bug report, check your audio outputs" }
+            }
+            Icon { name: "chevron_right" }
+        }
+    }
+}
+
+#[component]
+fn MusicFolders(cur: Settings, on_saved: EventHandler<()>) -> Element {
+    let st = state();
+    let svc = services::get();
+    let mut new_folder = use_signal(String::new);
+    let save = move |f: Box<dyn FnOnce(&mut loss_core::Settings)>| {
+        services::get().update_settings(f);
+        on_saved.call(());
+        services::get().rescan();
+    };
+    let suggestions: Vec<PathBuf> = svc
+        .paths
+        .music_suggestions
+        .iter()
+        .filter(|p| !cur.music_folders.contains(p))
+        .cloned()
+        .collect();
+    rsx! {
+        for f in cur.music_folders.clone() {
+            div { class: "setting",
+                div { class: "row-text", div { class: "title mono", "{f.display()}" } }
+                button {
+                    class: "icon-btn small",
+                    "aria-label": "Remove folder",
+                    onclick: {
+                        let f = f.clone();
+                        move |_| {
+                            let f = f.clone();
+                            save(Box::new(move |s| s.music_folders.retain(|x| x != &f)));
+                        }
+                    },
+                    Icon { name: "delete", size: 20 }
+                }
+            }
+        }
+        for sug in suggestions {
+            button {
+                class: "pill",
+                onclick: {
+                    move |_| {
+                        let sug = sug.clone();
+                        save(Box::new(move |s| s.music_folders.push(sug)));
+                    }
+                },
+                "+ {sug.display()}"
+            }
+        }
+        form {
+            class: "inline-form",
+            onsubmit: {
+                move |e: FormEvent| {
+                    e.prevent_default();
+                    let p = PathBuf::from(new_folder().trim());
+                    if !p.as_os_str().is_empty() {
+                        save(Box::new(move |s| {
+                            if !s.music_folders.contains(&p) {
+                                s.music_folders.push(p)
+                            }
+                        }));
+                        new_folder.set(String::new());
+                        document::eval("document.getElementById('new-folder').value = ''");
+                    }
+                }
+            },
+            input {
+                id: "new-folder",
+                placeholder: "/storage/emulated/0/Music/…",
+                initial_value: "{new_folder}",
+                oninput: move |e| new_folder.set(e.value()),
+            }
+            button { class: "pill", r#type: "submit", "Add" }
+        }
+        button {
+            class: "primary",
+            disabled: (st.scanning)().is_some(),
+            onclick: move |_| services::get().rescan(),
+            Icon { name: "refresh", size: 18 }
+            if (st.scanning)().is_some() { " Scanning…" } else { " Rescan library" }
+        }
+        if !crate::platform::has_audio_permission() {
+            button { class: "pill", onclick: move |_| crate::platform::request_audio_permission(), "Allow access to music" }
+            button { class: "pill", onclick: move |_| crate::platform::open_app_settings(), "Open app settings" }
+        }
     }
 }
 

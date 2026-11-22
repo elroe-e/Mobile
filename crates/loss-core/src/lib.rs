@@ -4,6 +4,7 @@
 pub mod library;
 pub mod lrc;
 pub mod playlist;
+pub mod registry;
 pub mod settings;
 pub mod tags;
 pub mod vault;

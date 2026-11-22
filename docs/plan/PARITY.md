@@ -255,8 +255,8 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 
 | ID | Feature | Mornye | Loss today | Status | Tasks | State |
 |---|---|---|---|---|---|---|
-| SET-01 | Number of settings | About 190 (160 app, plus theme, equalizer and AutoMix) | About 15 | Simpler in Loss | M0-08, M10-08 | todo |
-| SET-02 | Settings search | Yes | No | Only in Mornye | M0-08, M10-08 | todo |
+| SET-01 | Number of settings | About 190 (160 app, plus theme, equalizer and AutoMix) | About 15 | Simpler in Loss | M0-08, M10-08 | doing |
+| SET-02 | Settings search | Yes | No | Only in Mornye | M0-08, M10-08 | doing |
 | SET-03 | Backup and restore | Settings, history, playlists, favourites, extensions | No | Only in Mornye | M10-06 | todo |
 | SET-04 | Storage and cache page | See and clear each cache | No | Only in Mornye | M10-07 | todo |
 | SET-05 | Passwords and keys | Kept in the phone’s secure storage | Server password kept in the app’s private settings file | Simpler in Loss | M1-07 | done |
