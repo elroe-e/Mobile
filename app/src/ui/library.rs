@@ -6,6 +6,7 @@ use crate::services;
 use dioxus::prelude::*;
 use loss_audio::Command;
 use loss_core::{format_duration, Album, Track};
+use loss_i18n::t;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum View {
@@ -36,11 +37,11 @@ impl Sort {
             Sort::Artist => Sort::Latest,
         }
     }
-    fn label(self) -> &'static str {
+    fn label(self) -> String {
         match self {
-            Sort::Latest => "Latest",
-            Sort::Title => "A–Z",
-            Sort::Artist => "Artist",
+            Sort::Latest => t!("library-sort-latest"),
+            Sort::Title => t!("library-sort-title"),
+            Sort::Artist => t!("library-sort-artist"),
         }
     }
 }
@@ -157,7 +158,7 @@ fn LibraryMain(nav: LibNav) -> Element {
 
     rsx! {
         header { class: "page-header",
-            h1 { "Library" }
+            h1 { {t!("tab-library")} }
             button {
                 class: "icon-btn tonal",
                 disabled: total == 0,
@@ -172,7 +173,7 @@ fn LibraryMain(nav: LibNav) -> Element {
             Icon { name: "search", size: 22 }
             input {
                 r#type: "search",
-                placeholder: "Search your library",
+                placeholder: t!("library-search"),
                 initial_value: "{q}",
                 oninput: move |e| query.set(e.value()),
             }
@@ -184,7 +185,7 @@ fn LibraryMain(nav: LibNav) -> Element {
             EmptyLibrary {}
         } else {
             div { class: "chips",
-                for (s , icon , label , n) in [(Seg::Songs, "note", "Songs", n_songs), (Seg::Albums, "album", "Albums", n_albums), (Seg::Artists, "person", "Artists", n_artists)] {
+                for (s , icon , label , n) in [(Seg::Songs, "note", t!("library-songs"), n_songs), (Seg::Albums, "album", t!("library-albums"), n_albums), (Seg::Artists, "person", t!("library-artists"), n_artists)] {
                     button {
                         class: if active == s { "chip selected" } else { "chip" },
                         onclick: move |_| seg.set(s),
@@ -223,7 +224,7 @@ fn LibraryMain(nav: LibNav) -> Element {
                             div { class: "avatar", "{a.name.chars().next().unwrap_or('?')}" }
                             div { class: "row-text",
                                 div { class: "title", "{a.name}" }
-                                div { class: "subtitle", "{a.album_keys.len()} albums · {a.track_count} songs" }
+                                div { class: "subtitle", {t!("artist-meta", albums = a.album_keys.len(), songs = a.track_count)} }
                             }
                             Icon { name: "chevron_right" }
                         }
@@ -232,7 +233,7 @@ fn LibraryMain(nav: LibNav) -> Element {
             }
             if active == Seg::Songs {
                 if songs.is_empty() {
-                    p { class: "muted pad", "No songs match “{q}”." }
+                    p { class: "muted pad", {t!("library-no-match", query = q.clone())} }
                 }
                 div { class: "list",
                     for (i , t) in songs.iter().take(shown).enumerate() {
@@ -240,7 +241,7 @@ fn LibraryMain(nav: LibNav) -> Element {
                     }
                 }
                 if songs.len() > shown {
-                    button { class: "pill center", onclick: move |_| limit.set(limit() + 300), "Show more ({songs.len() - shown})" }
+                    button { class: "pill center", onclick: move |_| limit.set(limit() + 300), {t!("library-show-more", count = songs.len() - shown)} }
                 }
             }
         }
@@ -280,8 +281,8 @@ fn EmptyLibrary() -> Element {
     rsx! {
         div { class: "empty",
             div { class: "empty-icon", Icon { name: "library", size: 40 } }
-            h2 { "No music yet" }
-            p { "Loss plays the music on your phone and anything you download." }
+            h2 { {t!("library-empty-title")} }
+            p { {t!("library-empty-text")} }
             if !has_perm {
                 button {
                     class: "primary",
@@ -292,13 +293,13 @@ fn EmptyLibrary() -> Element {
                             services::get().rescan();
                         });
                     },
-                    "Allow access to music"
+                    {t!("permission-allow-music")}
                 }
-                button { class: "pill", onclick: move |_| crate::platform::open_app_settings(), "Open app settings" }
+                button { class: "pill", onclick: move |_| crate::platform::open_app_settings(), {t!("permission-open-settings")} }
             }
             button { class: "primary", onclick: move |_| services::get().rescan(), Icon { name: "refresh", size: 18 } " Scan again" }
-            button { class: "pill", onclick: move |_| st.tab.set(Tab::Settings), "Choose music folders" }
-            button { class: "pill", onclick: move |_| st.tab.set(Tab::Discover), "Find free music to download" }
+            button { class: "pill", onclick: move |_| st.tab.set(Tab::Settings), {t!("library-choose-folders")} }
+            button { class: "pill", onclick: move |_| st.tab.set(Tab::Discover), {t!("library-find-free")} }
         }
     }
 }
@@ -363,11 +364,11 @@ pub fn SongRow(
                             move |_| {
                                 services::get().player.send(Command::PlayNext(queue_items(std::slice::from_ref(&id))));
                                 menu.set(false);
-                                st.toast("Playing next");
+                                st.toast(t!("toast-playing-next"));
                             }
                         },
                         Icon { name: "play_next", size: 20 }
-                        "Play next"
+                        {t!("action-play-next")}
                     }
                     button {
                         onclick: {
@@ -375,11 +376,11 @@ pub fn SongRow(
                             move |_| {
                                 services::get().player.send(Command::Enqueue(queue_items(std::slice::from_ref(&id))));
                                 menu.set(false);
-                                st.toast("Added to queue");
+                                st.toast(t!("toast-added-queue"));
                             }
                         },
                         Icon { name: "queue", size: 20 }
-                        "Add to queue"
+                        {t!("action-add-queue")}
                     }
                 }
             }
@@ -397,7 +398,7 @@ fn AlbumPage(album_key: String, nav: LibNav) -> Element {
         drop(lib);
         return rsx! {
             button { class: "back", onclick: move |_| { nav.back(); }, Icon { name: "back" } }
-            p { class: "pad muted", "This album is no longer in your library." }
+            p { class: "pad muted", {t!("album-gone")} }
         };
     };
     let tracks: Vec<Track> = album
@@ -427,7 +428,7 @@ fn AlbumPage(album_key: String, nav: LibNav) -> Element {
             Cover { track_id: album.cover_track.clone().unwrap_or_default(), class: "cover hero-cover", big: true }
             h1 { "{album.title}" }
             button { class: "link", onclick: move |_| nav.go(View::Artist(artist.clone())), "{album.artist}" }
-            p { class: "muted small", "{year}{tracks.len()} songs · {format_duration(album.duration_secs)}" }
+            p { class: "muted small", "{year}" {t!("album-meta", songs = tracks.len(), length = format_duration(album.duration_secs))} }
             div { class: "tags center-tags",
                 if !fmt.is_empty() { span { class: "tag", "{fmt}" } }
                 if !badge.is_empty() && badge != fmt { span { class: "tag accent", "{badge}" } }
@@ -437,7 +438,7 @@ fn AlbumPage(album_key: String, nav: LibNav) -> Element {
                     class: "icon-btn tonal big",
                     onclick: move |_| {
                         services::get().player.send(Command::Enqueue(queue_items(&ids3)));
-                        st.toast("Album added to queue");
+                        st.toast(t!("toast-album-queued"));
                     },
                     Icon { name: "queue" }
                 }
@@ -502,19 +503,19 @@ fn ArtistPage(name: String, nav: LibNav) -> Element {
         div { class: "artist-hero",
             div { class: "avatar huge", "{initial}" }
             h1 { "{name}" }
-            p { class: "muted small", "{albums.len()} albums · {songs.len()} songs" }
+            p { class: "muted small", {t!("artist-meta", albums = albums.len(), songs = songs.len())} }
             div { class: "hero-actions",
                 button { class: "primary", onclick: move |_| play_tracks(&ids_play, 0), Icon { name: "play", size: 20 } "Play" }
                 button { class: "pill", onclick: move |_| shuffle_tracks(&ids_shuffle), Icon { name: "shuffle", size: 18 } "Shuffle" }
             }
         }
-        h2 { class: "section-title", "Albums" }
+        h2 { class: "section-title", {t!("library-albums")} }
         div { class: "album-grid",
             for (a , badge) in albums.iter() {
                 AlbumCard { key: "{a.key}", album: a.clone(), badge: badge.clone(), nav }
             }
         }
-        h2 { class: "section-title", "Songs" }
+        h2 { class: "section-title", {t!("library-songs")} }
         div { class: "list",
             for (i , t) in songs.iter().enumerate() {
                 SongRow { key: "{t.id}", track: t.clone(), ids: ids.clone(), index: i, show_cover: true }

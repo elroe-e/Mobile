@@ -108,6 +108,7 @@ impl Services {
         }
         let _ = std::fs::create_dir_all(&settings.download_dir);
         crate::diag::set_detailed(settings.detailed_logging);
+        loss_i18n::set_language(&settings.language, platform::system_locale().as_deref());
 
         // Secrets live in the encrypted vault, never in the database.
         if move_secrets(&mut settings, vault.as_mut()) {

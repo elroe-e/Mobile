@@ -4,6 +4,7 @@
 //! What the downloads notification shows, derived from the download queue.
 
 use loss_download::{JobSnapshot, JobStatus};
+use loss_i18n::t;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum DownloadsState {
@@ -28,9 +29,9 @@ pub struct DownloadsNotice {
 
 fn speed(bps: f64) -> String {
     if bps >= 1e6 {
-        format!("{:.1} MB/s", bps / 1e6)
+        format!("{:.1} MB/s", bps / 1e6) // i18n: ignore
     } else {
-        format!("{:.0} KB/s", bps / 1e3)
+        format!("{:.0} KB/s", bps / 1e3) // i18n: ignore
     }
 }
 
@@ -69,17 +70,13 @@ pub fn downloads_notice(jobs: &[JobSnapshot], ran: bool) -> DownloadsNotice {
         };
         let bps: f64 = active.iter().map(|j| j.speed_bps).sum();
         let left = active.len();
-        let mut text = if left == 1 {
-            "1 song left".to_string()
-        } else {
-            format!("{left} songs left")
-        };
+        let mut text = t!("notify-songs-left", count = left);
         if bps > 0.0 {
             text.push_str(&format!(" · {}", speed(bps)));
         }
         return DownloadsNotice {
             state: DownloadsState::Running,
-            title: format!("Downloading {current}"),
+            title: t!("notify-downloading", title = current),
             text,
             progress: progress.clamp(-1, 1000),
         };
@@ -87,24 +84,20 @@ pub fn downloads_notice(jobs: &[JobSnapshot], ran: bool) -> DownloadsNotice {
     if paused > 0 {
         return DownloadsNotice {
             state: DownloadsState::Paused,
-            title: "Downloads paused".into(),
-            text: if paused == 1 {
-                "1 song waiting".into()
-            } else {
-                format!("{paused} songs waiting")
-            },
+            title: t!("notify-paused"),
+            text: t!("notify-songs-waiting", count = paused),
             progress: -1,
         };
     }
     if ran && done + failed > 0 {
         let text = match (done, failed) {
-            (d, 0) => format!("{d} done"),
-            (0, f) => format!("{f} failed"),
-            (d, f) => format!("{d} done, {f} failed"),
+            (d, 0) => t!("notify-done", done = d),
+            (0, f) => t!("notify-failed", failed = f),
+            (d, f) => t!("notify-done-failed", done = d, failed = f),
         };
         return DownloadsNotice {
             state: DownloadsState::Finished,
-            title: "Downloads finished".into(),
+            title: t!("notify-finished"),
             text,
             progress: -1,
         };

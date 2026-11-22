@@ -6,14 +6,15 @@ use crate::services;
 use dioxus::prelude::*;
 use loss_audio::{Command, Status};
 use loss_core::{format_duration, Track};
+use loss_i18n::t;
 
-fn greeting() -> &'static str {
+fn greeting() -> String {
     use chrono::Timelike;
     match chrono::Local::now().hour() {
-        5..=11 => "Good morning",
-        12..=17 => "Good afternoon",
-        18..=22 => "Good evening",
-        _ => "Late night",
+        5..=11 => t!("home-greeting-morning"),
+        12..=17 => t!("home-greeting-afternoon"),
+        18..=22 => t!("home-greeting-evening"),
+        _ => t!("home-greeting-night"),
     }
 }
 
@@ -85,8 +86,8 @@ pub fn HomeTab() -> Element {
             div { class: "notice-card",
                 Icon { name: "info", size: 22 }
                 div { class: "row-text",
-                    div { class: "title", "Loss closed unexpectedly last time" }
-                    div { class: "subtitle", "The crash report can help fix it." }
+                    div { class: "title", {t!("home-crash-title")} }
+                    div { class: "subtitle", {t!("home-crash-text")} }
                 }
                 button {
                     class: "text-btn",
@@ -95,7 +96,7 @@ pub fn HomeTab() -> Element {
                         page.set(super::settings::SettingsPage::Logs);
                         st.tab.set(Tab::Settings);
                     },
-                    "View"
+                    {t!("home-crash-view")}
                 }
                 button {
                     class: "icon-btn small",
@@ -109,11 +110,11 @@ pub fn HomeTab() -> Element {
         }
         header { class: "home-header",
             h1 { class: "display", "{greeting()}" }
-            p { class: "muted", "Your music, on your phone." }
+            p { class: "muted", {t!("home-tagline")} }
         }
 
         if let Some(t) = cont.clone() {
-            h2 { class: "section-title", "Continue listening" }
+            h2 { class: "section-title", {t!("home-continue")} }
             div { class: "hero-card", onclick: move |_| {
                     if has_queue { st.now_playing.set(true) } else { resume_last() }
                 },
@@ -140,25 +141,25 @@ pub fn HomeTab() -> Element {
             }
         }
 
-        h2 { class: "section-title", "Shortcuts" }
+        h2 { class: "section-title", {t!("home-shortcuts")} }
         div { class: "tiles",
             button { class: "tile tile-primary", disabled: total == 0, onclick: move |_| shuffle_tracks(&all_ids),
                 span { class: "tile-icon", Icon { name: "shuffle" } }
-                span { class: "tile-label", "Shuffle library" }
+                span { class: "tile-label", {t!("home-shuffle")} }
             }
             button { class: "tile tile-tertiary", onclick: move |_| st.tab.set(Tab::Discover),
                 span { class: "tile-icon", Icon { name: "sparkle" } }
-                span { class: "tile-label", "Free music" }
+                span { class: "tile-label", {t!("home-free-music")} }
             }
             button { class: "tile tile-secondary", onclick: move |_| st.tab.set(Tab::Downloads),
                 span { class: "tile-icon", Icon { name: "download" } }
                 span { class: "tile-label",
-                    if running > 0 { "Downloads · {running}" } else { "Downloads" }
+                    {t!("home-downloads-tile", running = running)}
                 }
             }
             button { class: "tile tile-neutral", onclick: move |_| st.tab.set(Tab::Settings),
                 span { class: "tile-icon", Icon { name: "stats" } }
-                span { class: "tile-label", "{total} songs · {plays} plays" }
+                span { class: "tile-label", {t!("home-stats-tile", songs = total, plays = plays)} }
             }
         }
 
@@ -166,14 +167,14 @@ pub fn HomeTab() -> Element {
             div { class: "empty-card",
                 Icon { name: "library", size: 40 }
                 div {
-                    div { class: "title", "Your library is empty" }
-                    div { class: "subtitle", "Add a music folder in Settings, or download free music from Discover." }
+                    div { class: "title", {t!("home-empty-title")} }
+                    div { class: "subtitle", {t!("home-empty-text")} }
                 }
             }
         }
 
         if !jump_back.is_empty() {
-            h2 { class: "section-title", "Jump back in" }
+            h2 { class: "section-title", {t!("home-jump-back")} }
             div { class: "h-scroll",
                 for t in jump_back.iter() {
                     AlbumTile { key: "jb-{t.id}", track: t.clone() }
@@ -182,7 +183,7 @@ pub fn HomeTab() -> Element {
         }
 
         if !recent_albums.is_empty() {
-            h2 { class: "section-title", "Recently added" }
+            h2 { class: "section-title", {t!("home-recent")} }
             div { class: "h-scroll",
                 for t in recent_albums.iter() {
                     AlbumTile { key: "ra-{t.id}", track: t.clone() }
@@ -192,8 +193,8 @@ pub fn HomeTab() -> Element {
 
         if !top.is_empty() {
             div { class: "section-row",
-                h2 { class: "section-title", "On repeat" }
-                button { class: "text-btn", onclick: move |_| play_tracks(&top_ids, 0), "Play all" }
+                h2 { class: "section-title", {t!("home-on-repeat")} }
+                button { class: "text-btn", onclick: move |_| play_tracks(&top_ids, 0), {t!("action-play-all")} }
             }
             div { class: "card list-card",
                 for (i , t) in top.iter().enumerate() {
@@ -217,7 +218,7 @@ pub fn HomeTab() -> Element {
         }
 
         if total > 0 {
-            p { class: "muted small center-text", "{total} songs · {format_duration(total_secs)} of music" }
+            p { class: "muted small center-text", {t!("home-footer", songs = total, length = format_duration(total_secs))} }
         }
     }
 }

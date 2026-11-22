@@ -7,6 +7,7 @@ use crate::services;
 use dioxus::prelude::*;
 use loss_core::registry::{self, Kind, Section, Value};
 use loss_core::{format_duration, playlist, Settings, SubsonicConfig};
+use loss_i18n::t;
 use std::path::PathBuf;
 
 #[component]
@@ -54,6 +55,11 @@ fn after_change(key: &str, st: super::AppState) {
         "detailed_logging" => {
             crate::diag::set_detailed(services::get().settings().detailed_logging)
         }
+        "language" => {
+            let pref = services::get().settings().language;
+            loss_i18n::set_language(&pref, crate::platform::system_locale().as_deref());
+            st.settings_changed();
+        }
         _ => {}
     }
 }
@@ -71,8 +77,8 @@ fn SettingRow(
         return rsx! {};
     };
     let value = registry::get(&cur, key);
-    let title = d.title;
-    let hint = d.description;
+    let title = d.title();
+    let hint = d.description();
     // Buttons go under the title when they wouldn't leave it room on a phone.
     let options = match &d.kind {
         Kind::Choice(o) => o.len(),
@@ -91,7 +97,7 @@ fn SettingRow(
                     if !hint.is_empty() { div { class: "subtitle", "{hint}" } }
                 }
                 div { class: "stepper",
-                    for (opt , label) in opts.iter().copied() {
+                    for (opt , label) in opts.iter().map(|o| (*o, d.choice_label(o))) {
                         button {
                             class: if v == opt { "seg active" } else { "seg" },
                             onclick: move |_| on_set.call((key, Value::Text(opt.to_string()))),
@@ -204,12 +210,12 @@ fn SettingsMain() -> Element {
     let plays: u32 = svc.library().tracks.iter().map(|t| t.play_count).sum();
 
     rsx! {
-        header { class: "page-header", h1 { "Settings" } }
+        header { class: "page-header", h1 { {t!("tab-settings")} } }
         div { class: "search-box settings-search",
             Icon { name: "search", size: 20 }
             input {
                 r#type: "search",
-                placeholder: "Search settings",
+                placeholder: t!("settings-search"),
                 initial_value: "{q}",
                 oninput: move |e| query.set(e.value()),
             }
@@ -217,7 +223,7 @@ fn SettingsMain() -> Element {
 
         if !q.trim().is_empty() {
             if results.is_empty() {
-                p { class: "muted empty-note", "No settings match “{q.trim()}”." }
+                p { class: "muted empty-note", {t!("settings-no-match", query = q.trim())} }
             }
             for (section , defs) in groups {
                 div { key: "{section.title()}",
@@ -237,10 +243,10 @@ fn SettingsMain() -> Element {
                 h2 { class: "section-title", "{section.title()}" }
                 SectionCard { section, cur: cur.clone(), on_set: set, on_saved: reload }
                 if section == Section::Sources {
-                    h2 { class: "section-title", "Import a playlist" }
+                    h2 { class: "section-title", {t!("settings-import-playlist")} }
                     PlaylistImport {}
 
-                    h2 { class: "section-title", "Your listening" }
+                    h2 { class: "section-title", {t!("settings-your-listening")} }
                     div { class: "card",
                         div { class: "stats",
                             div { div { class: "big", "{count}" } div { class: "muted small", "songs" } }
@@ -248,22 +254,21 @@ fn SettingsMain() -> Element {
                             div { div { class: "big", "{plays}" } div { class: "muted small", "plays" } }
                         }
                         if !top.is_empty() {
-                            div { class: "subtitle", "Most played" }
+                            div { class: "subtitle", {t!("stats-most-played")} }
                             for (i , (t , a , n)) in top.iter().enumerate() {
                                 div { key: "{i}", class: "small", "{i + 1}. {t} — {a} ({n})" }
                             }
                         }
-                        p { class: "muted small", "Statistics stay on your phone." }
+                        p { class: "muted small", {t!("stats-private")} }
                     }
                 }
             }
 
-            h2 { class: "section-title", "About" }
+            h2 { class: "section-title", {t!("settings-about")} }
             div { class: "card",
-                p { "Loss {env!(\"CARGO_PKG_VERSION\")} — a music player and downloader written in Rust." }
+                p { {t!("about-version", version = env!("CARGO_PKG_VERSION"))} }
                 p { class: "muted small",
-                    "Built with Dioxus, Symphonia, cpal, lofty and reqwest. Lyrics from LRCLIB. "
-                    "Loss downloads only from sources that allow it and never removes copy protection."
+                    {t!("about-credits")}
                 }
             }
         }
@@ -325,8 +330,8 @@ fn LogsRow() -> Element {
             },
             Icon { name: "info", size: 22 }
             div { class: "row-text",
-                div { class: "title", "Logs and diagnostics" }
-                div { class: "subtitle", "See what the app is doing, copy details for a bug report, check your audio outputs" }
+                div { class: "title", {t!("settings-logs")} }
+                div { class: "subtitle", {t!("settings-logs-desc")} }
             }
             Icon { name: "chevron_right" }
         }
@@ -356,7 +361,7 @@ fn MusicFolders(cur: Settings, on_saved: EventHandler<()>) -> Element {
                 div { class: "row-text", div { class: "title mono", "{f.display()}" } }
                 button {
                     class: "icon-btn small",
-                    "aria-label": "Remove folder",
+                    "aria-label": t!("settings-remove-folder"),
                     onclick: {
                         let f = f.clone();
                         move |_| {
@@ -399,22 +404,22 @@ fn MusicFolders(cur: Settings, on_saved: EventHandler<()>) -> Element {
             },
             input {
                 id: "new-folder",
-                placeholder: "/storage/emulated/0/Music/…",
+                placeholder: "/storage/emulated/0/Music/…", // i18n: ignore
                 initial_value: "{new_folder}",
                 oninput: move |e| new_folder.set(e.value()),
             }
-            button { class: "pill", r#type: "submit", "Add" }
+            button { class: "pill", r#type: "submit", {t!("action-add")} }
         }
         button {
             class: "primary",
             disabled: (st.scanning)().is_some(),
             onclick: move |_| services::get().rescan(),
             Icon { name: "refresh", size: 18 }
-            if (st.scanning)().is_some() { " Scanning…" } else { " Rescan library" }
+            if (st.scanning)().is_some() { " " {t!("settings-scanning")} } else { " " {t!("settings-rescan")} }
         }
         if !crate::platform::has_audio_permission() {
-            button { class: "pill", onclick: move |_| crate::platform::request_audio_permission(), "Allow access to music" }
-            button { class: "pill", onclick: move |_| crate::platform::open_app_settings(), "Open app settings" }
+            button { class: "pill", onclick: move |_| crate::platform::request_audio_permission(), {t!("permission-allow-music")} }
+            button { class: "pill", onclick: move |_| crate::platform::open_app_settings(), {t!("permission-open-settings")} }
         }
     }
 }
@@ -429,10 +434,10 @@ fn SubsonicSettings(current: SubsonicConfig, on_saved: EventHandler<()>) -> Elem
     let mut testing = use_signal(|| false);
     rsx! {
         div { class: "card",
-            div { class: "title", "My server (Subsonic / Navidrome)" }
+            div { class: "title", {t!("setting-subsonic")} }
             input { placeholder: "https://music.example.com", initial_value: "{url}", oninput: move |e| url.set(e.value()) }
-            input { placeholder: "Username", initial_value: "{user}", oninput: move |e| user.set(e.value()) }
-            input { r#type: "password", placeholder: "Password", initial_value: "{pass}", oninput: move |e| pass.set(e.value()) }
+            input { placeholder: t!("server-username"), initial_value: "{user}", oninput: move |e| user.set(e.value()) }
+            input { r#type: "password", placeholder: t!("server-password"), initial_value: "{pass}", oninput: move |e| pass.set(e.value()) }
             div { class: "hero-actions",
                 button {
                     class: "primary",
@@ -442,7 +447,7 @@ fn SubsonicSettings(current: SubsonicConfig, on_saved: EventHandler<()>) -> Elem
                         if cfg.url.is_empty() {
                             services::get().update_settings(|s| s.subsonic = None);
                             on_saved.call(());
-                            status.set(Some((true, "Server removed".into())));
+                            status.set(Some((true, t!("server-removed"))));
                             return;
                         }
                         testing.set(true);
@@ -455,21 +460,21 @@ fn SubsonicSettings(current: SubsonicConfig, on_saved: EventHandler<()>) -> Elem
                                 Ok(Ok(())) => {
                                     services::get().update_settings(move |s| s.subsonic = Some(cfg));
                                     on_saved.call(());
-                                    status.set(Some((true, "Connected and saved".into())));
-                                    st.toast("Server connected");
+                                    status.set(Some((true, t!("server-saved"))));
+                                    st.toast(t!("toast-server-connected"));
                                 }
                                 Ok(Err(e)) => status.set(Some((false, e.to_string()))),
                                 Err(e) => status.set(Some((false, e.to_string()))),
                             }
                         });
                     },
-                    if testing() { "Testing…" } else { "Test & save" }
+                    if testing() { {t!("server-testing")} } else { {t!("server-test-save")} }
                 }
             }
             if let Some((ok, msg)) = status() {
                 p { class: if ok { "small ok" } else { "small error" }, "{msg}" }
             }
-            p { class: "muted small", "Your password is kept in the app's private storage and only sent as a salted token." }
+            p { class: "muted small", {t!("server-password-note")} }
         }
     }
 }
@@ -482,7 +487,7 @@ fn PlaylistImport() -> Element {
     let res = result();
     rsx! {
         div { class: "card",
-            p { class: "muted small", "Paste an M3U playlist or a CSV export (with Track Name / Artist columns) to see which songs you already have." }
+            p { class: "muted small", {t!("import-hint")} }
             textarea { rows: "4", initial_value: "{text}", placeholder: "#EXTM3U …  or  Track Name,Artist Name(s)…", oninput: move |e| text.set(e.value()) }
             button {
                 class: "pill",
@@ -491,7 +496,7 @@ fn PlaylistImport() -> Element {
                     let lib = services::get().library();
                     result.set(Some(playlist::match_library(entries, &lib)));
                 },
-                "Match with my library"
+                {t!("import-match")}
             }
             if let Some(r) = res {
                 {
@@ -501,20 +506,20 @@ fn PlaylistImport() -> Element {
                     }).collect();
                     let n_found = found.len();
                     rsx! {
-                        p { class: "small", "You own {n_found} of {r.len()} songs." }
+                        p { class: "small", {t!("import-owned", owned = n_found, total = r.len())} }
                         if n_found > 0 {
                             button {
                                 class: "primary",
                                 onclick: move |_| {
                                     super::play_tracks(&found, 0);
-                                    st.toast("Playing matched songs");
+                                    st.toast(t!("toast-playing-matched"));
                                 },
                                 Icon { name: "play", size: 18 }
-                                " Play the {n_found} songs you own"
+                                " " {t!("import-play-owned", count = n_found)}
                             }
                         }
                         if !missing.is_empty() {
-                            div { class: "subtitle", "Missing (buy them or look for them in Discover):" }
+                            div { class: "subtitle", {t!("import-missing")} }
                             for (i , m) in missing.iter().take(50).enumerate() {
                                 div { key: "{i}", class: "small muted", "• {m}" }
                             }

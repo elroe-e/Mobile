@@ -9,6 +9,7 @@ loss-audio.workspace = true
 loss-download.workspace = true
 loss-platform.workspace = true
 loss-store.workspace = true
+loss-i18n.workspace = true
 log.workspace = true
 dioxus = { version = "=0.7.10", features = ["mobile"] }
 base64 = "0.22"

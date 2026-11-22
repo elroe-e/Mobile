@@ -314,6 +314,36 @@ pub fn request_audio_permission() {
 
 /// The phone's media volume (0..1), or None where the app controls its own
 /// volume (desktop).
+/// The device's language as a BCP 47 tag (e.g. "en-GB"), if known.
+pub fn system_locale() -> Option<String> {
+    #[cfg(target_os = "android")]
+    {
+        android::with_env(|env, _act| {
+            let locale = env
+                .call_static_method(
+                    "java/util/Locale",
+                    "getDefault",
+                    "()Ljava/util/Locale;",
+                    &[],
+                )?
+                .l()?;
+            let tag = env
+                .call_method(&locale, "toLanguageTag", "()Ljava/lang/String;", &[])?
+                .l()?;
+            Ok(env.get_string(&jni::objects::JString::from(tag))?.into())
+        })
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        // LANG=en_GB.UTF-8 → en-GB
+        ["LC_ALL", "LC_MESSAGES", "LANG"]
+            .iter()
+            .filter_map(|k| std::env::var(k).ok())
+            .find(|v| !v.is_empty() && v != "C" && v != "POSIX")
+            .map(|v| v.split(['.', '@']).next().unwrap_or("").replace('_', "-"))
+    }
+}
+
 pub fn system_volume() -> Option<f32> {
     #[cfg(target_os = "android")]
     {

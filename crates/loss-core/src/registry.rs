@@ -6,7 +6,9 @@
 //! [`get`] and [`set`]. The tests fail if a field is missing from the registry (or isn't listed in
 //! [`INTERNAL`] as app state rather than a setting).
 //!
-//! Titles and descriptions are English for now; M0-09 turns them into translation keys.
+//! Text comes from the translations (crates/loss-i18n): `setting-<key>` (title),
+//! `setting-<key>-desc` (optional description), `section-<name>` and `choice-<key>-<value>`.
+//! The tests check that English has every one.
 
 use crate::{normalize, Settings};
 use std::path::PathBuf;
@@ -24,8 +26,8 @@ pub enum Value {
 pub enum Kind {
     /// On/off switch.
     Toggle,
-    /// One of a few named values: (stored value, label).
-    Choice(&'static [(&'static str, &'static str)]),
+    /// One of a few named values; each has the label `choice-<key>-<value>`.
+    Choice(&'static [&'static str]),
     /// One of a few numbers, shown as segments.
     Steps(&'static [i64]),
     /// Free text.
@@ -57,14 +59,18 @@ impl Section {
         Section::Help,
     ];
 
-    pub fn title(self) -> &'static str {
+    fn id(self) -> &'static str {
         match self {
-            Section::Library => "Music folders",
-            Section::Downloads => "Downloads",
-            Section::Sources => "Sources",
-            Section::Look => "Look",
-            Section::Help => "Help",
+            Section::Library => "section-library",
+            Section::Downloads => "section-downloads",
+            Section::Sources => "section-sources",
+            Section::Look => "section-look",
+            Section::Help => "section-help",
         }
+    }
+
+    pub fn title(self) -> String {
+        loss_i18n::tr(self.id())
     }
 }
 
@@ -97,8 +103,6 @@ pub struct SettingDef {
     pub key: &'static str,
     pub section: Section,
     pub kind: Kind,
-    pub title: &'static str,
-    pub description: &'static str,
     /// Extra words people might search for.
     pub keywords: &'static [&'static str],
     pub platforms: Platforms,
@@ -110,21 +114,40 @@ const fn def(
     key: &'static str,
     section: Section,
     kind: Kind,
-    title: &'static str,
-    description: &'static str,
     keywords: &'static [&'static str],
 ) -> SettingDef {
     SettingDef {
         key,
         section,
         kind,
-        title,
-        description,
         keywords,
         platforms: Platforms::ALL,
         restart: false,
     }
 }
+
+impl SettingDef {
+    pub fn title(&self) -> String {
+        loss_i18n::tr(&format!("setting-{}", self.key))
+    }
+
+    /// Empty when the setting has no description.
+    pub fn description(&self) -> String {
+        loss_i18n::tr_opt(&format!("setting-{}-desc", self.key)).unwrap_or_default()
+    }
+
+    /// The label of one of a [`Kind::Choice`]'s values.
+    pub fn choice_label(&self, value: &str) -> String {
+        loss_i18n::tr(&format!("choice-{}-{value}", self.key))
+    }
+}
+
+/// Languages offered in Settings, the phone's own first. Debug builds add the pseudo-locales
+/// (accented and right-to-left) used to test translations and layout.
+#[cfg(not(debug_assertions))]
+pub const LANGUAGES: &[&str] = &["system", "en"];
+#[cfg(debug_assertions)]
+pub const LANGUAGES: &[&str] = &["system", "en", "en-XA", "ar-XB"];
 
 pub const ACCENTS: &[&str] = &[
     "#e8615a", "#4fb3a9", "#7c8cff", "#e3a83b", "#c56bd8", "#5fbf5f",
@@ -136,64 +159,48 @@ pub static SETTINGS: &[SettingDef] = &[
         "music_folders",
         Section::Library,
         Kind::Custom,
-        "Music folders",
-        "Folders Loss scans for your music",
         &["library", "scan", "storage", "directory", "path"],
     ),
     def(
         "download_dir",
         Section::Downloads,
         Kind::Folder,
-        "Download folder",
-        "The default needs no storage permission. Files there are removed if you uninstall Loss.",
         &["save", "location", "storage", "path", "directory"],
     ),
     def(
         "max_parallel_downloads",
         Section::Downloads,
         Kind::Steps(&[1, 2, 3, 4, 5]),
-        "Downloads at once",
-        "",
         &["parallel", "simultaneous", "concurrent", "speed"],
     ),
     def(
         "max_retries",
         Section::Downloads,
         Kind::Steps(&[0, 2, 5, 10]),
-        "Retries for a failed download",
-        "How often Loss tries again after a network error",
         &["retry", "error", "network", "attempts"],
     ),
     def(
         "auto_tag",
         Section::Downloads,
         Kind::Toggle,
-        "Tag downloads",
-        "Add title, artist, album and cover art when missing",
         &["metadata", "tags", "cover", "artwork", "id3"],
     ),
     def(
         "fetch_lyrics",
         Section::Downloads,
         Kind::Toggle,
-        "Fetch lyrics",
-        "Save synced lyrics from LRCLIB next to each download",
         &["lrc", "lrclib", "words", "karaoke", "synced"],
     ),
     def(
         "extract_zips",
         Section::Downloads,
         Kind::Toggle,
-        "Unpack zip albums",
-        "Extract songs from .zip downloads (e.g. Bandcamp purchases)",
         &["zip", "archive", "bandcamp", "unzip", "extract"],
     ),
     def(
         "archive_cc_only",
         Section::Sources,
         Kind::Toggle,
-        "Internet Archive: Creative Commons only",
-        "Hide items without an open licence",
         &["license", "licence", "free", "archive.org", "legal"],
     ),
     def(
@@ -202,16 +209,12 @@ pub static SETTINGS: &[SettingDef] = &[
         Kind::Text {
             placeholder: "Free from devportal.jamendo.com",
         },
-        "Jamendo client id",
-        "Needed to search Jamendo's free music",
         &["api", "key", "jamendo"],
     ),
     def(
         "subsonic",
         Section::Sources,
         Kind::Custom,
-        "My server (Subsonic / Navidrome)",
-        "Stream and download from your own music server",
         &[
             "navidrome",
             "subsonic",
@@ -224,33 +227,31 @@ pub static SETTINGS: &[SettingDef] = &[
     def(
         "theme",
         Section::Look,
-        Kind::Choice(&[("system", "Auto"), ("dark", "Dark"), ("light", "Light")]),
-        "Theme",
-        "",
+        Kind::Choice(&["system", "dark", "light"]),
         &["dark mode", "light mode", "night", "appearance"],
+    ),
+    def(
+        "language",
+        Section::Look,
+        Kind::Choice(LANGUAGES),
+        &["language", "translation", "locale", "english"],
     ),
     def(
         "dynamic_color",
         Section::Look,
         Kind::Toggle,
-        "Colours from album art",
-        "The whole app takes on the colours of what's playing",
         &["dynamic", "colour", "color", "cover", "material you"],
     ),
     def(
         "accent",
         Section::Look,
         Kind::Color(ACCENTS),
-        "Accent colour",
-        "Used when nothing is playing, or always if colours from album art are off",
         &["color", "colour", "theme", "tint"],
     ),
     def(
         "detailed_logging",
         Section::Help,
         Kind::Toggle,
-        "Detailed logging",
-        "Record more detail. Turn on when reporting a problem.",
         &["debug", "log", "bug", "report", "diagnostics"],
     ),
 ];
@@ -287,6 +288,7 @@ pub fn get(s: &Settings, key: &str) -> Option<Value> {
         "dynamic_color" => Bool(s.dynamic_color),
         "accent" => Text(s.accent.clone()),
         "detailed_logging" => Bool(s.detailed_logging),
+        "language" => Text(s.language.clone()),
         _ => return None,
     })
 }
@@ -303,7 +305,7 @@ pub fn set(s: &mut Settings, key: &str, value: Value) -> Result<(), SetError> {
     let d = find(key).ok_or(SetError::UnknownKey)?;
     let ok = match (&d.kind, &value) {
         (Kind::Toggle, Value::Bool(_)) => true,
-        (Kind::Choice(opts), Value::Text(v)) => opts.iter().any(|(o, _)| o == v),
+        (Kind::Choice(opts), Value::Text(v)) => opts.contains(&v.as_str()),
         (Kind::Steps(opts), Value::Int(v)) => opts.contains(v),
         (Kind::Text { .. }, Value::Text(_)) | (Kind::Folder, Value::Text(_)) => true,
         (Kind::Color(opts), Value::Text(v)) => opts.contains(&v.as_str()),
@@ -325,6 +327,7 @@ pub fn set(s: &mut Settings, key: &str, value: Value) -> Result<(), SetError> {
         ("dynamic_color", Value::Bool(v)) => s.dynamic_color = v,
         ("accent", Value::Text(v)) => s.accent = v,
         ("detailed_logging", Value::Bool(v)) => s.detailed_logging = v,
+        ("language", Value::Text(v)) => s.language = v,
         _ => return Err(SetError::Invalid),
     }
     Ok(())
@@ -347,17 +350,17 @@ pub fn search(query: &str) -> Vec<&'static SettingDef> {
         .enumerate()
         .filter(|(_, d)| d.platforms.includes(here))
         .filter_map(|(i, d)| {
-            let title = normalize(d.title);
+            let title = normalize(&d.title());
             let mut hay = format!(
                 "{title} {} {} {}",
-                normalize(d.description),
+                normalize(&d.description()),
                 normalize(&d.keywords.join(" ")),
-                normalize(d.section.title())
+                normalize(&d.section.title())
             );
             if let Kind::Choice(opts) = &d.kind {
-                for (_, label) in opts.iter() {
+                for v in opts.iter() {
                     hay.push(' ');
-                    hay.push_str(&normalize(label));
+                    hay.push_str(&normalize(&d.choice_label(v)));
                 }
             }
             if !words.iter().all(|w| hay.contains(w.as_str())) {
@@ -423,7 +426,7 @@ mod tests {
             // Setting a valid value round-trips.
             let valid = match &d.kind {
                 Kind::Toggle => Value::Bool(true),
-                Kind::Choice(o) => Value::Text(o.last().unwrap().0.into()),
+                Kind::Choice(o) => Value::Text(o.last().unwrap().to_string()),
                 Kind::Steps(o) => Value::Int(*o.last().unwrap()),
                 Kind::Text { .. } | Kind::Folder => Value::Text("x".into()),
                 Kind::Color(o) => Value::Text(o.last().unwrap().to_string()),
@@ -481,6 +484,26 @@ mod tests {
         assert!(keys("   ").is_empty());
         // Choice labels are searchable.
         assert_eq!(keys("light"), vec!["theme"]);
+    }
+
+    #[test]
+    fn every_text_is_translated() {
+        for d in SETTINGS {
+            assert!(
+                loss_i18n::has(&format!("setting-{}", d.key)),
+                "setting-{} missing",
+                d.key
+            );
+            if let Kind::Choice(opts) = &d.kind {
+                for v in opts.iter() {
+                    let id = format!("choice-{}-{v}", d.key);
+                    assert!(loss_i18n::has(&id), "{id} missing");
+                }
+            }
+        }
+        for s in Section::ALL {
+            assert!(loss_i18n::has(s.id()), "{} missing", s.id());
+        }
     }
 
     #[test]

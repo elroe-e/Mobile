@@ -44,6 +44,8 @@ pub struct Settings {
     pub last_position: f64,
     /// Record debug-level lines in the log (Settings → Logs).
     pub detailed_logging: bool,
+    /// "system" (the phone's language) or a language tag such as "en".
+    pub language: String,
 }
 
 impl Default for Settings {
@@ -67,6 +69,7 @@ impl Default for Settings {
             last_track: None,
             last_position: 0.0,
             detailed_logging: false,
+            language: "system".into(),
         }
     }
 }

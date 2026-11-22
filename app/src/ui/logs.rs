@@ -6,6 +6,7 @@ use super::settings::{SettingsNav, SettingsPage};
 use super::{copy_text, share_text, state};
 use crate::diag;
 use dioxus::prelude::*;
+use loss_i18n::t;
 use std::time::Duration;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -17,12 +18,12 @@ enum Filter {
 }
 
 impl Filter {
-    fn label(self) -> &'static str {
+    fn label(self) -> String {
         match self {
-            Filter::All => "All",
-            Filter::Problems => "Problems",
-            Filter::Info => "Info",
-            Filter::Debug => "Debug",
+            Filter::All => t!("logs-filter-all"),
+            Filter::Problems => t!("logs-filter-problems"),
+            Filter::Info => t!("logs-filter-info"),
+            Filter::Debug => t!("logs-filter-debug"),
         }
     }
     fn keeps(self, level: log::Level) -> bool {
@@ -74,30 +75,30 @@ pub fn LogsPage() -> Element {
 
     rsx! {
         button { class: "back", onclick: move |_| page.set(SettingsPage::Main), Icon { name: "back" } }
-        header { class: "page-header", h1 { "Logs" } }
+        header { class: "page-header", h1 { {t!("logs-title")} } }
 
         if let Some(report) = crash() {
-            h2 { class: "section-title", "Last crash" }
+            h2 { class: "section-title", {t!("logs-last-crash")} }
             div { class: "card",
-                p { class: "small muted", "Loss closed unexpectedly. Sending this report helps fix it." }
+                p { class: "small muted", {t!("logs-crash-text")} }
                 pre { class: "pre-box", "{report}" }
                 div { class: "hero-actions start",
                     button {
                         class: "pill",
                         onclick: {
                             let r = report.clone();
-                            move |_| copy_text(st, "Loss crash report", &r)
+                            move |_| copy_text(st, &t!("logs-crash-report"), &r)
                         },
                         Icon { name: "check", size: 18 }
-                        "Copy"
+                        {t!("action-copy")}
                     }
                     button {
                         class: "pill",
                         onclick: {
                             let r = report.clone();
-                            move |_| share_text(st, "Loss crash report", &r)
+                            move |_| share_text(st, &t!("logs-crash-report"), &r)
                         },
-                        "Share"
+                        {t!("action-share")}
                     }
                     button {
                         class: "pill",
@@ -105,16 +106,16 @@ pub fn LogsPage() -> Element {
                             diag::dismiss_crashes();
                             crash.set(None);
                         },
-                        "Dismiss"
+                        {t!("action-dismiss")}
                     }
                 }
             }
         }
 
-        h2 { class: "section-title", "This device" }
+        h2 { class: "section-title", {t!("logs-device")} }
         div { class: "card",
             p { class: "small muted",
-                "Phone model, Android version and every audio output with the sample rates and formats it accepts, including USB DACs."
+                {t!("logs-device-text")}
             }
             if let Some(text) = details() {
                 pre { class: "pre-box", "{text}" }
@@ -123,27 +124,27 @@ pub fn LogsPage() -> Element {
                 button {
                     class: "pill",
                     onclick: move |_| details.set(Some(crate::platform::diagnostics())),
-                    if details().is_some() { "Refresh" } else { "Show" }
+                    if details().is_some() { {t!("action-refresh")} } else { {t!("action-show")} }
                 }
                 button {
                     class: "pill",
-                    onclick: move |_| copy_text(st, "Loss diagnostics", &full_report()),
-                    "Copy"
+                    onclick: move |_| copy_text(st, &t!("logs-diagnostics"), &full_report()),
+                    {t!("action-copy")}
                 }
                 button {
                     class: "pill",
-                    onclick: move |_| share_text(st, "Loss diagnostics", &full_report()),
-                    "Share"
+                    onclick: move |_| share_text(st, &t!("logs-diagnostics"), &full_report()),
+                    {t!("action-share")}
                 }
             }
         }
 
-        h2 { class: "section-title", "App log" }
+        h2 { class: "section-title", {t!("logs-app-log")} }
         div { class: "search-box",
             Icon { name: "search", size: 22 }
             input {
                 r#type: "search",
-                placeholder: "Search the log",
+                placeholder: t!("logs-search"),
                 initial_value: "{query}",
                 oninput: move |e| query.set(e.value()),
             }
@@ -158,22 +159,22 @@ pub fn LogsPage() -> Element {
             }
         }
         div { class: "toolbar",
-            span { class: "muted small", "{lines.len()} of {total} lines, newest first" }
+            span { class: "muted small", {t!("logs-count", shown = lines.len(), total = total)} }
             div { class: "header-actions",
-                button { class: "text-btn", onclick: move |_| copy_text(st, "Loss log", &diag::export_text()), "Copy" }
-                button { class: "text-btn", onclick: move |_| share_text(st, "Loss log", &diag::export_text()), "Share" }
+                button { class: "text-btn", onclick: move |_| copy_text(st, &t!("logs-log"), &diag::export_text()), {t!("action-copy")} }
+                button { class: "text-btn", onclick: move |_| share_text(st, &t!("logs-log"), &diag::export_text()), {t!("action-share")} }
                 button {
                     class: "text-btn",
                     onclick: move |_| {
                         diag::clear();
-                        st.toast("Log cleared");
+                        st.toast(t!("logs-cleared"));
                     },
-                    "Clear"
+                    {t!("action-clear")}
                 }
             }
         }
         if lines.is_empty() {
-            p { class: "muted pad", "Nothing logged yet." }
+            p { class: "muted pad", {t!("logs-empty")} }
         }
         div { class: "log-list",
             for (i , l) in lines.iter().enumerate() {
@@ -192,7 +193,7 @@ pub fn LogsPage() -> Element {
 /// Device details plus the log, for bug reports.
 fn full_report() -> String {
     format!(
-        "{}\nSettings: detailed logging {}\n\n{}",
+        "{}\nSettings: detailed logging {}\n\n{}", // i18n: ignore (bug reports stay English)
         crate::platform::diagnostics(),
         if crate::services::get().settings().detailed_logging {
             "on"

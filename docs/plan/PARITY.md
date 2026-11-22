@@ -21,7 +21,7 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 | PLT-04 | Android Auto | Browse and play from the car screen | No | Only in Mornye | M9-02 | todo |
 | PLT-05 | iPhone & iPad | Yes, through AltStore / SideStore | No | Only in Mornye | M10-11 | todo |
 | PLT-06 | Windows, macOS, Linux | Full desktop apps: song tables, right-click menus, drag and drop, window modes, mini-player window | Only a developer test window | Only in Mornye | M10-10, M2-21, M9-08 | todo |
-| PLT-07 | Languages | 21 languages with an in-app language picker | English only | Only in Mornye | M0-09, M10-09 | todo |
+| PLT-07 | Languages | 21 languages with an in-app language picker | English only | Only in Mornye | M0-09, M10-09 | doing |
 | PLT-08 | First-run setup | Setup wizard (language, permissions, download folder) and a tutorial | Asks for music and notification permission | Simpler in Loss | M10-04 | todo |
 | PLT-09 | App updates | Built-in updater with Stable and Preview channels and “What’s new” | Install each new APK yourself | Only in Mornye | M0-04, M10-05 | todo |
 | PLT-10 | Crash reports & logs | Saves crash reports; log viewer with search, filter and share | None inside the app | Only in Mornye | M0-11 | done |

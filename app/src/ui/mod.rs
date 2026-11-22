@@ -16,6 +16,7 @@ use dioxus::prelude::*;
 use icons::Icon;
 use loss_audio::{Command, PlayerState, QueueItem, Status};
 use loss_download::JobSnapshot;
+use loss_i18n::t;
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -86,12 +87,12 @@ pub fn state() -> AppState {
 pub fn copy_text(st: AppState, label: &str, text: &str) {
     if !crate::platform::copy_text(label, text) {
         let js = format!(
-            "navigator.clipboard && navigator.clipboard.writeText({});",
+            "navigator.clipboard && navigator.clipboard.writeText({});", // i18n: ignore
             serde_json::to_string(text).unwrap_or_default()
         );
         document::eval(&js);
     }
-    st.toast("Copied");
+    st.toast(t!("toast-copied"));
 }
 
 /// Opens the share sheet; copies instead where there is none.
@@ -201,7 +202,7 @@ pub fn App() -> Element {
     // Escape works as Back (desktop, keyboards, and UI tests).
     use_future(move || async move {
         let mut keys = document::eval(
-            "document.addEventListener('keydown', (e) => { if (e.key === 'Escape') dioxus.send('back'); });",
+            "document.addEventListener('keydown', (e) => { if (e.key === 'Escape') dioxus.send('back'); });", // i18n: ignore
         );
         while keys.recv::<String>().await.is_ok() {
             crate::nav::request_back();
@@ -337,7 +338,13 @@ pub fn App() -> Element {
         style { {STYLE} }
         style { {theme_css} }
         document::Meta { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" }
-        div { class: if has_player { "app with-player" } else { "app" },
+        // Keyed by language: switching it redraws everything in the new language.
+        for lang in std::iter::once(loss_i18n::current()) {
+        div {
+            key: "{lang}",
+            class: if has_player { "app with-player" } else { "app" },
+            lang: "{lang}",
+            dir: if loss_i18n::is_rtl() { "rtl" } else { "ltr" },
             main { class: "content",
                 // Keyed by tab so each switch plays the page transition.
                 for t in std::iter::once(tab()) {
@@ -363,6 +370,7 @@ pub fn App() -> Element {
                 div { class: "toast", "{msg}" }
             }
         }
+        }
     }
 }
 
@@ -376,7 +384,7 @@ fn BottomNav() -> Element {
         .iter()
         .filter(|j| j.status.is_active() || j.status == loss_download::JobStatus::Queued)
         .count();
-    let item = |t: Tab, icon: &'static str, label: &'static str| {
+    let item = |t: Tab, icon: &'static str, label: String| {
         rsx! {
             button {
                 class: if active == t { "nav-item active" } else { "nav-item" },
@@ -393,11 +401,11 @@ fn BottomNav() -> Element {
     };
     rsx! {
         nav { class: "bottom-nav",
-            {item(Tab::Home, "home", "Home")}
-            {item(Tab::Library, "library", "Library")}
-            {item(Tab::Discover, "explore", "Discover")}
-            {item(Tab::Downloads, "download", "Downloads")}
-            {item(Tab::Settings, "settings", "Settings")}
+            {item(Tab::Home, "home", t!("tab-home"))}
+            {item(Tab::Library, "library", t!("tab-library"))}
+            {item(Tab::Discover, "explore", t!("tab-discover"))}
+            {item(Tab::Downloads, "download", t!("tab-downloads"))}
+            {item(Tab::Settings, "settings", t!("tab-settings"))}
         }
     }
 }
@@ -498,7 +506,7 @@ pub fn Slider(
         "any".to_string()
     };
     let cls = if dragging().is_some() {
-        format!("slider dragging {class}")
+        format!("slider dragging {class}") // i18n: ignore
     } else {
         format!("slider {class}")
     };
@@ -540,7 +548,9 @@ fn cookie_path() -> &'static str {
             let a = i as f64 / 180.0 * std::f64::consts::TAU;
             let r = 45.0 + 4.0 * (9.0 * a).cos();
             let (x, y) = (50.0 + r * a.cos(), 50.0 + r * a.sin());
-            d.push_str(&format!("{}{x:.2},{y:.2}", if i == 0 { "M" } else { "L" }));
+            // SVG path commands: move to the first point, then lines.
+            let cmd = if i == 0 { 'M' } else { 'L' };
+            d.push_str(&format!("{cmd}{x:.2},{y:.2}"));
         }
         d.push('Z');
         d
@@ -612,12 +622,12 @@ pub fn RemoteCover(
 pub fn format_bytes(b: u64) -> String {
     let b = b as f64;
     if b >= 1e9 {
-        format!("{:.2} GB", b / 1e9)
+        format!("{:.2} GB", b / 1e9) // i18n: ignore
     } else if b >= 1e6 {
-        format!("{:.1} MB", b / 1e6)
+        format!("{:.1} MB", b / 1e6) // i18n: ignore
     } else if b >= 1e3 {
-        format!("{:.0} KB", b / 1e3)
+        format!("{:.0} KB", b / 1e3) // i18n: ignore
     } else {
-        format!("{b:.0} B")
+        format!("{b:.0} B") // i18n: ignore
     }
 }

@@ -9,6 +9,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 lofty.workspace = true
 log.workspace = true
+loss-i18n.workspace = true
 walkdir = "2"
 aes-gcm = "0.10"
 getrandom = "0.2"

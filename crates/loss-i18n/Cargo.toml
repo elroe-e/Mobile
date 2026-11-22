@@ -1,0 +1,14 @@
+[package]
+name = "loss-i18n"
+version.workspace = true
+edition.workspace = true
+description = "Loss' translations: Fluent messages, locale choice, pseudo-locales for testing"
+
+[dependencies]
+fluent-bundle = "0.16"
+fluent-pseudo = "0.3"
+unic-langid = "0.9"
+log.workspace = true
+
+[dev-dependencies]
+fluent-syntax = "0.12"

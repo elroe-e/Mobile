@@ -198,7 +198,12 @@ until M6; the other tables arrive with the tasks that need them.
   You) or accent; light, dark and AMOLED; Material and Glass styles; interface scale; animation-speed
   multiplier; reduced motion.
 * **Icons**: Material Symbols Rounded, embedded as a subsetted font.
-* **Text**: every string goes through Fluent (`t!("key")`); RTL layouts for Arabic.
+* **Text**: every string goes through Fluent (`t!("key")`); RTL layouts for Arabic. Done in M0-09:
+  `crates/loss-i18n` (concurrent `FluentBundle`, English fallback, missing id shows the id),
+  `en/loss.ftl` with plural selectors, pseudo-locales `en-XA` (accented, via `fluent-pseudo`) and
+  `ar-XB` (mirrored, RTL). The language follows the phone (`Locale.getDefault()` over JNI, `LANG`
+  on desktop) unless set in Settings → Look → Language; the app root is keyed by language and gets
+  `lang`/`dir`. Registry text uses `setting-<key>`, `section-<name>`, `choice-<key>-<value>` ids.
 * **Layouts**: phone portrait, phone landscape, tablet (navigation rail, two-pane), TV (D-pad focus),
   desktop (tables, menus, window modes, mini-player window).
 * **Haptics**: `HapticFeedbackConstants` and `Vibrator` through the bridge.

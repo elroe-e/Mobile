@@ -6,6 +6,7 @@ use crate::services;
 use dioxus::prelude::*;
 use loss_audio::{Command, Repeat, Status};
 use loss_core::{format_duration, lrc};
+use loss_i18n::t;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Pane {
@@ -95,7 +96,7 @@ pub fn NowPlaying() -> Element {
             div { class: "np-top",
                 button { class: "icon-btn glass", onclick: move |_| close(), Icon { name: "chevron_down", size: 28 } }
                 div { class: "np-top-title",
-                    div { class: "eyebrow", "Now playing" }
+                    div { class: "eyebrow", {t!("player-now-playing")} }
                     div { class: "np-top-album", "{album}" }
                 }
                 button { class: "icon-btn glass", onclick: move |_| toggle(Pane::Queue), Icon { name: "queue", size: 24 } }
@@ -188,11 +189,11 @@ pub fn NowPlaying() -> Element {
             div { class: "np-bottom",
                 button { class: if pn == Pane::Lyrics { "np-chip on" } else { "np-chip" }, onclick: move |_| toggle(Pane::Lyrics),
                     Icon { name: "lyrics", size: 18 }
-                    "Lyrics"
+                    {t!("player-lyrics")}
                 }
                 if let Some(n) = next_up {
                     button { class: "np-chip next-up", onclick: move |_| toggle(Pane::Queue),
-                        span { class: "muted", "Up next" }
+                        span { class: "muted", {t!("player-up-next")} }
                         span { class: "ellipsis", "{n}" }
                     }
                 }
@@ -258,9 +259,9 @@ fn LyricsPane(track_id: String, position: f64) -> Element {
                         text.set(Some(body.to_string()));
                     }
                 }
-                Ok(Ok(None)) => status.set(Some("No lyrics found for this song.".into())),
-                Ok(Err(e)) => status.set(Some(format!("Couldn't search: {e}"))),
-                Err(e) => status.set(Some(format!("Couldn't search: {e}"))),
+                Ok(Ok(None)) => status.set(Some(t!("lyrics-none-found"))),
+                Ok(Err(e)) => status.set(Some(t!("lyrics-search-failed", error = e.to_string()))),
+                Err(e) => status.set(Some(t!("lyrics-search-failed", error = e.to_string()))),
             }
         });
     };
@@ -282,7 +283,7 @@ fn LyricsPane(track_id: String, position: f64) -> Element {
                             if line.text.is_empty() { "♪" } else { "{line.text}" }
                         }
                     }
-                    p { class: "muted small center", "Lyrics from LRCLIB or your files" }
+                    p { class: "muted small center", {t!("lyrics-source")} }
                 },
                 Some(l) => rsx! {
                     pre { class: "plain-lyrics", "{l.plain}" }
@@ -290,12 +291,12 @@ fn LyricsPane(track_id: String, position: f64) -> Element {
                 None => rsx! {
                     div { class: "empty",
                         Icon { name: "lyrics", size: 48 }
-                        p { "No lyrics for this song yet." }
+                        p { {t!("lyrics-none-yet")} }
                         button {
                             class: "primary",
                             disabled: searching(),
                             onclick: fetch,
-                            if searching() { "Searching…" } else { "Search online" }
+                            if searching() { {t!("lyrics-searching")} } else { {t!("lyrics-search-online")} }
                         }
                         if let Some(s) = status() {
                             p { class: "muted small", "{s}" }
@@ -338,7 +339,7 @@ fn QueuePane() -> Element {
     let current = p.index;
     rsx! {
         div { class: "queue",
-            p { class: "muted small", "{rows.len()} songs in queue" }
+            p { class: "muted small", {t!("queue-count", count = rows.len())} }
             for (i , id , title , artist) in rows {
                 div { key: "{i}-{id}", class: if Some(i) == current { "row current" } else { "row" },
                     div { class: "row-main", onclick: move |_| services::get().player.send(Command::JumpTo(i)),

@@ -17,7 +17,7 @@ no bit-perfect mixer on this phone, see `docs/plan/reports/`).
 
 ## End of every session
 
-1. `cargo test -p loss-core -p loss-audio -p loss-download -p loss-platform -p loss-store` (plus new crates) and an Android build pass.
+1. `cargo test -p loss-core -p loss-audio -p loss-download -p loss-platform -p loss-store -p loss-i18n` (plus new crates) and an Android build pass.
 2. Tick finished tasks in PLAN.md; update the Status table counts; update **Next up**.
 3. `python3 scripts/check-plan.py --sync` updates PARITY.md states from the ticked tasks.
 4. Add a PROGRESS.md entry (what changed, what's left, gotchas).
@@ -37,7 +37,9 @@ no bit-perfect mixer on this phone, see `docs/plan/reports/`).
   LGPL-3.0.
 * Privacy: no telemetry; keep stats local; secrets in the vault (after M1-07), never in settings files.
 * External requests use a generic user agent (`Loss/<version>`) and never include personal data.
-* Write UI text plainly, from the user's side. Every new string goes through i18n once M0-09 lands.
+* Write UI text plainly, from the user's side. Every string people can read goes through
+  `t!("id")` with the English text in `crates/loss-i18n/locales/en/loss.ftl`;
+  `scripts/check-i18n.py` (CI) fails on hard-coded text and on unknown or unused ids.
 
 ## Layout
 
@@ -46,6 +48,7 @@ crates/loss-core       library model, tags (lofty), LRC, playlists, settings
 crates/loss-audio      engine: Symphonia decode → resample → cpal/AAudio; queue, gapless (M1-06)
 crates/loss-download   download manager + legal sources + post-processing
 crates/loss-store      database (redb `loss.redb`): library, settings; versioned migrations
+crates/loss-i18n       translations (Fluent): t!() macro, en/loss.ftl, pseudo-locales en-XA / ar-XB
 crates/loss-platform   Android events, focus/unplug policy, JNI bridge (RegisterNatives, cached classes)
 app/src/ui/            Dioxus screens (home, library, now_playing, discover, downloads, settings), theme.rs
 app/src/{services,media,platform}.rs   app services, Android media bridge, JNI helpers
@@ -60,7 +63,7 @@ scripts/               setup-env, build-android, check-plan, fetch-mornye
 ## Build and test
 
 ```sh
-cargo test -p loss-core -p loss-audio -p loss-download -p loss-platform -p loss-store
+cargo test -p loss-core -p loss-audio -p loss-download -p loss-platform -p loss-store -p loss-i18n
 cargo test -p loss --no-default-features --features desktop          # app unit tests (theme…)
 cargo build -p loss --no-default-features --features desktop         # desktop window for UI checks
 scripts/build-android.sh                                             # APK → dist/Loss-arm64.apk
@@ -97,8 +100,13 @@ plays instantly. Set `HOME`/`LOSS_DATA_DIR` to a scratch dir, drive it with `xdo
   `android/glue` (it becomes `:plugins:lossglue`). Permissions and services go in the glue's manifest;
   Kotlin reaches Rust only through `LossBridge.emit` → `LossNative.onEvent` (registered natives, so
   no `Java_*` symbol names); Rust calls Kotlin through `loss_platform::android`.
+* Translations: `t!("id", name = value)` returns a String; in rsx write `{t!("id")}`. Plurals use
+  Fluent selectors (`{ $count -> [one] … *[other] … }`). Test layouts with the pseudo-locales:
+  `LANG=en_XA.UTF-8` (accented, longer) or `LANG=ar_XB.UTF-8` (right to left) on desktop, or the
+  Language setting in debug builds. Bug-report text (diagnostics) stays English on purpose.
 * A new setting: field in `Settings` (`#[serde(default)]` via the struct), entry in
-  `loss_core::registry::SETTINGS` plus its lines in `get`/`set` (or `INTERNAL` if it's app state);
+  `loss_core::registry::SETTINGS` plus its lines in `get`/`set` (or `INTERNAL` if it's app state),
+  and `setting-<key>` (+ `-desc`, `choice-<key>-<value>`) in en/loss.ftl;
   the registry tests enforce this. The settings screen picks it up by itself.
 * Data lives in `loss.redb` (loss-store). Values are JSON, so new fields need `#[serde(default)]`; a
   new table or a changed meaning needs a migration step in `loss-store` (bump `SCHEMA_VERSION`).

@@ -60,6 +60,8 @@ Security
 - [ ] Settings → My server: after restarting the phone, the server still connects without retyping the
       password.
 - [ ] Settings → Logs and diagnostics opens; the log shows lines; Copy and Share work.
+- [ ] Settings → Look → Language shows "Phone's language" and "English"; all text is the same
+      as before (nothing shows an id like `home-tagline`).
 - [ ] Settings → search "dark", "lyrics" and "navidrome": each finds its setting, and changing it
       there sticks after closing and reopening Loss.
 

@@ -5,6 +5,7 @@ use super::{format_bytes, state, Tab};
 use crate::services;
 use dioxus::prelude::*;
 use loss_download::{JobSnapshot, JobStatus};
+use loss_i18n::t;
 
 #[component]
 pub fn DownloadsTab() -> Element {
@@ -25,7 +26,7 @@ pub fn DownloadsTab() -> Element {
 
     rsx! {
         header { class: "page-header",
-            h1 { "Downloads" }
+            h1 { {t!("tab-downloads")} }
             div { class: "header-actions",
                 if any_running {
                     button { class: "pill", onclick: move |_| services::get().downloads.pause_all(), Icon { name: "pause", size: 18 } " Pause all" }
@@ -36,20 +37,20 @@ pub fn DownloadsTab() -> Element {
             }
         }
         if total_speed > 0.0 {
-            p { class: "muted small pad", "{format_bytes(total_speed as u64)}/s · saving to {dir}" }
+            p { class: "muted small pad", {t!("downloads-speed-saving", speed = format_bytes(total_speed as u64), folder = dir.clone())} }
         } else {
-            p { class: "muted small pad", "Saving to {dir}" }
+            p { class: "muted small pad", {t!("downloads-saving", folder = dir.clone())} }
         }
         if jobs.is_empty() {
             div { class: "empty",
                 Icon { name: "download", size: 64 }
-                h2 { "No downloads" }
-                p { "Find free music, podcasts, your own server's albums, or paste a purchase link." }
-                button { class: "primary", onclick: move |_| st.tab.set(Tab::Discover), "Go to Discover" }
+                h2 { {t!("downloads-empty-title")} }
+                p { {t!("downloads-empty-text")} }
+                button { class: "primary", onclick: move |_| st.tab.set(Tab::Discover), {t!("downloads-go-discover")} }
             }
         }
         if !active.is_empty() {
-            h2 { class: "section-title", "In progress ({active.len()})" }
+            h2 { class: "section-title", {t!("downloads-in-progress", count = active.len())} }
             div { class: "list",
                 for j in active {
                     JobRow { key: "{j.id}", job: j.clone() }
@@ -58,8 +59,8 @@ pub fn DownloadsTab() -> Element {
         }
         if !finished.is_empty() {
             div { class: "section-row",
-                h2 { class: "section-title", "Finished ({finished.len()})" }
-                button { class: "pill", onclick: move |_| services::get().downloads.clear_finished(), "Clear" }
+                h2 { class: "section-title", {t!("downloads-finished", count = finished.len())} }
+                button { class: "pill", onclick: move |_| services::get().downloads.clear_finished(), {t!("action-clear")} }
             }
             div { class: "list",
                 for j in finished {
@@ -80,14 +81,14 @@ fn JobRow(job: JobSnapshot) -> Element {
         None => String::new(),
     };
     let status_text = match &job.status {
-        JobStatus::Queued => "Waiting".to_string(),
-        JobStatus::Downloading if job.attempts > 1 => format!("Downloading (try {})", job.attempts),
+        JobStatus::Queued => t!("job-waiting"),
+        JobStatus::Downloading if job.attempts > 1 => t!("job-retrying", attempt = job.attempts),
         JobStatus::Downloading => format!("{}/s", format_bytes(job.speed_bps as u64)),
-        JobStatus::Processing => "Adding tags, cover and lyrics…".into(),
-        JobStatus::Paused => "Paused".into(),
-        JobStatus::Done => "Done · in your library".into(),
-        JobStatus::Failed(e) => format!("Failed: {e}"),
-        JobStatus::Cancelled => "Cancelled".into(),
+        JobStatus::Processing => t!("job-processing"),
+        JobStatus::Paused => t!("job-paused"),
+        JobStatus::Done => t!("job-done"),
+        JobStatus::Failed(e) => t!("job-failed", error = e.to_string()),
+        JobStatus::Cancelled => t!("job-cancelled"),
     };
     let failed = matches!(job.status, JobStatus::Failed(_));
     rsx! {

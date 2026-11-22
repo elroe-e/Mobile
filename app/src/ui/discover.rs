@@ -7,6 +7,7 @@ use dioxus::prelude::*;
 use loss_core::format_duration;
 use loss_download::sources::{archive, direct, jamendo, podcast, subsonic, ItemAction};
 use loss_download::{Collection, DownloadRequest, SearchItem, SourceKind};
+use loss_i18n::t;
 
 /// The opened collection (album, podcast…), kept by the App so Android's Back
 /// button can close it.
@@ -25,13 +26,13 @@ const SOURCES: [SourceKind; 5] = [
     SourceKind::Direct,
 ];
 
-fn hint(source: SourceKind) -> &'static str {
+fn hint(source: SourceKind) -> String {
     match source {
-        SourceKind::InternetArchive => "Free concerts, netlabels and public-domain recordings. Each result shows its licence.",
-        SourceKind::Jamendo => "Independent artists sharing music under Creative Commons. Needs a free client id (Settings).",
-        SourceKind::Podcast => "Search podcasts and download episodes from the show's own feed.",
-        SourceKind::Subsonic => "Download from your own Navidrome / Subsonic server for offline listening.",
-        SourceKind::Direct => "Paste download links, one per line: Bandcamp or Qobuz purchase links, files on your NAS, etc. Zip albums are unpacked automatically.",
+        SourceKind::InternetArchive => t!("discover-hint-archive"),
+        SourceKind::Jamendo => t!("discover-hint-jamendo"),
+        SourceKind::Podcast => t!("discover-hint-podcast"),
+        SourceKind::Subsonic => t!("discover-hint-server"),
+        SourceKind::Direct => t!("discover-hint-links"),
     }
 }
 
@@ -68,7 +69,7 @@ async fn search(source: SourceKind, query: String) -> Result<Vec<SearchItem>, St
         }
         SourceKind::Subsonic => {
             let Some(cfg) = settings.subsonic.clone() else {
-                return Err("Connect your server in Settings first.".into());
+                return Err(t!("discover-connect-server"));
             };
             if query.trim().is_empty() {
                 run(async move { subsonic::recent_albums(&client, &cfg).await }).await
@@ -93,7 +94,7 @@ async fn open(c: Collection) -> Result<Vec<SearchItem>, String> {
                 .settings()
                 .subsonic
                 .clone()
-                .ok_or("Server not configured")?;
+                .ok_or_else(|| t!("discover-no-server"))?;
             run(async move { subsonic::open_album(&client, &cfg, &c.id).await }).await
         }
         _ => Ok(vec![]),
@@ -125,7 +126,7 @@ pub fn DiscoverTab() -> Element {
             match r {
                 Ok(items) => {
                     if items.is_empty() {
-                        error.set(Some("Nothing found. Try other words.".into()));
+                        error.set(Some(t!("discover-nothing-found")));
                     }
                     results.set(items);
                 }
@@ -146,7 +147,7 @@ pub fn DiscoverTab() -> Element {
             match r {
                 Ok(items) => {
                     if items.is_empty() {
-                        error.set(Some("No downloadable audio in this item.".into()));
+                        error.set(Some(t!("discover-no-audio")));
                     }
                     opened.set(Some((c, items)));
                 }
@@ -161,7 +162,7 @@ pub fn DiscoverTab() -> Element {
     let opened_now = opened();
 
     rsx! {
-        header { class: "page-header", h1 { "Discover" } }
+        header { class: "page-header", h1 { {t!("tab-discover")} } }
         div { class: "chips",
             for s in SOURCES {
                 button {
@@ -188,7 +189,7 @@ pub fn DiscoverTab() -> Element {
                     class: "links",
                     id: "links-input",
                     rows: "5",
-                    placeholder: "https://…/album.zip\nhttps://…/song.flac",
+                    placeholder: "https://…/album.zip\nhttps://…/song.flac", // i18n: ignore
                     initial_value: "{links}",
                     oninput: move |e| links.set(e.value()),
                 }
@@ -199,12 +200,12 @@ pub fn DiscoverTab() -> Element {
                             let n = services::get().downloads.enqueue(reqs).len();
                             links.set(String::new());
                             document::eval("document.getElementById('links-input').value = ''");
-                            st.toast(format!("{n} download(s) added"));
+                            st.toast(t!("toast-downloads-added", count = n));
                         }
                         Err(e) => error.set(Some(e)),
                     },
                     Icon { name: "download", size: 20 }
-                    " Download"
+                    " " {t!("action-download")}
                 }
             }
         } else {
@@ -218,14 +219,14 @@ pub fn DiscoverTab() -> Element {
                 input {
                     r#type: "search",
                     placeholder: match src {
-                        SourceKind::Podcast => "Podcast name or feed URL",
-                        SourceKind::Subsonic => "Search your server (empty = newest albums)",
-                        _ => "Artist, album, genre…",
+                        SourceKind::Podcast => t!("discover-search-podcast"),
+                        SourceKind::Subsonic => t!("discover-search-server"),
+                        _ => t!("discover-search"),
                     },
                     initial_value: "{query}",
                     oninput: move |e| query.set(e.value()),
                 }
-                button { class: "pill", r#type: "submit", "Search" }
+                button { class: "pill", r#type: "submit", {t!("action-search")} }
             }
         }
 
@@ -235,7 +236,7 @@ pub fn DiscoverTab() -> Element {
         if let Some(e) = error() {
             div { class: "error pad", "{e}" }
             if e.contains("Settings") {
-                button { class: "pill center", onclick: move |_| { let mut t = st.tab; t.set(Tab::Settings) }, "Open Settings" }
+                button { class: "pill center", onclick: move |_| { let mut t = st.tab; t.set(Tab::Settings) }, {t!("action-open-settings")} }
             }
         }
 
@@ -249,14 +250,14 @@ pub fn DiscoverTab() -> Element {
                     let capped = col.source == SourceKind::Podcast && reqs.len() > 25;
                     reqs.truncate(if capped { 25 } else { reqs.len() });
                     let n = reqs.len();
-                    let label = if capped { format!(" Download newest {n}") } else { format!(" Download all ({n})") };
+                    let label = if capped { t!("discover-download-newest", count = n) } else { t!("discover-download-all", count = n) };
                     rsx! {
                         if n > 0 {
                             button {
                                 class: "primary",
                                 onclick: move |_| {
                                     let added = services::get().downloads.enqueue(reqs.clone()).len();
-                                    st.toast(format!("{added} downloads added"));
+                                    st.toast(t!("toast-downloads-added", count = added));
                                 },
                                 Icon { name: "download", size: 20 }
                                 "{label}"
@@ -279,8 +280,7 @@ pub fn DiscoverTab() -> Element {
         }
         if src == SourceKind::InternetArchive || src == SourceKind::Jamendo {
             p { class: "muted small pad legal",
-                "Check each item's licence before sharing or reusing it. "
-                "Loss only lists sources that let you download."
+                {t!("discover-legal")}
             }
         }
     }
@@ -324,7 +324,7 @@ fn ResultRow(item: SearchItem, queued: bool, on_open: EventHandler<Collection>) 
                         onclick: move |_| {
                             services::get().downloads.enqueue(vec![(*req).clone()]);
                             added.set(true);
-                            st.toast("Added to downloads");
+                            st.toast(t!("toast-added-downloads"));
                         },
                         Icon { name: if added() || queued { "check" } else { "download" } }
                     }
