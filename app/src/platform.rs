@@ -340,6 +340,25 @@ pub fn reliability() -> Option<loss_platform::reliability::Status> {
     }
 }
 
+/// Vibration feedback: an Android `HapticFeedbackConstants` value. Does nothing elsewhere.
+#[cfg_attr(not(target_os = "android"), allow(unused_variables))]
+pub fn haptic(kind: i32) {
+    #[cfg(target_os = "android")]
+    android::with_env(|env, act| {
+        let cls = android::bridge_class(env, act)?;
+        env.call_static_method(
+            &cls,
+            "haptic",
+            "(Landroid/app/Activity;I)V",
+            &[
+                jni::objects::JValue::Object(act),
+                jni::objects::JValue::Int(kind),
+            ],
+        )?;
+        Ok(())
+    });
+}
+
 /// Opens the settings screen that fixes a reliability check.
 #[cfg_attr(not(target_os = "android"), allow(unused_variables))]
 pub fn open_reliability(screen: &str) {

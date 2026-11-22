@@ -94,6 +94,26 @@ pub fn LibraryTab() -> Element {
     }
 }
 
+/// A list of song ids shared by every row of a list (cloning the handle is cheap, and two
+/// handles are equal only if they are the same list).
+#[derive(Clone)]
+pub struct Ids(pub std::rc::Rc<Vec<String>>);
+
+impl PartialEq for Ids {
+    fn eq(&self, other: &Self) -> bool {
+        std::rc::Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl From<Vec<String>> for Ids {
+    fn from(v: Vec<String>) -> Self {
+        Ids(std::rc::Rc::new(v))
+    }
+}
+
+/// Song rows with a cover are this tall (8 + 52 + 8 px); the virtual list needs it fixed.
+const SONG_ROW_HEIGHT: f64 = 68.0;
+
 #[component]
 fn LibraryMain(nav: LibNav) -> Element {
     let st = state();
@@ -101,7 +121,6 @@ fn LibraryMain(nav: LibNav) -> Element {
     let mut seg = use_signal(|| Seg::Albums);
     let mut sort = use_signal(|| Sort::Latest);
     let mut query = use_signal(String::new);
-    let mut limit = use_signal(|| 150usize);
     let svc = services::get();
     let lib = svc.library();
     let total = lib.len();
@@ -147,13 +166,17 @@ fn LibraryMain(nav: LibNav) -> Element {
         .collect();
     drop(lib);
 
-    let song_ids: Vec<String> = songs.iter().map(|t| t.id.clone()).collect();
-    let shown = songs.len().min(limit());
+    let song_ids: Ids = songs
+        .iter()
+        .map(|t| t.id.clone())
+        .collect::<Vec<_>>()
+        .into();
+    let songs = std::rc::Rc::new(songs);
     let active = if searching { Seg::Songs } else { seg() };
     let count_line = match active {
-        Seg::Songs => format!("{} songs", songs.len()),
-        Seg::Albums => format!("{n_albums} albums"),
-        Seg::Artists => format!("{n_artists} artists"),
+        Seg::Songs => t!("count-songs", count = songs.len()),
+        Seg::Albums => t!("count-albums", count = n_albums),
+        Seg::Artists => t!("count-artists", count = n_artists),
     };
 
     rsx! {
@@ -235,13 +258,18 @@ fn LibraryMain(nav: LibNav) -> Element {
                 if songs.is_empty() {
                     p { class: "muted pad", {t!("library-no-match", query = q.clone())} }
                 }
-                div { class: "list",
-                    for (i , t) in songs.iter().take(shown).enumerate() {
-                        SongRow { key: "{t.id}", track: t.clone(), ids: song_ids.clone(), index: i, show_cover: true }
-                    }
-                }
-                if songs.len() > shown {
-                    button { class: "pill center", onclick: move |_| limit.set(limit() + 300), {t!("library-show-more", count = songs.len() - shown)} }
+                super::kit::VirtualList {
+                    id: "library-songs",
+                    len: songs.len(),
+                    row_height: SONG_ROW_HEIGHT,
+                    render: {
+                        let songs = songs.clone();
+                        let ids = song_ids.clone();
+                        move |i: usize| {
+                            let t = &songs[i];
+                            rsx! { SongRow { key: "{t.id}", track: t.clone(), ids: ids.clone(), index: i, show_cover: true } }
+                        }
+                    },
                 }
             }
         }
@@ -307,7 +335,7 @@ fn EmptyLibrary() -> Element {
 #[component]
 pub fn SongRow(
     track: Track,
-    ids: Vec<String>,
+    ids: Ids,
     index: usize,
     #[props(default = false)] show_cover: bool,
 ) -> Element {
@@ -319,10 +347,17 @@ pub fn SongRow(
     let badge = track.quality_badge();
     let lossless = track.is_lossless();
     rsx! {
-        div { class: if is_current { "row current" } else { "row" },
+        div {
+            class: if is_current { "row current" } else { "row" },
+            // Long press (Android) or right click (desktop) opens the song's menu.
+            oncontextmenu: move |e| {
+                e.prevent_default();
+                super::kit::haptic(super::kit::Haptic::LongPress);
+                menu.set(true);
+            },
             div {
                 class: "row-main",
-                onclick: move |_| play_tracks(&ids, index),
+                onclick: move |_| play_tracks(&ids.0, index),
                 if show_cover {
                     div { class: "row-art",
                         Cover { track_id: track.id.clone(), class: "cover row-cover" }
@@ -346,7 +381,7 @@ pub fn SongRow(
                             span { class: "mini-badge", "{badge}" }
                         }
                         if track.origin == loss_core::TrackOrigin::Downloaded {
-                            span { class: "dl-dot", title: "Downloaded" }
+                            span { class: "dl-dot", title: t!("library-downloaded") }
                         }
                         "{track.artist}"
                         if show_cover { " · {track.album}" }
@@ -354,34 +389,36 @@ pub fn SongRow(
                 }
                 div { class: "muted small tabular", "{format_duration(track.duration_secs)}" }
             }
-            button { class: "icon-btn small", onclick: move |_| menu.set(!menu()), Icon { name: "more", size: 20 } }
-            if menu() {
-                div { class: "menu-scrim", onclick: move |_| menu.set(false) }
-                div { class: "row-menu",
-                    button {
-                        onclick: {
-                            let id = id.clone();
-                            move |_| {
-                                services::get().player.send(Command::PlayNext(queue_items(std::slice::from_ref(&id))));
-                                menu.set(false);
-                                st.toast(t!("toast-playing-next"));
-                            }
-                        },
-                        Icon { name: "play_next", size: 20 }
-                        {t!("action-play-next")}
-                    }
-                    button {
-                        onclick: {
-                            let id = id.clone();
-                            move |_| {
-                                services::get().player.send(Command::Enqueue(queue_items(std::slice::from_ref(&id))));
-                                menu.set(false);
-                                st.toast(t!("toast-added-queue"));
-                            }
-                        },
-                        Icon { name: "queue", size: 20 }
-                        {t!("action-add-queue")}
-                    }
+            button {
+                class: "icon-btn small",
+                "aria-label": t!("action-more"),
+                onclick: move |_| menu.set(true),
+                Icon { name: "more", size: 20 }
+            }
+            super::kit::Sheet { open: menu, title: track.title.clone(),
+                super::kit::SheetItem {
+                    icon: "play_next",
+                    label: t!("action-play-next"),
+                    onclick: {
+                        let id = id.clone();
+                        move |_| {
+                            services::get().player.send(Command::PlayNext(queue_items(std::slice::from_ref(&id))));
+                            menu.set(false);
+                            st.toast(t!("toast-playing-next"));
+                        }
+                    },
+                }
+                super::kit::SheetItem {
+                    icon: "queue",
+                    label: t!("action-add-queue"),
+                    onclick: {
+                        let id = id.clone();
+                        move |_| {
+                            services::get().player.send(Command::Enqueue(queue_items(std::slice::from_ref(&id))));
+                            menu.set(false);
+                            st.toast(t!("toast-added-queue"));
+                        }
+                    },
                 }
             }
         }
@@ -409,6 +446,7 @@ fn AlbumPage(album_key: String, nav: LibNav) -> Element {
     drop(lib);
     let ids = album.tracks.clone();
     let ids2 = ids.clone();
+    let album_ids: Ids = ids.clone().into();
     let ids3 = ids.clone();
     let artist = album.artist.clone();
     let badge = tracks
@@ -458,7 +496,7 @@ fn AlbumPage(album_key: String, nav: LibNav) -> Element {
         }
         div { class: "list",
             for (i , t) in tracks.iter().enumerate() {
-                SongRow { key: "{t.id}", track: t.clone(), ids: album.tracks.clone(), index: i }
+                SongRow { key: "{t.id}", track: t.clone(), ids: album_ids.clone(), index: i }
             }
         }
     }
@@ -496,6 +534,7 @@ fn ArtistPage(name: String, nav: LibNav) -> Element {
     drop(lib);
     let ids: Vec<String> = songs.iter().map(|t| t.id.clone()).collect();
     let ids_play = ids.clone();
+    let row_ids: Ids = ids.clone().into();
     let ids_shuffle = ids.clone();
     let initial = name.chars().next().unwrap_or('?');
     rsx! {
@@ -505,8 +544,8 @@ fn ArtistPage(name: String, nav: LibNav) -> Element {
             h1 { "{name}" }
             p { class: "muted small", {t!("artist-meta", albums = albums.len(), songs = songs.len())} }
             div { class: "hero-actions",
-                button { class: "primary", onclick: move |_| play_tracks(&ids_play, 0), Icon { name: "play", size: 20 } "Play" }
-                button { class: "pill", onclick: move |_| shuffle_tracks(&ids_shuffle), Icon { name: "shuffle", size: 18 } "Shuffle" }
+                button { class: "primary", onclick: move |_| play_tracks(&ids_play, 0), Icon { name: "play", size: 20 } {t!("action-play")} }
+                button { class: "pill", onclick: move |_| shuffle_tracks(&ids_shuffle), Icon { name: "shuffle", size: 18 } {t!("action-shuffle")} }
             }
         }
         h2 { class: "section-title", {t!("library-albums")} }
@@ -518,7 +557,7 @@ fn ArtistPage(name: String, nav: LibNav) -> Element {
         h2 { class: "section-title", {t!("library-songs")} }
         div { class: "list",
             for (i , t) in songs.iter().enumerate() {
-                SongRow { key: "{t.id}", track: t.clone(), ids: ids.clone(), index: i, show_cover: true }
+                SongRow { key: "{t.id}", track: t.clone(), ids: row_ids.clone(), index: i, show_cover: true }
             }
         }
     }

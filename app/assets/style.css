@@ -45,7 +45,7 @@ img { -webkit-user-drag: none; }
   padding: calc(env(safe-area-inset-top) + 12px) 16px calc(var(--nav-h) + env(safe-area-inset-bottom) + 24px);
   max-width: 920px; margin: 0 auto;
 }
-.tab-page { animation: page-in .34s var(--ease) both; }
+.tab-page { animation: page-in .34s var(--ease) backwards; }
 @keyframes page-in { from { opacity: 0; transform: translateY(10px) scale(.995); } to { opacity: 1; transform: none; } }
 .with-player .content { padding-bottom: calc(var(--nav-h) + var(--mini-h) + env(safe-area-inset-bottom) + 28px); }
 @keyframes fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
@@ -328,13 +328,13 @@ textarea { resize: vertical; font-family: ui-monospace, monospace; font-size: 13
 }
 .now-playing.closing { animation: sheet-down .23s var(--ease-in) forwards; pointer-events: none; }
 @keyframes sheet-down { to { transform: translateY(12%); opacity: 0; } }
-.np-art-bg { animation: art-in .55s var(--ease) both; }
+.np-art-bg { animation: art-in .55s var(--ease) backwards; }
 @keyframes art-in { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: none; } }
-.np-info { animation: info-in .45s var(--ease) both; }
+.np-info { animation: info-in .45s var(--ease) backwards; }
 @keyframes info-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
-.icon-swap { display: grid; place-items: center; animation: icon-pop .32s var(--ease-spring) both; }
+.icon-swap { display: grid; place-items: center; animation: icon-pop .32s var(--ease-spring) backwards; }
 @keyframes icon-pop { from { opacity: 0; transform: scale(.4) rotate(-60deg); } to { opacity: 1; transform: none; } }
-.mini-now { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; animation: info-in .4s var(--ease) both; }
+.mini-now { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; animation: info-in .4s var(--ease) backwards; }
 @keyframes sheet-up { from { transform: translateY(8%); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes slide-up { from { transform: translateY(20px); opacity: 0; } to { transform: none; opacity: 1; } }
 .np-art-bg { position: absolute; left: 0; right: 0; top: 0; height: min(68vh, 100vw + 90px); z-index: 0; transition: filter .5s var(--ease), transform .5s var(--ease); }
@@ -437,3 +437,43 @@ input.seek.dragging::-webkit-slider-thumb { margin-top: -8px; }
 .empty-note { padding: 24px 8px; text-align: center; }
 .setting.col .stepper { display: flex; }
 .setting.col .stepper .seg { flex: 1; }
+
+/* ---- UI kit (M0-10) ---- */
+.sheet-scrim, .dialog-scrim { position: fixed; inset: 0; z-index: 60; background: var(--scrim); animation: fade .2s var(--ease); }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 61; max-height: 85vh; overflow-y: auto;
+  background: var(--surface-container-low); border-radius: var(--r-xl) var(--r-xl) 0 0;
+  padding: 8px 8px calc(env(safe-area-inset-bottom) + 16px); animation: sheet-up .32s var(--ease);
+  max-width: 640px; margin: 0 auto;
+}
+@keyframes sheet-up { from { transform: translateY(100%); } to { transform: none; } }
+.sheet-handle { width: 32px; height: 4px; border-radius: 2px; background: var(--on-surface-variant); opacity: .4; margin: 6px auto 10px; }
+.sheet-title { font-weight: 700; font-size: 16px; padding: 4px 16px 12px; }
+.sheet-item { display: flex; align-items: center; gap: 16px; width: 100%; padding: 14px 16px; border-radius: var(--r-m); font-size: 15px; text-align: start; }
+.sheet-item:active { background: var(--surface-container-highest); }
+.dialog {
+  position: fixed; z-index: 61; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(340px, calc(100vw - 48px)); background: var(--surface-container-high); border-radius: var(--r-l);
+  padding: 24px 24px 16px; animation: dialog-in .22s var(--ease);
+}
+@keyframes dialog-in { from { opacity: 0; transform: translate(-50%, -50%) scale(.92); } to { opacity: 1; transform: translate(-50%, -50%); } }
+.dialog-title { font-size: 22px; font-weight: 500; margin: 0 0 12px; }
+.dialog-text { color: var(--on-surface-variant); margin: 0 0 20px; line-height: 1.45; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.text-btn.danger { color: var(--error); }
+.toast { display: flex; align-items: center; gap: 12px; z-index: 80; }
+.toast-action { color: var(--inverse-primary, var(--primary-container)); font-weight: 700; padding: 0 4px; }
+.vlist { position: relative; }
+.vrow { overflow: hidden; }
+.vrow > * { height: 100%; }
+.marquee { overflow: hidden; white-space: nowrap; }
+.marquee > span { display: inline-block; }
+.marquee.scrolls > span { animation: marquee var(--mq-time, 8s) linear 1.5s infinite alternate; }
+@keyframes marquee { 0%, 15% { transform: none; } 85%, 100% { transform: translateX(var(--mq-shift, 0)); } }
+[dir="rtl"] .marquee.scrolls > span { animation-direction: alternate-reverse; }
+@media (prefers-reduced-motion: reduce) { .marquee.scrolls > span { animation: none; } .marquee { text-overflow: ellipsis; } }
+.marquee.np-title, .marquee.title { text-overflow: clip; }
+/* Sheets and dialogs are position: fixed inside the page: no ancestor may keep a transform,
+   filter or containment applied (animations end with fill-mode backwards for that reason). */
+.card > .stepper { align-self: flex-start; }

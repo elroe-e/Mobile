@@ -86,7 +86,6 @@ library-songs = Songs
 library-albums = Albums
 library-artists = Artists
 library-no-match = No songs match “{ $query }”.
-library-show-more = Show more ({ $count })
 library-empty-title = No music yet
 library-empty-text = Loss plays the music on your phone and anything you download.
 library-choose-folders = Choose music folders
@@ -275,4 +274,57 @@ home-reliability-title = Music may stop when the screen is off
 home-reliability-text = Your phone limits Loss in the background. Fix it in a few taps.
 action-open = Open
 action-back = Back
+
+action-cancel = Cancel
+action-undo = Undo
+
+library-downloaded = Downloaded
+action-more = More
+
+action-play = Play
+action-shuffle = Shuffle
+
+toast-folder-removed = Folder removed
+
+## Component gallery (debug builds)
+gallery-title = Component gallery
+gallery-desc = Every building block of the interface, for checking looks and languages
+gallery-buttons = Buttons and controls
+gallery-switch = A switch
+gallery-layers = Sheets, dialogs and messages
+gallery-open-sheet = Open a sheet
+gallery-open-dialog = Open a dialog
+gallery-show-snackbar = Message with Undo
+gallery-snackbar = Something was removed
+gallery-undone = Brought back
+gallery-vibrate = Vibrate
+gallery-long-press = Long-press (or right-click) the row below to open its menu.
+gallery-long-press-row = Long-press me
+gallery-sheet-title = A bottom sheet
+gallery-dialog-title = Delete this?
+gallery-dialog-text = A dialog asks before something can't be undone.
+gallery-dialog-confirm = Delete
+gallery-confirmed = Confirmed
+gallery-marquee = Long titles
+gallery-marquee-text = A very long song title that doesn't fit, so it scrolls sideways to show the rest
+gallery-virtual-list = 10,000 rows, only the visible ones drawn
+gallery-row = Row { $number }
+
+## Counts
+count-songs = { $count ->
+    [one] 1 song
+   *[other] { $count } songs
+}
+count-albums = { $count ->
+    [one] 1 album
+   *[other] { $count } albums
+}
+count-artists = { $count ->
+    [one] 1 artist
+   *[other] { $count } artists
+}
+count-plays = { $count ->
+    [one] 1 play
+   *[other] { $count } plays
+}
 

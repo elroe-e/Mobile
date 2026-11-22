@@ -3,6 +3,8 @@
 
 package app.loss.glue
 
+import android.app.Activity
+import android.view.HapticFeedbackConstants
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -165,6 +167,16 @@ object LossBridge {
                 else -> LossDownloadService.notifyIdle(app)
             }
         }
+    }
+
+    // ---- Haptics (M0-10) ----
+
+    /** Rust: vibration feedback (an Android HapticFeedbackConstants value). */
+    @JvmStatic
+    fun haptic(act: Activity, kind: Int) {
+        // VIRTUAL_KEY (1) becomes CONFIRM where the phone has it (Android 11+).
+        val k = if (kind == 1 && Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else kind
+        act.runOnUiThread { act.window?.decorView?.performHapticFeedback(k) }
     }
 
     // ---- Background reliability (M0-13) ----

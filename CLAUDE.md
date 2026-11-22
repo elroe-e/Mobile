@@ -88,6 +88,13 @@ plays instantly. Set `HOME`/`LOSS_DATA_DIR` to a scratch dir, drive it with `xdo
   that only Android uses must still compile without warnings on desktop
   (`#[cfg_attr(not(target_os = "android"), allow(dead_code))]` or a desktop use).
 
+* UI kit (`app/src/ui/kit.rs`): `Sheet`/`SheetItem`/`Dialog` register as layers that Back closes
+  first; `st.toast_undo(msg, closure)` for undoable actions; `VirtualList` (fixed row height) for
+  long lists; `Marquee` for long titles; `haptic(Haptic::…)`. Debug builds have Settings → Help →
+  Component gallery (`LOSS_DEBUG_PAGE=gallery` opens it at start; ui-smoke.sh screenshots it).
+* Sheets and dialogs are `position: fixed` inside the page, so no ancestor may keep a transform,
+  filter or `contain` applied: animations on containers use `animation-fill-mode: backwards`, never
+  `both`/`forwards` (with `both`, the sheet hid under the bottom bar and the dialog went off-screen).
 * Dioxus `rsx!` format strings can't hold `if` or complex expressions; compute a variable first.
 * Text inputs must use `initial_value`, not `value`: controlled inputs lose keystrokes on re-render.
 * Sliders: use `ui::Slider` (holds the dragged value until the real value catches up). The animated

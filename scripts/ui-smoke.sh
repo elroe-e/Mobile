@@ -108,6 +108,11 @@ for loc in "${LOCALES[@]}"; do
   shot playing 2
   tab 1; shot library
   xdotool mousemove 206 250 click 1; shot library-albums
+  # Songs (the virtualized list), then a long press (right click) on the first song.
+  if [ "$loc" = "ar_XB" ]; then xdotool mousemove 347 210 click 1; else xdotool mousemove 65 210 click 1; fi
+  shot library-songs
+  xdotool mousemove 206 300 click 3; shot song-menu
+  xdotool key Escape; sleep 0.5
   tab 2; shot discover
   tab 3; shot downloads
   tab 4; shot settings
@@ -137,6 +142,40 @@ for loc in "${LOCALES[@]}"; do
     fail=1
   fi
   echo "[$loc] $n screenshots; $(grep -ho 'scan: ScanReport { added: [0-9]*' "$dir"/data/logs/loss.log | tail -1)"
+
+  # Component gallery (debug builds): sheet, dialog, long-press menu, the 10,000-row list.
+  LOSS_DEBUG_PAGE=gallery LANG="$loc.UTF-8" LC_ALL="$loc.UTF-8" HOME="$home" LOSS_DATA_DIR="$dir/data" \
+    "$BIN" > "$dir/stdout-gallery.txt" 2>&1 &
+  app=$!
+  for _ in $(seq 1 180); do
+    win=$(xdotool search --name '^Loss$' 2> /dev/null | head -1)
+    [ -n "$win" ] && break
+    sleep 0.5
+  done
+  xdotool windowsize "$win" $W $H windowmove "$win" 0 0
+  for _ in $(seq 1 120); do
+    import -window root "$dir/.probe.png"
+    [ "$(convert "$dir/.probe.png" -format '%[fx:standard_deviation>0.01]' info: 2> /dev/null)" = "1" ] && break
+    sleep 0.5
+  done
+  rm -f "$dir/.probe.png"
+  sleep 1
+  shot gallery
+  # Buttons sit on the other side in right-to-left layouts.
+  if [ "$loc" = "ar_XB" ]; then x_sheet=315; x_dialog=166; else x_sheet=97; x_dialog=246; fi
+  xdotool mousemove $x_sheet 570 click 1; shot gallery-sheet
+  xdotool key Escape; sleep 0.5
+  xdotool mousemove $x_dialog 570 click 1; shot gallery-dialog
+  xdotool key Escape; sleep 0.5
+  xdotool mousemove 206 760 click 3; shot gallery-long-press
+  xdotool key Escape; sleep 0.5
+  xdotool key End; shot gallery-list-end 2
+  if ! kill -0 $app 2> /dev/null; then
+    echo "::error::[$loc] Loss exited in the gallery"
+    fail=1
+  fi
+  kill $app 2> /dev/null
+  wait $app 2> /dev/null
   rm -rf "$home"
 done
 

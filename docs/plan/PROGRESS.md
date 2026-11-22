@@ -36,8 +36,18 @@ next session must know.
 - CI: the UI tour first "passed" with black screenshots (WebKitGTK sandbox blocked on the runners,
   no GPU, 25 s first load). Fixed with test-only env vars and longer waits; the script now fails on
   blank screenshots. The APK build retries and caches Gradle (Maven Central 429s).
-- Next: M0-10 UI kit, M0-04 release (needs D3), then M2. Round M1 results from the owner are still
-  outstanding.
+- **M0-10** started (`app/src/ui/kit.rs`): layer stack that Back pops first; `Sheet`, `SheetItem`,
+  `Dialog`; snackbar with Undo (`toast_undo`; used for removing a music folder); long-press /
+  right-click menu on song rows as a bottom sheet with a vibration; `haptic()` through the bridge
+  (`LossBridge.haptic`); `VirtualList` (a script reports the list's position on scroll; renders
+  ±1 screen, start snapped to 20 rows; tested) now drives Library → Songs, with an `Ids` handle so
+  rows share one id list; `Marquee` for player and mini-player titles; a debug-only component
+  gallery (also in the UI tour, in every language). The i18n checker now also catches words next to
+  placeholders ("{} songs") and text after icons; four missed strings were translated.
+- Found while testing the kit: container animations with `fill-mode: both` trapped fixed-position
+  sheets (hidden under the bottom bar) and dialogs (off-screen); they now use `backwards`.
+- Next: finish M0-10 (fast scroller, swipe rows, pinch-zoom grid, icon font, focus, album grid),
+  M0-04 release (needs D3), then M2. Round M1 results from the owner are still outstanding.
 
 ## 2026-11-21 (session 3): foundations (M0-03, M0-05, M0-06, M0-07)
 

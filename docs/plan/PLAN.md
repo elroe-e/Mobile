@@ -44,8 +44,10 @@ A "session" here means one working session of the length used so far. Numbers ar
 
 1. **M1-08** Phone round on the Xiaomi with the Beats (DEVICE-TESTS "Round M1"). Fix whatever the
    owner reports first. The newest APK also carries the glue module, the event bridge and the database.
-2. **M0-10** UI kit (tab labels now shrink with an ellipsis; check the emulator screenshot; use
-   `scripts/ui-smoke.sh` screenshots to review each component), **M0-13** HyperOS reliability
+2. **M0-10** UI kit, continuing: done so far are layers + Back, sheet, dialog, undo snackbar,
+   long-press menu, haptics, virtual list (library songs), marquee, gallery. Left: fast scroller,
+   swipe rows, pinch-zoom grid, Material Symbols font, focus management (TV/keyboard), virtual grid
+   for albums; then tick it. **M0-13** HyperOS reliability
    (built; waiting for the owner's 30-minute screen-off check in DEVICE-TESTS round M1), **M0-04** release workflow (needs decision D3, the signing key).
 3. Then **M2** (audio engine, hi-fi output for the Beats). The device report is in
    (`docs/plan/reports/2026-11-21-xiaomi-beats.txt`): the Beats take 32/48 kHz only and this phone has

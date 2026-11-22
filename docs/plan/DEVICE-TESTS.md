@@ -71,6 +71,11 @@ Security
 - [ ] Settings → Logs and diagnostics opens; the log shows lines; Copy and Share work.
 - [ ] Settings → Look → Language shows "Phone's language" and "English"; all text is the same
       as before (nothing shows an id like `home-tagline`).
+- [ ] Library → Songs: scrolling a long list is smooth; long-press a song: the phone vibrates and
+      a menu slides up from the bottom (Play next, Add to queue); Back closes it.
+- [ ] Settings → remove a music folder: "Folder removed" with **Undo**; Undo brings it back.
+- [ ] A song with a long title: in the player and the mini player the title scrolls sideways.
+- [ ] Changing a setting's option (Theme, Downloads at once): a light tick vibration.
 - [ ] Settings → search "dark", "lyrics" and "navidrome": each finds its setting, and changing it
       there sticks after closing and reopening Loss.
 

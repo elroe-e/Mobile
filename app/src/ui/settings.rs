@@ -31,6 +31,8 @@ pub enum SettingsPage {
     Main,
     Logs,
     Reliability,
+    /// Debug builds only.
+    Gallery,
 }
 
 #[derive(Clone, Copy)]
@@ -47,6 +49,7 @@ pub fn SettingsTab() -> Element {
         SettingsPage::Main => rsx! { SettingsMain {} },
         SettingsPage::Logs => rsx! { super::logs::LogsPage {} },
         SettingsPage::Reliability => rsx! { super::reliability::ReliabilityPage {} },
+        SettingsPage::Gallery => rsx! { super::gallery::GalleryPage {} },
     }
 }
 
@@ -90,7 +93,15 @@ fn SettingRow(
     let stacked = title.chars().count() + options * 4 > 30 || !hint.is_empty();
     match (&d.kind, value) {
         (Kind::Toggle, Some(Value::Bool(on))) => rsx! {
-            Toggle { label: title, hint, on, onchange: move |v| on_set.call((key, Value::Bool(v))) }
+            Toggle {
+                label: title,
+                hint,
+                on,
+                onchange: move |v| {
+                    super::kit::haptic(super::kit::Haptic::Confirm);
+                    on_set.call((key, Value::Bool(v)))
+                },
+            }
         },
         (Kind::Choice(opts), Some(Value::Text(v))) => rsx! {
             div { class: if stacked { "setting col" } else { "setting" },
@@ -102,7 +113,10 @@ fn SettingRow(
                     for (opt , label) in opts.iter().map(|o| (*o, d.choice_label(o))) {
                         button {
                             class: if v == opt { "seg active" } else { "seg" },
-                            onclick: move |_| on_set.call((key, Value::Text(opt.to_string()))),
+                            onclick: move |_| {
+                                super::kit::haptic(super::kit::Haptic::Tick);
+                                on_set.call((key, Value::Text(opt.to_string())))
+                            },
                             "{label}"
                         }
                     }
@@ -119,7 +133,10 @@ fn SettingRow(
                     for n in opts.iter().copied() {
                         button {
                             class: if v == n { "seg active" } else { "seg" },
-                            onclick: move |_| on_set.call((key, Value::Int(n))),
+                            onclick: move |_| {
+                                super::kit::haptic(super::kit::Haptic::Tick);
+                                on_set.call((key, Value::Int(n)))
+                            },
                             "{n}"
                         }
                     }
@@ -157,7 +174,10 @@ fn SettingRow(
                             class: if v == c { "swatch active" } else { "swatch" },
                             style: "background: {c}",
                             "aria-label": "{c}",
-                            onclick: move |_| on_set.call((key, Value::Text(c.to_string()))),
+                            onclick: move |_| {
+                                super::kit::haptic(super::kit::Haptic::Tick);
+                                on_set.call((key, Value::Text(c.to_string())))
+                            },
                         }
                     }
                 }
@@ -294,6 +314,21 @@ fn SectionCard(
             if section == Section::Help {
                 LogsRow {}
                 ReliabilityRow {}
+                if cfg!(debug_assertions) {
+                    button {
+                        class: "setting nav-row",
+                        onclick: move |_| {
+                            let mut page = use_context::<SettingsNav>().0;
+                            page.set(SettingsPage::Gallery);
+                        },
+                        Icon { name: "grid", size: 22 }
+                        div { class: "row-text",
+                            div { class: "title", {t!("gallery-title")} }
+                            div { class: "subtitle", {t!("gallery-desc")} }
+                        }
+                        Icon { name: "chevron_right" }
+                    }
+                }
             }
             for k in in_card {
                 SectionItem { key: "{k}", def_key: k, cur: cur.clone(), on_set, on_saved }
@@ -388,7 +423,26 @@ fn MusicFolders(cur: Settings, on_saved: EventHandler<()>) -> Element {
                         let f = f.clone();
                         move |_| {
                             let f = f.clone();
-                            save(Box::new(move |s| s.music_folders.retain(|x| x != &f)));
+                            let at = services::get()
+                                .settings()
+                                .music_folders
+                                .iter()
+                                .position(|x| x == &f)
+                                .unwrap_or(0);
+                            let gone = f.clone();
+                            save(Box::new(move |s| s.music_folders.retain(|x| x != &gone)));
+                            // Undo puts it back where it was.
+                            st.toast_undo(t!("toast-folder-removed"), move || {
+                                let f = f.clone();
+                                services::get().update_settings(move |s| {
+                                    if !s.music_folders.contains(&f) {
+                                        let i = at.min(s.music_folders.len());
+                                        s.music_folders.insert(i, f);
+                                    }
+                                });
+                                on_saved.call(());
+                                services::get().rescan();
+                            });
                         }
                     },
                     Icon { name: "delete", size: 20 }

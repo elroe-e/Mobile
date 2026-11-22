@@ -243,7 +243,7 @@ pub fn HomeTab() -> Element {
                             div { class: "title", "{t.title}" }
                             div { class: "subtitle", "{t.artist}" }
                         }
-                        span { class: "muted small", "{t.play_count} plays" }
+                        span { class: "muted small", {t!("count-plays", count = t.play_count)} }
                     }
                 }
             }

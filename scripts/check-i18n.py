@@ -27,10 +27,10 @@ STRING = re.compile(r'"((?:[^"\\]|\\.)*)"')
 # Contexts on the same line, before the literal, where strings are never shown to people.
 NOT_TEXT = re.compile(
     r"(class:|style:|key:|\bid:|r#type:|href:|src:|log::|eval\(|#\[|assert|panic!|expect\(|"
-    r"unwrap_or_else|name:\s*$|name:\s*\"|Icon\s*\{|rows:|accept:|inputmode:|autocomplete:|"
+    r"unwrap_or_else|name:\s*$|name:\s*\"|rows:|accept:|inputmode:|autocomplete:|"
     r"\bmode\b|getElementById|querySelector|dioxus\.send|\.starts_with\(|\.ends_with\(|"
     r"\.contains\(|split|trim_|strip_|replace\(|join\(|\bext\b|extension|mime|content_type|"
-    r"format!\(\"\{|\.join\(\"|matches!|=>\s*\"[a-z0-9_]+\"\s*,|\bt!\(|\btr\(|\btr_args\(|navigator\.|addEventListener)"
+    r"\.join\(\"|matches!|=>\s*\"[a-z0-9_]+\"\s*,|\bt!\(|\btr\(|\btr_args\(|navigator\.|addEventListener)"
 )
 # Literals that look like ids, classes, icon names, units or punctuation.
 IDENT = re.compile(r"^[a-z0-9_.:#/%-]*$")
@@ -57,7 +57,9 @@ def scan(path: Path):
         for m in STRING.finditer(code):
             text = m.group(1)
             bare = re.sub(r"\{[^}]*\}", "", text).strip()
-            if not letters_outside_placeholders(text) or IDENT.match(bare):
+            # A word next to a placeholder ("{} songs") is text; "now-playing{}" is a CSS class.
+            formatted_words = "{" in text and re.fullmatch(r"[a-z ]*[a-z][a-z ]*", bare) is not None
+            if not letters_outside_placeholders(text) or (IDENT.match(bare) and not formatted_words):
                 continue
             before = code[: m.start()]
             # Only the part of the line after the last comma or brace decides the context,

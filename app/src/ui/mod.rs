@@ -2,8 +2,10 @@
 
 mod discover;
 mod downloads;
+mod gallery;
 mod home;
 mod icons;
+pub mod kit;
 mod library;
 mod logs;
 mod now_playing;
@@ -59,18 +61,38 @@ pub struct AppState {
     pub scanning: Signal<Option<u64>>,
     pub tab: Signal<Tab>,
     pub now_playing: Signal<bool>,
-    pub toast: Signal<Option<(String, std::time::Instant)>>,
+    pub toast: Signal<Option<Toast>>,
     /// Bumped when settings that affect the look change.
     pub settings_rev: Signal<u64>,
     /// Volume shown on the slider: the phone's media volume on Android.
     pub volume: Signal<f32>,
 }
 
+/// A short message at the bottom of the screen, optionally with an Undo button.
+#[derive(Clone)]
+pub struct Toast {
+    pub msg: String,
+    pub at: std::time::Instant,
+    pub undo: Option<std::rc::Rc<dyn Fn()>>,
+}
+
 impl AppState {
     /// Show a short message; the app tick hides it after a moment.
     pub fn toast(mut self, msg: impl Into<String>) {
-        self.toast
-            .set(Some((msg.into(), std::time::Instant::now())));
+        self.toast.set(Some(Toast {
+            msg: msg.into(),
+            at: std::time::Instant::now(),
+            undo: None,
+        }));
+    }
+
+    /// Show a message with an Undo button (kept a little longer).
+    pub fn toast_undo(mut self, msg: impl Into<String>, undo: impl Fn() + 'static) {
+        self.toast.set(Some(Toast {
+            msg: msg.into(),
+            at: std::time::Instant::now(),
+            undo: Some(std::rc::Rc::new(undo)),
+        }));
     }
 
     pub fn settings_changed(mut self) {
@@ -180,7 +202,7 @@ pub fn App() -> Element {
     let mut scanning = use_signal(|| None);
     let tab = use_signal(|| Tab::Home);
     let now_playing = use_signal(|| false);
-    let mut toast = use_signal(|| None::<(String, std::time::Instant)>);
+    let mut toast = use_signal(|| None::<Toast>);
     let settings_rev = use_signal(|| 0u64);
     let mut volume = use_signal(|| svc.system_volume().unwrap_or(svc.player.state().volume));
     use_context_provider(|| AppState {
@@ -196,9 +218,18 @@ pub fn App() -> Element {
         volume,
     });
 
+    let layers = kit::use_provide_layers();
     let lib_nav = library::use_provide_nav();
     let discover_nav = discover::use_provide_nav();
     let settings_nav = settings::use_provide_nav();
+    // Debug builds: LOSS_DEBUG_PAGE=gallery opens the component gallery (UI tests).
+    use_hook(move || {
+        if cfg!(debug_assertions) && std::env::var("LOSS_DEBUG_PAGE").as_deref() == Ok("gallery") {
+            let (mut tab, mut page) = (tab, settings_nav.0);
+            tab.set(Tab::Settings);
+            page.set(settings::SettingsPage::Gallery);
+        }
+    });
 
     // Escape works as Back (desktop, keyboards, and UI tests).
     use_future(move || async move {
@@ -219,6 +250,10 @@ pub fn App() -> Element {
         let (mut now_playing, mut tab, mut discover_opened, mut settings_page) =
             (now_playing, tab, discover_nav.0, settings_nav.0);
         while requests.recv().await.is_some() {
+            // Sheets and dialogs first, newest on top.
+            if layers.back() {
+                continue;
+            }
             if *now_playing.peek() {
                 now_playing.set(false);
                 continue;
@@ -307,8 +342,11 @@ pub fn App() -> Element {
             if *scanning.peek() != sc {
                 scanning.set(sc);
             }
-            let expired =
-                matches!(&*toast.peek(), Some((_, t)) if t.elapsed() > Duration::from_millis(2600));
+            // Messages with Undo stay longer, to give time to tap it.
+            let expired = toast.peek().as_ref().is_some_and(|t| {
+                let keep = if t.undo.is_some() { 5000 } else { 2600 };
+                t.at.elapsed() > Duration::from_millis(keep)
+            });
             if expired {
                 toast.set(None);
             }
@@ -367,8 +405,20 @@ pub fn App() -> Element {
             if now_playing() && has_player {
                 now_playing::NowPlaying {}
             }
-            if let Some((msg, _)) = toast() {
-                div { class: "toast", "{msg}" }
+            if let Some(tst) = toast() {
+                div { class: "toast",
+                    span { "{tst.msg}" }
+                    if let Some(undo) = tst.undo.clone() {
+                        button {
+                            class: "toast-action",
+                            onclick: move |_| {
+                                undo();
+                                toast.set(None);
+                            },
+                            {t!("action-undo")}
+                        }
+                    }
+                }
             }
         }
         }
@@ -443,7 +493,7 @@ fn MiniPlayer() -> Element {
                 div { key: "{id}", class: "mini-now",
                     Cover { track_id: id.clone(), class: "cover mini-cover" }
                     div { class: "mini-text",
-                        div { class: "title", "{title}" }
+                        kit::Marquee { text: title.clone(), class: "title" }
                         div { class: "subtitle", "{artist}" }
                     }
                 }
@@ -509,7 +559,7 @@ pub fn Slider(
     let cls = if dragging().is_some() {
         format!("slider dragging {class}") // i18n: ignore
     } else {
-        format!("slider {class}")
+        format!("slider {class}") // i18n: ignore (CSS)
     };
     rsx! {
         input {

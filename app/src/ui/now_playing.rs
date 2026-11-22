@@ -110,7 +110,7 @@ pub fn NowPlaying() -> Element {
             }
             for id in std::iter::once(cur.id.clone()) {
                 div { key: "info-{id}", class: "np-info",
-                    div { class: "np-title", "{title}" }
+                    super::kit::Marquee { text: title.clone(), class: "np-title" }
                     div { class: "np-artist", "{artist}" }
                     if let Some(err) = &p.error {
                         div { class: "error small",
