@@ -83,7 +83,8 @@ for loc in "${LOCALES[@]}"; do
   fi
   xdotool windowsize "$win" $W $H windowmove "$win" 0 0
   # The app is up once its services log their start line (the page has run).
-  for _ in $(seq 1 40); do
+  # CI's software rendering needs about 25 s for the first page.
+  for _ in $(seq 1 180); do
     grep -qs "Loss .* starting; data in" "$dir"/data/logs/loss.log && break
     sleep 0.5
   done
@@ -92,6 +93,13 @@ for loc in "${LOCALES[@]}"; do
     tail -20 "$dir/stdout.txt"
     fail=1
   fi
+  # Then wait until something is on screen.
+  for _ in $(seq 1 60); do
+    import -window root "$dir/.probe.png"
+    [ "$(convert "$dir/.probe.png" -format '%[fx:standard_deviation>0.01]' info: 2> /dev/null)" = "1" ] && break
+    sleep 0.5
+  done
+  rm -f "$dir/.probe.png"
   sleep 3 # first scan of the fixtures
 
   shot home
