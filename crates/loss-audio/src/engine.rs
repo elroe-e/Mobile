@@ -1,7 +1,9 @@
 //! The player thread: owns the decoder, the output stream and the queue.
 
 use crate::resample::{map_channels, Resampler};
-use crate::{Command, PlayerState, QueueItem, Repeat, Status, StreamInfo};
+use crate::{
+    Command, PlayError, PlayErrorKind, PlayerState, QueueItem, Repeat, Status, StreamInfo,
+};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::fs::File;
 use std::path::Path;
@@ -418,8 +420,16 @@ impl Engine {
         }
     }
 
-    fn start_session(&mut self, item: QueueItem, at: f64) -> Result<(), String> {
-        let (mut format, decoder, track_id, mut info, duration) = open_file(&item.path)?;
+    fn start_session(&mut self, item: QueueItem, at: f64) -> Result<(), PlayError> {
+        let (mut format, decoder, track_id, mut info, duration) =
+            open_file(&item.path).map_err(|detail| PlayError {
+                kind: if detail.starts_with("cannot open file") {
+                    PlayErrorKind::Missing
+                } else {
+                    PlayErrorKind::Unsupported
+                },
+                detail,
+            })?;
         let mut start_offset = 0.0;
         if at > 0.0 {
             match format.seek(
@@ -439,7 +449,12 @@ impl Engine {
         };
         if need_new {
             self.output = None; // close the old stream first
-            self.output = Some(Output::open(info.sample_rate, self.volume.clone())?);
+            self.output = Some(Output::open(info.sample_rate, self.volume.clone()).map_err(
+                |detail| PlayError {
+                    kind: PlayErrorKind::Output,
+                    detail,
+                },
+            )?);
         }
         let out = self.output.as_ref().unwrap();
         info.output_rate = out.rate;
@@ -466,7 +481,12 @@ impl Engine {
             info,
             pushed: 0,
         };
-        session.pump(out.channels, out.rate)?;
+        session
+            .pump(out.channels, out.rate)
+            .map_err(|detail| PlayError {
+                kind: PlayErrorKind::Unsupported,
+                detail,
+            })?;
         self.session = Some(session);
         Ok(())
     }

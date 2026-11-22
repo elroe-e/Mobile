@@ -248,3 +248,8 @@ choice-language-en = English
 choice-language-en-XA = Pseudo (accented)
 choice-language-ar-XB = Pseudo (right to left)
 
+## Playback errors (details go to Settings → Logs)
+player-error-output = Can't play: no audio output is available. Check that your headphones or DAC are connected.
+player-error-missing = Can't play: the file is missing or can't be read.
+player-error-unsupported = Can't play this file: its format isn't supported yet.
+

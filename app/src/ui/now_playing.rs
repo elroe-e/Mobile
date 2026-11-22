@@ -113,7 +113,13 @@ pub fn NowPlaying() -> Element {
                     div { class: "np-title", "{title}" }
                     div { class: "np-artist", "{artist}" }
                     if let Some(err) = &p.error {
-                        div { class: "error small", "{err}" }
+                        div { class: "error small",
+                            {match err.kind {
+                                loss_audio::PlayErrorKind::Output => t!("player-error-output"),
+                                loss_audio::PlayErrorKind::Missing => t!("player-error-missing"),
+                                loss_audio::PlayErrorKind::Unsupported => t!("player-error-unsupported"),
+                            }}
+                        }
                     }
                 }
             }

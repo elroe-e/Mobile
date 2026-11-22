@@ -21,9 +21,9 @@ next session must know.
 - Found by the harness and fixed: **Opus left a 6.5 ms gap at each gapless join** (Symphonia's
   Ogg reader doesn't trim the pre-skip; `opus.rs` now does). Found and recorded for M2-08: AAC/ALAC
   in MP4 leave ≈45 ms per join (edit list / iTunSMPB ignored), and ALAC bit depth isn't reported.
-- Follow-up for M2: engine errors reach the player screen as raw cpal text in English ("The
-  requested device is no longer available…"); M2-01/M2-03 should map them to plain, translated
-  messages and keep the details in the log.
+- Playback errors now have a kind (`loss_audio::PlayError`: output, missing, unsupported); the
+  player shows a plain translated sentence and the technical detail stays in the log (it used to
+  show raw cpal text such as "The requested device is no longer available…").
 - Gotchas: rustfmt can move a trailing `// i18n: ignore` comment to its own line (then the checker
   flags the string); restructure the code instead. `PULSE_SERVER`/`PULSE_COOKIE` are needed when
   the app runs with its own HOME. Choice settings' labels are `choice-<key>-<value>` messages.

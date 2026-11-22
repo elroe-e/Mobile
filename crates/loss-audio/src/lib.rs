@@ -97,7 +97,8 @@ pub struct PlayerState {
     pub shuffle: bool,
     pub repeat: Repeat,
     pub info: StreamInfo,
-    pub error: Option<String>,
+    /// Why the last song couldn't play.
+    pub error: Option<PlayError>,
     /// Ids of tracks that counted as a "play" (30 s or half the track).
     /// The app drains this to update statistics.
     pub play_events: Vec<String>,
@@ -168,5 +169,29 @@ impl Player {
             .lock()
             .map(|mut s| std::mem::take(&mut s.play_events))
             .unwrap_or_default()
+    }
+}
+
+/// What kind of problem stopped playback, so the app can explain it plainly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayErrorKind {
+    /// No audio output could be opened (e.g. the USB DAC was unplugged).
+    Output,
+    /// The file is gone or can't be read.
+    Missing,
+    /// The file's format or codec isn't supported.
+    Unsupported,
+}
+
+/// A playback error: its kind, plus the technical detail for the log.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlayError {
+    pub kind: PlayErrorKind,
+    pub detail: String,
+}
+
+impl std::fmt::Display for PlayError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}: {}", self.kind, self.detail)
     }
 }
