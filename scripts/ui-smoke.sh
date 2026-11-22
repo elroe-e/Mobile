@@ -18,6 +18,11 @@ read -r -a LOCALES <<< "${LOCALES[*]}"
 W=412
 H=880
 export DISPLAY="${DISPLAY_SMOKE:-:97}"
+# CI runners (Ubuntu 24.04) block the user namespaces WebKitGTK's sandbox needs, and have no GPU:
+# without these the window stays black. Test runs only; the app itself doesn't set them.
+export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
+export WEBKIT_DISABLE_DMABUF_RENDERER=1
+export LIBGL_ALWAYS_SOFTWARE=1
 
 cd "$ROOT"
 [ -d target/fixtures ] || bash scripts/make-fixtures.sh > /dev/null
@@ -50,7 +55,13 @@ for loc in "${LOCALES[@]}"; do
   shot() {
     n=$((n + 1))
     sleep "${2:-1.2}"
-    import -window root "$dir/$(printf %02d $n)-$1.png"
+    local f="$dir/$(printf %02d $n)-$1.png"
+    import -window root "$f"
+    # A screenshot of one flat colour means nothing was drawn.
+    if [ "$(convert "$f" -format '%[fx:standard_deviation>0.01]' info: 2> /dev/null)" != "1" ]; then
+      echo "::error::[$loc] screenshot $(basename "$f") is blank"
+      fail=1
+    fi
   }
   # Bottom-bar tab positions; mirrored in right-to-left languages.
   tabs=(44 125 206 287 367)
@@ -71,7 +82,17 @@ for loc in "${LOCALES[@]}"; do
     continue
   fi
   xdotool windowsize "$win" $W $H windowmove "$win" 0 0
-  sleep 4 # first scan of the fixtures
+  # The app is up once its services log their start line (the page has run).
+  for _ in $(seq 1 40); do
+    grep -qs "Loss .* starting; data in" "$dir"/data/logs/loss.log && break
+    sleep 0.5
+  done
+  if ! grep -qs "Loss .* starting; data in" "$dir"/data/logs/loss.log; then
+    echo "::error::[$loc] the app never finished starting (no services line in the log)"
+    tail -20 "$dir/stdout.txt"
+    fail=1
+  fi
+  sleep 3 # first scan of the fixtures
 
   shot home
   # Shuffle the library (first shortcut tile; mirrored in RTL).

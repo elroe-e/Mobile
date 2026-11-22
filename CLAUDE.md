@@ -115,6 +115,9 @@ plays instantly. Set `HOME`/`LOSS_DATA_DIR` to a scratch dir, drive it with `xdo
 * Data lives in `loss.redb` (loss-store). Values are JSON, so new fields need `#[serde(default)]`; a
   new table or a changed meaning needs a migration step in `loss-store` (bump `SCHEMA_VERSION`).
 * `scripts/emulator-smoke.sh <apk>` checks a build on an emulator or a phone over adb (M0-03).
+* WebKitGTK on CI runners needs `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1`, `WEBKIT_DISABLE_DMABUF_RENDERER=1`
+  and `LIBGL_ALWAYS_SOFTWARE=1` (ui-smoke.sh sets them), or the window stays black; the script fails
+  on blank screenshots and on an app that never logs its start line.
 * Desktop audio for tests goes through PulseAudio; an app started with its own `HOME` needs
   `PULSE_SERVER`/`PULSE_COOKIE` (ui-smoke.sh sets them), or playback fails with "device no longer
   available".

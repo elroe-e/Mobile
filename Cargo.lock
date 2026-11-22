@@ -2969,7 +2969,6 @@ version = "0.1.0"
 dependencies = [
  "cpal",
  "log",
- "loss-core",
  "opus-decoder",
  "rtrb",
  "symphonia",
