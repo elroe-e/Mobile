@@ -137,6 +137,15 @@ Rate negotiation (the sink reports its rates; Loss picks the target):
 * Volume: Direct USB uses the DAC's hardware volume (UAC feature unit) when present. Otherwise the
   phone's media volume. Digital volume is only a fallback, and then with dither.
 
+Status (M2-01): `loss-audio` has `sink.rs` (`Sink` trait: `caps()` and `open(rate)`;
+`CpalSink`; `FakeSink` + `FakeClock` for tests), `choose_rate` (own rate, else an integer ratio,
+else the highest; Beats → 48 kHz), `dsp.rs` (`Graph` of f64 `Stage`s, empty when nothing needs
+changing: `StreamInfo::processing` lists the stages, `untouched()` is true for an empty graph) and
+latency-aware positions (`Stream::heard_frames` = taken minus output latency). Gapless joins now
+need only the same output rate, not the same source rate. Sample formats (I16/I24/F32) are
+negotiated in M2-02 with the native AAudio sink. On Android, cpal's default output reports every
+rate, so the file's rate is kept until M2-03/M2-07 use the device's real rates.
+
 ### 4.3 DSP blocks (loss-dsp)
 
 Biquad EQ (graphic 5/10/15/31 ISO bands plus parametric peaking/shelf/HP/LP), bass and treble shelves,

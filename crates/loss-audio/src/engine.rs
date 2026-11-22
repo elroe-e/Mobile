@@ -1,13 +1,13 @@
 //! The player thread: owns the decoder, the output stream and the queue.
 
-use crate::resample::{map_channels, Resampler};
+use crate::dsp::Graph;
+use crate::sink::{choose_rate, Caps, CpalSink, Sink, Stream};
 use crate::{
     Command, PlayError, PlayErrorKind, PlayerState, QueueItem, Repeat, Status, StreamInfo,
 };
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::fs::File;
 use std::path::Path;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -20,123 +20,6 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::units::Time;
 
-type Slot = Arc<Mutex<Option<rtrb::Consumer<f32>>>>;
-
-/// An open output stream. Reused across tracks with the same format.
-struct Output {
-    stream: cpal::Stream,
-    slot: Slot,
-    played_samples: Arc<AtomicU64>,
-    rate: u32,
-    channels: usize,
-}
-
-fn pick_config(
-    device: &cpal::Device,
-    want_rate: u32,
-) -> Result<cpal::SupportedStreamConfig, String> {
-    let default = device.default_output_config().map_err(|e| e.to_string())?;
-    let want_ch = default.channels().clamp(1, 2);
-    if let Ok(configs) = device.supported_output_configs() {
-        let mut best: Option<cpal::SupportedStreamConfig> = None;
-        for c in configs {
-            if c.channels() != want_ch {
-                continue;
-            }
-            let rate = cpal::SampleRate(want_rate);
-            if c.min_sample_rate() <= rate && rate <= c.max_sample_rate() {
-                let cand = c.with_sample_rate(rate);
-                // Prefer float output, then 16-bit.
-                let better = match &best {
-                    None => true,
-                    Some(b) => {
-                        b.sample_format() != cpal::SampleFormat::F32
-                            && cand.sample_format() == cpal::SampleFormat::F32
-                    }
-                };
-                if better {
-                    best = Some(cand);
-                }
-            }
-        }
-        if let Some(b) = best {
-            return Ok(b);
-        }
-    }
-    Ok(default)
-}
-
-fn build_stream<T>(
-    device: &cpal::Device,
-    config: &cpal::StreamConfig,
-    slot: Slot,
-    played: Arc<AtomicU64>,
-    volume: Arc<AtomicU32>,
-) -> Result<cpal::Stream, String>
-where
-    T: cpal::SizedSample + cpal::FromSample<f32>,
-{
-    device
-        .build_output_stream(
-            config,
-            move |data: &mut [T], _| {
-                let vol = f32::from_bits(volume.load(Ordering::Relaxed));
-                let mut popped = 0u64;
-                match slot.try_lock() {
-                    Ok(mut guard) => match guard.as_mut() {
-                        Some(cons) => {
-                            for s in data.iter_mut() {
-                                let v = match cons.pop() {
-                                    Ok(v) => {
-                                        popped += 1;
-                                        v
-                                    }
-                                    Err(_) => 0.0,
-                                };
-                                *s = T::from_sample(v * vol);
-                            }
-                        }
-                        None => data.iter_mut().for_each(|s| *s = T::from_sample(0.0)),
-                    },
-                    Err(_) => data.iter_mut().for_each(|s| *s = T::from_sample(0.0)),
-                }
-                played.fetch_add(popped, Ordering::Relaxed);
-            },
-            |e| log::error!("audio stream error: {e}"),
-            None,
-        )
-        .map_err(|e| e.to_string())
-}
-
-impl Output {
-    fn open(want_rate: u32, volume: Arc<AtomicU32>) -> Result<Output, String> {
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .ok_or("no audio output device")?;
-        let supported = pick_config(&device, want_rate)?;
-        let format = supported.sample_format();
-        let config: cpal::StreamConfig = supported.into();
-        let slot: Slot = Arc::new(Mutex::new(None));
-        let played = Arc::new(AtomicU64::new(0));
-        let (s, p, v) = (slot.clone(), played.clone(), volume);
-        let stream = match format {
-            cpal::SampleFormat::F32 => build_stream::<f32>(&device, &config, s, p, v)?,
-            cpal::SampleFormat::I16 => build_stream::<i16>(&device, &config, s, p, v)?,
-            cpal::SampleFormat::I32 => build_stream::<i32>(&device, &config, s, p, v)?,
-            cpal::SampleFormat::U16 => build_stream::<u16>(&device, &config, s, p, v)?,
-            other => return Err(format!("unsupported output format {other:?}")),
-        };
-        Ok(Output {
-            stream,
-            slot,
-            played_samples: played,
-            rate: config.sample_rate.0,
-            channels: config.channels as usize,
-        })
-    }
-}
-
 /// One playing track.
 struct Session {
     item: QueueItem,
@@ -145,7 +28,7 @@ struct Session {
     track_id: u32,
     src_rate: u32,
     src_channels: usize,
-    resampler: Resampler,
+    graph: Graph,
     producer: rtrb::Producer<f32>,
     capacity: usize,
     pending: Vec<f32>,
@@ -235,6 +118,7 @@ fn open_file(path: &Path) -> Result<OpenedFile, String> {
         bits_per_sample: params.bits_per_sample,
         channels: params.channels.map(|c| c.count() as u16).unwrap_or(2),
         output_rate: 0,
+        processing: Vec::new(),
     };
     Ok((format, decoder, track_id, info, duration))
 }
@@ -288,13 +172,14 @@ impl Session {
             if spec.rate != self.src_rate || spec.channels.count() != self.src_channels {
                 self.src_rate = spec.rate;
                 self.src_channels = spec.channels.count();
-                self.resampler = Resampler::new(self.src_rate, out_rate, out_channels);
+                self.graph = Graph::new(self.src_rate, self.src_channels, out_rate, out_channels);
             }
-            let mut buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
+            let mut buf = SampleBuffer::<f64>::new(decoded.capacity() as u64, spec);
             buf.copy_interleaved_ref(decoded);
-            let mut mapped = Vec::with_capacity(buf.samples().len());
-            map_channels(buf.samples(), self.src_channels, out_channels, &mut mapped);
-            self.resampler.process(&mapped, &mut self.pending);
+            let mut processed = Vec::with_capacity(buf.samples().len());
+            self.graph.process(buf.samples(), &mut processed);
+            // The ring and the output are f32: exact for every 16- and 24-bit sample.
+            self.pending.extend(processed.iter().map(|&v| v as f32));
         }
     }
 
@@ -318,14 +203,17 @@ impl Session {
     ) -> Session {
         let (format, decoder, track_id, mut info, duration) = opened;
         info.output_rate = out_rate;
+        let src_channels = info.channels.max(1) as usize;
+        let graph = Graph::new(info.sample_rate, src_channels, out_rate, out_channels);
+        info.processing = graph.describe();
         Session {
             item,
             format,
             decoder,
             track_id,
             src_rate: info.sample_rate,
-            src_channels: info.channels.max(1) as usize,
-            resampler: Resampler::new(info.sample_rate, out_rate, out_channels),
+            src_channels,
+            graph,
             producer: prev.producer,
             capacity: prev.capacity,
             pending: Vec::new(),
@@ -341,7 +229,10 @@ impl Session {
 
 struct Engine {
     state: Arc<Mutex<PlayerState>>,
-    output: Option<Output>,
+    sink: Box<dyn Sink>,
+    /// What the output accepts (asked once per output opening).
+    caps: Option<Caps>,
+    output: Option<Stream>,
     session: Option<Session>,
     display: Option<Display>,
     switch: Option<Switch>,
@@ -396,9 +287,9 @@ impl Engine {
                 self.no_preload = false;
                 if let Some(out) = &self.output {
                     if autoplay {
-                        let _ = out.stream.play();
+                        out.play();
                     } else {
-                        let _ = out.stream.pause();
+                        out.pause();
                     }
                 }
                 let mut s = self.st();
@@ -443,26 +334,36 @@ impl Engine {
                 Err(e) => log::warn!("seek failed: {e}"),
             }
         }
+        // The output rate: the file's own if the output takes it (see `choose_rate`).
+        if self.caps.is_none() || self.output.is_none() {
+            self.caps = Some(self.sink.caps().unwrap_or(Caps {
+                rates: vec![],
+                any_rate: true,
+                channels: 2,
+            }));
+        }
+        let want = choose_rate(info.sample_rate, self.caps.as_ref().unwrap());
         let need_new = match &self.output {
-            Some(o) => o.rate != info.sample_rate,
+            Some(o) => o.rate != want,
             None => true,
         };
         if need_new {
             self.output = None; // close the old stream first
-            self.output = Some(Output::open(info.sample_rate, self.volume.clone()).map_err(
-                |detail| PlayError {
-                    kind: PlayErrorKind::Output,
-                    detail,
-                },
-            )?);
+            let opened = self.sink.open(want, self.volume.clone());
+            self.output = Some(opened.map_err(|detail| PlayError {
+                kind: PlayErrorKind::Output,
+                detail,
+            })?);
         }
         let out = self.output.as_ref().unwrap();
         info.output_rate = out.rate;
         let capacity = (out.rate as usize * out.channels) / 2; // ~0.5 s
         let (producer, consumer) = rtrb::RingBuffer::new(capacity);
         *out.slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(consumer);
-        out.played_samples.store(0, Ordering::Relaxed);
+        out.played.store(0, Ordering::Relaxed);
         let src_channels = info.channels.max(1) as usize;
+        let graph = Graph::new(info.sample_rate, src_channels, out.rate, out.channels);
+        info.processing = graph.describe();
         let mut session = Session {
             item,
             format,
@@ -470,7 +371,7 @@ impl Engine {
             track_id,
             src_rate: info.sample_rate,
             src_channels,
-            resampler: Resampler::new(info.sample_rate, out.rate, out.channels),
+            graph,
             producer,
             capacity,
             pending: Vec::new(),
@@ -496,7 +397,7 @@ impl Engine {
         self.display = None;
         self.switch = None;
         if let Some(o) = &self.output {
-            let _ = o.stream.pause();
+            o.pause();
             *o.slot.lock().unwrap_or_else(|p| p.into_inner()) = None;
         }
         let mut s = self.st();
@@ -504,14 +405,21 @@ impl Engine {
         s.position = 0.0;
     }
 
+    /// Samples the listener has heard on the current output (played minus output latency).
+    fn heard_samples(&self) -> u64 {
+        self.output
+            .as_ref()
+            .map(|o| o.heard_frames() * o.channels as u64)
+            .unwrap_or(0)
+    }
+
+    /// Where the listener is in the current track, in seconds: sample-accurate, counting only
+    /// what has come out of the speaker (not what is still in the output's buffer).
     fn position(&self) -> f64 {
         match (&self.display, &self.output) {
             (Some(d), Some(o)) => {
-                let played = o
-                    .played_samples
-                    .load(Ordering::Relaxed)
-                    .saturating_sub(d.base);
-                d.start_offset + played as f64 / (o.rate as f64 * o.channels as f64)
+                let heard = self.heard_samples().saturating_sub(d.base);
+                d.start_offset + heard as f64 / (o.rate as f64 * o.channels as f64)
             }
             _ => 0.0,
         }
@@ -696,7 +604,7 @@ impl Engine {
 
     fn pause(&mut self) {
         if let Some(o) = &self.output {
-            let _ = o.stream.pause();
+            o.pause();
         }
         let mut s = self.st();
         if s.status == Status::Playing {
@@ -712,7 +620,7 @@ impl Engine {
         match (status, &self.session) {
             (Status::Paused, Some(_)) => {
                 if let Some(o) = &self.output {
-                    let _ = o.stream.play();
+                    o.play();
                 }
                 self.st().status = Status::Playing;
             }
@@ -729,7 +637,7 @@ impl Engine {
     fn tick(&mut self) {
         let Some(out) = &self.output else { return };
         let (ch, rate) = (out.channels, out.rate);
-        let played = out.played_samples.load(Ordering::Relaxed);
+        let played = self.heard_samples();
 
         // A gapless join reached the speaker: show the next track.
         if self.switch.as_ref().is_some_and(|sw| played >= sw.at) {
@@ -821,10 +729,12 @@ impl Engine {
             self.no_preload = true;
             return;
         };
-        let current_rate = self.session.as_ref().map(|s| s.src_rate).unwrap_or(0);
+        let caps = self.caps.clone();
+        let same_output = |src: u32| caps.as_ref().map(|c| choose_rate(src, c)) == Some(out_rate);
         match open_file(&item.path) {
-            // Same source rate: the output stays as it is, so join seamlessly.
-            Ok(opened) if opened.3.sample_rate == current_rate => {
+            // The output stays as it is (same rate after conversion), so join seamlessly, even
+            // between a 44.1 kHz and a 48 kHz file when both play at 48 kHz.
+            Ok(opened) if same_output(opened.3.sample_rate) => {
                 let prev = self.session.take().unwrap();
                 let at = prev.pushed;
                 let next = Session::handover(prev, item, opened, out_rate, out_channels);
@@ -836,31 +746,15 @@ impl Engine {
                 });
                 self.session = Some(next);
             }
-            // Different rate (the output must reopen) or an error (shown when
-            // the track is loaded normally).
+            // The output must reopen at another rate, or an error (shown when the track is
+            // loaded normally).
             _ => self.no_preload = true,
         }
     }
 }
 
 pub fn run(rx: Receiver<Command>, state: Arc<Mutex<PlayerState>>) {
-    let vol = state.lock().map(|s| s.volume).unwrap_or(1.0);
-    let seed = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0x9E3779B97F4A7C15)
-        | 1;
-    let mut engine = Engine {
-        state,
-        output: None,
-        session: None,
-        display: None,
-        switch: None,
-        no_preload: false,
-        volume: Arc::new(AtomicU32::new(vol.to_bits())),
-        unshuffled: None,
-        rng: seed,
-    };
+    let mut engine = Engine::new(state, Box::new(CpalSink));
     loop {
         let active = engine.session.is_some();
         let wait = Duration::from_millis(if active { 10 } else { 200 });
@@ -876,6 +770,30 @@ pub fn run(rx: Receiver<Command>, state: Arc<Mutex<PlayerState>>) {
             Err(RecvTimeoutError::Disconnected) => return,
         }
         engine.tick();
+    }
+}
+
+impl Engine {
+    fn new(state: Arc<Mutex<PlayerState>>, sink: Box<dyn Sink>) -> Engine {
+        let vol = state.lock().map(|s| s.volume).unwrap_or(1.0);
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0x9E3779B97F4A7C15)
+            | 1;
+        Engine {
+            state,
+            sink,
+            caps: None,
+            output: None,
+            session: None,
+            display: None,
+            switch: None,
+            no_preload: false,
+            volume: Arc::new(AtomicU32::new(vol.to_bits())),
+            unshuffled: None,
+            rng: seed,
+        }
     }
 }
 
@@ -928,7 +846,7 @@ mod tests {
             track_id,
             src_rate: info.sample_rate,
             src_channels: info.channels as usize,
-            resampler: Resampler::new(info.sample_rate, out_rate, out_ch),
+            graph: Graph::new(info.sample_rate, info.channels as usize, out_rate, out_ch),
             producer,
             capacity,
             pending: vec![],
@@ -1143,5 +1061,151 @@ mod tests {
         // 440 Hz at 8000/32768 amplitude moves at most ~0.016 per sample.
         assert!(max_step < 0.02, "discontinuity {max_step}");
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    // ---- Engine against the fake sink (M2-01) ----
+
+    use crate::sink::{FakeClock, FakeSink};
+
+    fn engine_with(rates: &[u32], latency: u64) -> (Engine, FakeClock) {
+        let (sink, clock) = FakeSink::new(
+            Caps {
+                rates: rates.to_vec(),
+                any_rate: false,
+                channels: 2,
+            },
+            latency,
+        );
+        let state = Arc::new(Mutex::new(PlayerState {
+            volume: 1.0,
+            ..Default::default()
+        }));
+        (Engine::new(state, Box::new(sink)), clock)
+    }
+
+    fn tmp(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("loss-engine-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join(name)
+    }
+
+    fn item(path: &Path) -> QueueItem {
+        QueueItem {
+            id: path.file_name().unwrap().to_string_lossy().into_owned(),
+            path: path.to_path_buf(),
+        }
+    }
+
+    /// Plays `frames` frames in `step`-frame bursts, ticking the engine like its thread does.
+    fn play(e: &mut Engine, clock: &FakeClock, frames: usize, step: usize) {
+        let mut done = 0;
+        while done < frames {
+            e.tick();
+            let n = step.min(frames - done);
+            clock.advance(n);
+            done += n;
+        }
+        e.tick();
+    }
+
+    #[test]
+    fn positions_are_sample_exact_and_count_latency() {
+        let path = tmp("pos.wav");
+        write_wav(&path, 48000, 2.0, 0, 96000);
+        let (mut e, clock) = engine_with(&[48000], 480);
+        e.handle(Command::SetQueue {
+            items: vec![item(&path)],
+            start: 0,
+        });
+        assert_eq!(clock.opened(), vec![48000]);
+        assert!(clock.is_playing());
+        // Nothing heard until the output's latency has passed.
+        play(&mut e, &clock, 480, 480);
+        assert_eq!(e.position(), 0.0);
+        for heard in [4800usize, 24000, 48000] {
+            let so_far = e.heard_samples() as usize / 2;
+            play(&mut e, &clock, heard - so_far, 480);
+            assert!(
+                (e.position() - heard as f64 / 48000.0).abs() < 1e-12,
+                "{}",
+                e.position()
+            );
+        }
+        // Paused: the clock stops and so does the position.
+        e.handle(Command::Pause);
+        let at = e.position();
+        play(&mut e, &clock, 9600, 480);
+        assert_eq!(e.position(), at);
+        e.handle(Command::Play);
+        play(&mut e, &clock, 4800, 480);
+        assert!((e.position() - (at + 0.1)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn untouched_path_is_bit_exact() {
+        let path = tmp("exact.wav");
+        write_wav(&path, 48000, 0.5, 0, 24000);
+        let (mut e, clock) = engine_with(&[48000], 0);
+        e.handle(Command::SetQueue {
+            items: vec![item(&path)],
+            start: 0,
+        });
+        assert!(e.st().info.untouched());
+        play(&mut e, &clock, 24000, 1000);
+        let heard = clock.heard();
+        // The same 16-bit samples the file holds, exactly.
+        for i in 0..24000usize {
+            let v = ((i as f32 * 440.0 * std::f32::consts::TAU / 48000.0).sin() * 8000.0) as i16;
+            assert_eq!((heard[i * 2] * 32768.0) as i16, v, "frame {i}");
+        }
+    }
+
+    #[test]
+    fn twenty_four_bit_samples_survive_f32_exactly() {
+        // The ring and output are f32: every 24-bit value must come back unchanged.
+        for v in [-(1 << 23), -1234567, -1, 0, 1, 7654321, (1 << 23) - 1] {
+            let f = (v as f64 / (1u32 << 23) as f64) as f32;
+            assert_eq!((f as f64 * (1u32 << 23) as f64) as i32, v);
+        }
+    }
+
+    #[test]
+    fn converts_to_what_the_output_takes() {
+        // Beats Studio Pro: 48 kHz only. A 44.1 kHz file is resampled by Loss.
+        let path = tmp("cd.wav");
+        write_wav(&path, 44100, 1.0, 0, 44100);
+        let (mut e, clock) = engine_with(&[32000, 48000], 0);
+        e.handle(Command::SetQueue {
+            items: vec![item(&path)],
+            start: 0,
+        });
+        assert_eq!(clock.opened(), vec![48000]);
+        let info = e.st().info.clone();
+        assert_eq!(info.output_rate, 48000);
+        assert_eq!(info.processing, vec!["resample 44100→48000 Hz".to_string()]);
+        assert!(!info.untouched());
+        play(&mut e, &clock, 24000, 1000);
+        assert!((e.position() - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn gapless_across_source_rates_when_the_output_is_the_same() {
+        // 44.1 kHz then 48 kHz, both played at 48 kHz: no reopening, the switch lands exactly.
+        let a = tmp("a441.wav");
+        let b = tmp("b48.wav");
+        write_wav(&a, 44100, 0.5, 0, 22050);
+        write_wav(&b, 48000, 0.5, 0, 24000);
+        let (mut e, clock) = engine_with(&[48000], 240);
+        e.handle(Command::SetQueue {
+            items: vec![item(&a), item(&b)],
+            start: 0,
+        });
+        play(&mut e, &clock, 20000, 500);
+        assert_eq!(e.st().index, Some(0));
+        play(&mut e, &clock, 8000, 500);
+        assert_eq!(e.st().index, Some(1), "switched to the second track");
+        assert_eq!(clock.opened(), vec![48000], "the output never reopened");
+        let pos = e.position();
+        assert!(pos > 0.0 && pos < 0.2, "{pos}");
     }
 }

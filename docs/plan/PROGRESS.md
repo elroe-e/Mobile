@@ -52,7 +52,12 @@ next session must know.
   and Enter to play, Material Symbols Rounded as a 7 KB subset font (`scripts/make-icon-font.py`;
   Apache-2.0 notice in `app/assets/fonts/`). Predictive back moved to M10-01, TV D-pad focus to
   M9-06.
-- Next: M2 (audio engine and hi-fi for the Beats): M2-01, M2-07, M2-02, M2-03, M2-06, M2-05, M2-04.
+- **M2-01 done**: `sink.rs` (Sink trait, CpalSink, FakeSink/FakeClock), `choose_rate` (tested for
+  the Beats: everything → 48 kHz), `dsp.rs` (f64 Graph, empty = untouched), positions = samples
+  heard minus output latency (cpal callback timestamps). Engine tests now drive the real engine
+  against the fake sink: sample-exact positions with latency, pause, bit-exact 16-bit path, 24-bit
+  exact in f32, 44.1 → 48 kHz conversion, gapless across 44.1/48 kHz files without reopening.
+- Next: M2-07 (high-quality resampling), M2-02, M2-03, M2-06, M2-05, M2-04.
   M0-04 waits for D3; M0-13 and M1-08 wait for the owner's phone round.
 
 ## 2026-11-21 (session 3): foundations (M0-03, M0-05, M0-06, M0-07)

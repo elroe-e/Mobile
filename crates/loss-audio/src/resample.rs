@@ -1,12 +1,13 @@
-//! Small streaming linear resampler plus channel mapping. Only used when the
-//! output device cannot run at the file's own sample rate.
+//! Small streaming linear resampler plus channel mapping (f64), used as stages of the DSP graph
+//! (`dsp.rs`) when the output can't run at the file's own rate or channel count. M2-07 replaces
+//! the linear resampler with a high-quality one.
 
 pub struct Resampler {
     channels: usize,
     /// Input frames consumed per output frame.
     ratio: f64,
     pos: f64,
-    buf: Vec<f32>,
+    buf: Vec<f64>,
 }
 
 impl Resampler {
@@ -23,7 +24,7 @@ impl Resampler {
         (self.ratio - 1.0).abs() < f64::EPSILON
     }
 
-    pub fn process(&mut self, input: &[f32], out: &mut Vec<f32>) {
+    pub fn process(&mut self, input: &[f64], out: &mut Vec<f64>) {
         if self.is_passthrough() {
             out.extend_from_slice(input);
             return;
@@ -33,7 +34,7 @@ impl Resampler {
         let frames = self.buf.len() / ch;
         while self.pos + 1.0 < frames as f64 {
             let i = self.pos as usize;
-            let frac = (self.pos - i as f64) as f32;
+            let frac = self.pos - i as f64;
             for c in 0..ch {
                 let a = self.buf[i * ch + c];
                 let b = self.buf[(i + 1) * ch + c];
@@ -48,14 +49,14 @@ impl Resampler {
 }
 
 /// Converts interleaved audio from `src` channels to `dst` channels.
-pub fn map_channels(input: &[f32], src: usize, dst: usize, out: &mut Vec<f32>) {
+pub fn map_channels(input: &[f64], src: usize, dst: usize, out: &mut Vec<f64>) {
     if src == dst {
         out.extend_from_slice(input);
         return;
     }
     for frame in input.chunks_exact(src) {
         if dst == 1 {
-            out.push(frame.iter().sum::<f32>() / src as f32);
+            out.push(frame.iter().sum::<f64>() / src as f64);
         } else if src == 1 {
             out.extend(std::iter::repeat_n(frame[0], dst));
         } else {
@@ -73,7 +74,7 @@ mod tests {
     #[test]
     fn resample_length() {
         let mut r = Resampler::new(44100, 48000, 2);
-        let input = vec![0.5f32; 44100 * 2];
+        let input = vec![0.5f64; 44100 * 2];
         let mut out = Vec::new();
         r.process(&input, &mut out);
         let frames = out.len() / 2;

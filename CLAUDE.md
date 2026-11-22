@@ -45,7 +45,7 @@ no bit-perfect mixer on this phone, see `docs/plan/reports/`).
 
 ```
 crates/loss-core       library model, tags (lofty), LRC, playlists, settings
-crates/loss-audio      engine: Symphonia decode → resample → cpal/AAudio; queue, gapless (M1-06)
+crates/loss-audio      engine: Symphonia decode → dsp::Graph (f64) → sink::Sink (cpal/AAudio, FakeSink for tests)
 crates/loss-download   download manager + legal sources + post-processing
 crates/loss-store      database (redb `loss.redb`): library, settings; versioned migrations
 crates/loss-i18n       translations (Fluent): t!() macro, en/loss.ftl, pseudo-locales en-XA / ar-XB

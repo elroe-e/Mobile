@@ -4,8 +4,10 @@
 //! The player runs on its own thread. The UI sends [`Command`]s and reads a
 //! snapshot of [`PlayerState`].
 
+mod dsp;
 mod engine;
 mod opus;
+pub mod sink;
 pub use opus::codecs;
 mod resample;
 
@@ -54,6 +56,17 @@ pub struct StreamInfo {
     pub bits_per_sample: Option<u32>,
     pub channels: u16,
     pub output_rate: u32,
+    /// What Loss does to the samples on the way out ("resample 44100→48000 Hz"); empty when they
+    /// reach the output unchanged.
+    pub processing: Vec<String>,
+}
+
+impl StreamInfo {
+    /// Loss hands the decoded samples to the output unchanged. (The output may still convert:
+    /// Android's mixer does unless bit-perfect or direct USB output is in use.)
+    pub fn untouched(&self) -> bool {
+        self.processing.is_empty()
+    }
 }
 
 impl StreamInfo {
