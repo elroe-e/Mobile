@@ -258,7 +258,13 @@ pub static SETTINGS: &[SettingDef] = &[
 
 /// Fields of [`Settings`] that are app state, not settings: they aren't shown in the settings
 /// screen or found by search.
-pub const INTERNAL: &[&str] = &["volume", "last_track", "last_position", "podcasts"];
+pub const INTERNAL: &[&str] = &[
+    "volume",
+    "last_track",
+    "last_position",
+    "podcasts",
+    "reliability_notice_dismissed",
+];
 
 pub fn find(key: &str) -> Option<&'static SettingDef> {
     SETTINGS.iter().find(|d| d.key == key)

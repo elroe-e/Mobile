@@ -13,6 +13,13 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Ask once for "No restrictions" so playback isn't stopped with the screen off (M0-13) -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- Xiaomi's security centre hosts the Autostart screen Loss opens -->
+    <queries>
+        <package android:name="com.miui.securitycenter" />
+    </queries>
 
     <application>
         <service

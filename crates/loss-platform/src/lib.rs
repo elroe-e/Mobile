@@ -9,6 +9,7 @@
 
 pub mod event;
 pub mod policy;
+pub mod reliability;
 
 #[cfg(target_os = "android")]
 pub mod android;

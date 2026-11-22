@@ -30,6 +30,7 @@ fn Toggle(label: String, hint: String, on: bool, onchange: EventHandler<bool>) -
 pub enum SettingsPage {
     Main,
     Logs,
+    Reliability,
 }
 
 #[derive(Clone, Copy)]
@@ -45,6 +46,7 @@ pub fn SettingsTab() -> Element {
     match (nav.0)() {
         SettingsPage::Main => rsx! { SettingsMain {} },
         SettingsPage::Logs => rsx! { super::logs::LogsPage {} },
+        SettingsPage::Reliability => rsx! { super::reliability::ReliabilityPage {} },
     }
 }
 
@@ -291,6 +293,7 @@ fn SectionCard(
         div { class: "card",
             if section == Section::Help {
                 LogsRow {}
+                ReliabilityRow {}
             }
             for k in in_card {
                 SectionItem { key: "{k}", def_key: k, cur: cur.clone(), on_set, on_saved }
@@ -332,6 +335,25 @@ fn LogsRow() -> Element {
             div { class: "row-text",
                 div { class: "title", {t!("settings-logs")} }
                 div { class: "subtitle", {t!("settings-logs-desc")} }
+            }
+            Icon { name: "chevron_right" }
+        }
+    }
+}
+
+#[component]
+fn ReliabilityRow() -> Element {
+    rsx! {
+        button {
+            class: "setting nav-row",
+            onclick: move |_| {
+                let mut page = use_context::<SettingsNav>().0;
+                page.set(SettingsPage::Reliability);
+            },
+            Icon { name: "play", size: 22 }
+            div { class: "row-text",
+                div { class: "title", {t!("reliability-title")} }
+                div { class: "subtitle", {t!("settings-reliability-desc")} }
             }
             Icon { name: "chevron_right" }
         }

@@ -167,6 +167,16 @@ object LossBridge {
         }
     }
 
+    // ---- Background reliability (M0-13) ----
+
+    /** Rust: the phone's background settings as JSON (see LossReliability). */
+    @JvmStatic
+    fun reliability(ctx: Context): String = LossReliability.status(ctx)
+
+    /** Rust: opens a settings screen: battery, autostart, notifications or app. */
+    @JvmStatic
+    fun openReliability(ctx: Context, what: String) = LossReliability.open(ctx, what)
+
     // ---- Vault key (M1-07): Rust's vault key, encrypted by an Android Keystore key ----
 
     private fun keystoreKey(): SecretKey {

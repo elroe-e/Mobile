@@ -22,6 +22,11 @@ fn greeting() -> String {
 pub fn HomeTab() -> Element {
     let mut st = state();
     let mut crash_seen = use_signal(|| crate::diag::pending_crash().is_some());
+    // The phone may stop Loss with the screen off (HyperOS): say so once, until dismissed.
+    let mut limited = use_signal(|| {
+        !services::get().settings().reliability_notice_dismissed
+            && crate::platform::reliability().is_some_and(|s| s.needs_attention())
+    });
     let _ = (st.lib_version)();
     let svc = services::get();
     let p = st.player.read().clone();
@@ -103,6 +108,33 @@ pub fn HomeTab() -> Element {
                     onclick: move |_| {
                         crate::diag::dismiss_crashes();
                         crash_seen.set(false);
+                    },
+                    Icon { name: "close", size: 18 }
+                }
+            }
+        }
+        if limited() {
+            div { class: "notice-card",
+                Icon { name: "info", size: 22 }
+                div { class: "row-text",
+                    div { class: "title", {t!("home-reliability-title")} }
+                    div { class: "subtitle", {t!("home-reliability-text")} }
+                }
+                button {
+                    class: "text-btn",
+                    onclick: move |_| {
+                        let mut page = use_context::<super::settings::SettingsNav>().0;
+                        page.set(super::settings::SettingsPage::Reliability);
+                        st.tab.set(Tab::Settings);
+                    },
+                    {t!("reliability-fix")}
+                }
+                button {
+                    class: "icon-btn small",
+                    "aria-label": t!("action-dismiss"),
+                    onclick: move |_| {
+                        services::get().update_settings(|s| s.reliability_notice_dismissed = true);
+                        limited.set(false);
                     },
                     Icon { name: "close", size: 18 }
                 }

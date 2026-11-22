@@ -18,6 +18,15 @@ Mark each line ✅ or ❌, with a note for anything odd.
 
 ## Round M1 (problems fixed + first full phone check)
 
+Background playback (M0-13; this replaces the manual HyperOS steps above)
+- [ ] Home shows "Music may stop when the screen is off". Tap **Fix**: Settings → Background playback
+      lists Battery, Background activity, Notifications and Autostart with their state.
+- [ ] Battery → **Fix** opens Android's "allow Loss to run in the background" question; after
+      allowing it and coming back, the row says "Set" without reloading.
+- [ ] Autostart → **Open** opens HyperOS' Autostart screen (switch Loss on there).
+- [ ] With everything set, music plays for 30 minutes with the screen off, and a 20-song download
+      finishes with the screen off. (This confirms M0-13.)
+
 First, with the Beats plugged in: Settings → Logs and diagnostics → This device → **Share**, and send
 the text to Claude. It lists what Android reports for the Beats (sample rates, formats, and whether
 this phone offers bit-perfect playback to them), which shapes M2.

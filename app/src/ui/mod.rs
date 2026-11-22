@@ -7,6 +7,7 @@ mod icons;
 mod library;
 mod logs;
 mod now_playing;
+mod reliability;
 mod settings;
 pub mod theme;
 

@@ -253,3 +253,26 @@ player-error-output = Can't play: no audio output is available. Check that your 
 player-error-missing = Can't play: the file is missing or can't be read.
 player-error-unsupported = Can't play this file: its format isn't supported yet.
 
+## Background playback (HyperOS and other phones that stop apps)
+reliability-title = Background playback
+settings-reliability-desc = Keep music and downloads going with the screen off
+reliability-intro = Xiaomi and some other phones stop apps in the background to save battery. These settings keep Loss playing and downloading with the screen off.
+reliability-battery = Battery: no restrictions
+reliability-battery-desc = Lets Loss keep playing and downloading with the screen off.
+reliability-background = Background activity
+reliability-background-desc = Android can be set to restrict Loss in the background.
+reliability-notifications = Notifications
+reliability-notifications-desc = Needed for the player controls and download progress.
+reliability-autostart = Autostart
+reliability-autostart-desc = Lets your phone restart Loss' player if it was closed. Apps can't check this one: turn on Loss in the screen that opens.
+reliability-state-ok = Set
+reliability-state-off = Not set
+reliability-state-unknown = Check it yourself
+reliability-fix = Fix
+reliability-footer = After changing a setting, come back here: this page updates by itself.
+reliability-only-android = These settings exist only on Android phones.
+home-reliability-title = Music may stop when the screen is off
+home-reliability-text = Your phone limits Loss in the background. Fix it in a few taps.
+action-open = Open
+action-back = Back
+

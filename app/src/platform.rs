@@ -314,6 +314,52 @@ pub fn request_audio_permission() {
 
 /// The phone's media volume (0..1), or None where the app controls its own
 /// volume (desktop).
+/// The phone's background settings (battery exemption, restrictions, notifications), or None
+/// where there are none (desktop).
+pub fn reliability() -> Option<loss_platform::reliability::Status> {
+    #[cfg(target_os = "android")]
+    {
+        let json = android::with_env(|env, act| {
+            let cls = android::bridge_class(env, act)?;
+            let s = env
+                .call_static_method(
+                    &cls,
+                    "reliability",
+                    "(Landroid/content/Context;)Ljava/lang/String;",
+                    &[jni::objects::JValue::Object(act)],
+                )?
+                .l()?;
+            Ok(env.get_string(&jni::objects::JString::from(s))?.into())
+        })?;
+        let json: String = json;
+        loss_platform::reliability::Status::parse(&json)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        None
+    }
+}
+
+/// Opens the settings screen that fixes a reliability check.
+#[cfg_attr(not(target_os = "android"), allow(unused_variables))]
+pub fn open_reliability(screen: &str) {
+    #[cfg(target_os = "android")]
+    android::with_env(|env, act| {
+        let cls = android::bridge_class(env, act)?;
+        let what = env.new_string(screen)?;
+        env.call_static_method(
+            &cls,
+            "openReliability",
+            "(Landroid/content/Context;Ljava/lang/String;)V",
+            &[
+                jni::objects::JValue::Object(act),
+                jni::objects::JValue::Object(&what),
+            ],
+        )?;
+        Ok(())
+    });
+}
+
 /// The device's language as a BCP 47 tag (e.g. "en-GB"), if known.
 pub fn system_locale() -> Option<String> {
     #[cfg(target_os = "android")]

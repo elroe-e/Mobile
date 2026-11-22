@@ -46,6 +46,8 @@ pub struct Settings {
     pub detailed_logging: bool,
     /// "system" (the phone's language) or a language tag such as "en".
     pub language: String,
+    /// The Home notice about background limits was dismissed.
+    pub reliability_notice_dismissed: bool,
 }
 
 impl Default for Settings {
@@ -70,6 +72,7 @@ impl Default for Settings {
             last_position: 0.0,
             detailed_logging: false,
             language: "system".into(),
+            reliability_notice_dismissed: false,
         }
     }
 }

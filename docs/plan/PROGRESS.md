@@ -27,8 +27,17 @@ next session must know.
 - Gotchas: rustfmt can move a trailing `// i18n: ignore` comment to its own line (then the checker
   flags the string); restructure the code instead. `PULSE_SERVER`/`PULSE_COOKIE` are needed when
   the app runs with its own HOME. Choice settings' labels are `choice-<key>-<value>` messages.
-- Next: M0-10 UI kit, M0-13 HyperOS, M0-04 release (needs D3), then M2. Round M1 results from the
-  owner are still outstanding.
+- **M0-13** built, not ticked (needs the owner's 30-minute screen-off check): Kotlin
+  `LossReliability` reports battery exemption, background restriction, notifications and whether a
+  Xiaomi Autostart screen exists; `loss_platform::reliability` turns that into checks (tested);
+  Settings → Help → Background playback shows them with Fix/Open buttons and refreshes every 2 s;
+  Home shows a dismissible notice while the phone limits Loss. Manifest: the battery-exemption
+  permission and a `<queries>` entry for `com.miui.securitycenter`.
+- CI: the UI tour first "passed" with black screenshots (WebKitGTK sandbox blocked on the runners,
+  no GPU, 25 s first load). Fixed with test-only env vars and longer waits; the script now fails on
+  blank screenshots. The APK build retries and caches Gradle (Maven Central 429s).
+- Next: M0-10 UI kit, M0-04 release (needs D3), then M2. Round M1 results from the owner are still
+  outstanding.
 
 ## 2026-11-21 (session 3): foundations (M0-03, M0-05, M0-06, M0-07)
 
