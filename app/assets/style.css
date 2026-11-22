@@ -477,3 +477,5 @@ input.seek.dragging::-webkit-slider-thumb { margin-top: -8px; }
 /* Sheets and dialogs are position: fixed inside the page: no ancestor may keep a transform,
    filter or containment applied (animations end with fill-mode backwards for that reason). */
 .card > .stepper { align-self: flex-start; }
+/* Notices are read in full: their titles wrap instead of being cut off. */
+.notice-card .title { white-space: normal; }
