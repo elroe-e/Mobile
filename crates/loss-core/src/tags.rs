@@ -156,3 +156,34 @@ pub fn write_missing(path: &Path, meta: &TrackMeta, cover: Option<&[u8]>) -> Res
     file.save_to_path(path, WriteOptions::default())
         .map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod generated_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    /// Needs `scripts/make-fixtures.sh` (CI runs it).
+    #[test]
+    #[ignore]
+    fn reads_tags_cover_and_lyrics_from_generated_fixture() {
+        let dir = std::env::var_os("LOSS_FIXTURES")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/fixtures"));
+        let m = read_meta(&dir.join("tagged-cover.flac")).expect("run scripts/make-fixtures.sh");
+        assert_eq!(m.title.as_deref(), Some("Tagged Song"));
+        assert_eq!(m.artist.as_deref(), Some("Loss Test Artist"));
+        assert_eq!(m.album.as_deref(), Some("Loss Test Album"));
+        assert_eq!(m.album_artist.as_deref(), Some("Loss Test Artist"));
+        assert_eq!(
+            (m.track_no, m.disc_no, m.year),
+            (Some(3), Some(1), Some(2024))
+        );
+        assert!(m.has_cover);
+        assert_eq!((m.bit_depth, m.sample_rate), (Some(16), Some(44100)));
+        assert!((m.duration_secs - 2.0).abs() < 0.05);
+        let lrc = std::fs::read_to_string(dir.join("tagged-cover.lrc")).unwrap();
+        let lyrics = crate::lrc::parse(&lrc);
+        assert!(lyrics.is_synced());
+        assert_eq!(lyrics.current_line(1.5), Some(1));
+    }
+}

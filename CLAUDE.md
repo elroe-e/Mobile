@@ -75,7 +75,11 @@ The installable APK is `target/dx/loss/release/android/app/app/build/outputs/apk
 **UI checks without a phone** (no KVM here, so no emulator): run the desktop build under Xvfb
 (`Xvfb :99 -screen 0 412x880x24`). Use a PulseAudio null sink for real-time audio: the ALSA null device
 plays instantly. Set `HOME`/`LOSS_DATA_DIR` to a scratch dir, drive it with `xdotool`, and capture with
-`import -window root`. M0-12 turns this into `scripts/ui-smoke.sh`.
+`import -window root`. `scripts/ui-smoke.sh [en en_XA ar_XB]` does all of that: a scripted tour
+(library from the fixtures, playback, every tab, player, settings search, Back) with screenshots in
+`target/ui-smoke/<locale>/`. `scripts/make-fixtures.sh` generates test audio into
+`target/fixtures` (FLAC up to 24/192, ALAC, WavPack, WAV, gapless sets, CUE, tags + cover, LRC);
+`cargo test -p loss-audio -p loss-core -- --ignored generated` checks them. Both run in CI.
 
 ## Gotchas (learned the hard way)
 
@@ -111,6 +115,9 @@ plays instantly. Set `HOME`/`LOSS_DATA_DIR` to a scratch dir, drive it with `xdo
 * Data lives in `loss.redb` (loss-store). Values are JSON, so new fields need `#[serde(default)]`; a
   new table or a changed meaning needs a migration step in `loss-store` (bump `SCHEMA_VERSION`).
 * `scripts/emulator-smoke.sh <apk>` checks a build on an emulator or a phone over adb (M0-03).
+* Desktop audio for tests goes through PulseAudio; an app started with its own `HOME` needs
+  `PULSE_SERVER`/`PULSE_COOKIE` (ui-smoke.sh sets them), or playback fails with "device no longer
+  available".
 * cpal 0.16 uses AAudio on Android (0.15 needed C++ Oboe). Symphonia 0.5/0.6 have no Opus decoder.
 * The desktop test environment's WebKitGTK reports a light theme; set the theme in settings for
   dark-mode screenshots.

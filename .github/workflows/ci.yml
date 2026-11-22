@@ -24,7 +24,8 @@ jobs:
       - name: System packages
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libasound2-dev pkg-config libwebkit2gtk-4.1-dev libxdo-dev
+          sudo apt-get install -y -qq libasound2-dev pkg-config libwebkit2gtk-4.1-dev libxdo-dev \
+            ffmpeg xvfb xdotool imagemagick pulseaudio
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -45,6 +46,22 @@ jobs:
         run: python3 scripts/check-i18n.py
       - name: Plan consistency
         run: python3 scripts/check-plan.py
+      # M0-12: generated audio fixtures and a scripted UI tour.
+      - name: Audio fixtures
+        run: bash scripts/make-fixtures.sh
+      - name: Tests on the fixtures (formats, tags, gapless joins)
+        run: cargo test -p loss-audio -p loss-core -- --ignored generated
+      - name: UI smoke tour (English and pseudo-locales)
+        run: bash scripts/ui-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-smoke
+          path: |
+            target/ui-smoke/*/*.png
+            target/ui-smoke/*/stdout.txt
+            target/ui-smoke/*/data/logs/
+          if-no-files-found: warn
 
   android:
     name: Android APK (${{ matrix.abi }})

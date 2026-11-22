@@ -3,6 +3,33 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-22 (session 4): settings, translations, test harness (M0-08, M0-09, M0-12)
+
+- **M0-08** `loss_core::registry`: every user setting with section, kind, keywords, platforms;
+  `get`/`set` by key (validated), `search`, `INTERNAL` for app state. Tests fail if a `Settings`
+  field is in neither. The settings screen is generated from it, with a search box (results
+  grouped by section, editable in place). Database schema 2: one row per setting (migration from
+  schema 1's single row; a bad value falls back to its default). New visible setting: retries.
+- **M0-09** `crates/loss-i18n` (Fluent): `t!("id", k = v)`, English fallback, plural selectors,
+  pseudo-locales `en-XA` and `ar-XB` (RTL). All ~190 UI strings plus the downloads notification
+  and the registry are in `locales/en/loss.ftl`. Language follows the phone unless set in
+  Settings → Look → Language. `scripts/check-i18n.py` (CI) catches hard-coded text and
+  unknown/unused ids. Tab labels now shrink with an ellipsis.
+- **M0-12** `scripts/make-fixtures.sh` (ffmpeg → `target/fixtures`) and
+  `scripts/ui-smoke.sh` (Xvfb tour in en, en_XA, ar_XB with screenshots), both in CI, plus
+  `--ignored generated` tests. Did M0-12 before M0-10 so the UI kit can be reviewed with it.
+- Found by the harness and fixed: **Opus left a 6.5 ms gap at each gapless join** (Symphonia's
+  Ogg reader doesn't trim the pre-skip; `opus.rs` now does). Found and recorded for M2-08: AAC/ALAC
+  in MP4 leave ≈45 ms per join (edit list / iTunSMPB ignored), and ALAC bit depth isn't reported.
+- Follow-up for M2: engine errors reach the player screen as raw cpal text in English ("The
+  requested device is no longer available…"); M2-01/M2-03 should map them to plain, translated
+  messages and keep the details in the log.
+- Gotchas: rustfmt can move a trailing `// i18n: ignore` comment to its own line (then the checker
+  flags the string); restructure the code instead. `PULSE_SERVER`/`PULSE_COOKIE` are needed when
+  the app runs with its own HOME. Choice settings' labels are `choice-<key>-<value>` messages.
+- Next: M0-10 UI kit, M0-13 HyperOS, M0-04 release (needs D3), then M2. Round M1 results from the
+  owner are still outstanding.
+
 ## 2026-11-21 (session 3): foundations (M0-03, M0-05, M0-06, M0-07)
 
 - **M0-03** CI's Android job is a matrix (arm64 for the phone, x86_64 for the emulator). The x86_64

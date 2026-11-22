@@ -986,6 +986,108 @@ mod tests {
         }
     }
 
+    /// Files from `scripts/make-fixtures.sh` (`target/fixtures`, or `LOSS_FIXTURES`).
+    fn generated(name: &str) -> Option<PathBuf> {
+        let dir = std::env::var_os("LOSS_FIXTURES")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/fixtures"));
+        let p = dir.join(name);
+        p.exists().then_some(p)
+    }
+
+    /// Run `scripts/make-fixtures.sh` first; CI does.
+    #[test]
+    #[ignore]
+    fn generated_fixtures_decode() {
+        let cases = [
+            ("flac-16-44100.flac", 44100, Some(16)),
+            ("flac-24-48000.flac", 48000, Some(24)),
+            ("flac-24-96000.flac", 96000, Some(24)),
+            ("flac-24-192000.flac", 192000, Some(24)),
+            // Symphonia doesn't report ALAC's bit depth; M2-18 reads it from the ALAC header.
+            ("alac-16-44100.m4a", 44100, None),
+            ("wav-24-96000.wav", 96000, Some(24)),
+            ("wav-f32-48000.wav", 48000, None),
+            ("tagged-cover.flac", 44100, Some(16)),
+        ];
+        for (name, rate, bits) in cases {
+            let path =
+                generated(name).unwrap_or_else(|| panic!("{name}: run scripts/make-fixtures.sh"));
+            let (_, _, _, info, duration) =
+                open_file(&path).unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!(info.sample_rate, rate, "{name}");
+            if bits.is_some() {
+                assert_eq!(info.bits_per_sample, bits, "{name}");
+            }
+            assert!((duration - 2.0).abs() < 0.05, "{name}: {duration}");
+            let (out, _) = decode_chain(&[path], 48000, 2);
+            let secs = out.len() as f64 / 2.0 / 48000.0;
+            assert!((secs - 2.0).abs() < 0.02, "{name}: decoded {secs} s");
+            // ffmpeg's sine source is at 1/8 of full scale (rms ≈ 0.088).
+            let level = rms(&out[9600..out.len() - 9600]);
+            assert!(level > 0.05 && level < 0.15, "{name}: rms {level}");
+        }
+        // WavPack has no decoder yet (M2-08 decides how); it must fail cleanly, not panic.
+        let wv = generated("wavpack-16-44100.wv").unwrap();
+        assert!(open_file(&wv).is_err());
+    }
+
+    /// Longest run of near-silence around each join, in ms; and the total length in seconds.
+    fn join_report(prefix: &str, ext: &str) -> (Vec<f64>, f64) {
+        let paths: Vec<PathBuf> = (0..3)
+            .map(|i| {
+                generated(&format!("gapless/{prefix}-{i}.{ext}"))
+                    .expect("run scripts/make-fixtures.sh")
+            })
+            .collect();
+        let rate = 48000;
+        let (out, joins) = decode_chain(&paths, rate, 2);
+        let left: Vec<f32> = out.iter().step_by(2).copied().collect();
+        let gaps = joins
+            .iter()
+            .map(|&j| {
+                let j = (j / 2) as usize;
+                let window = &left[j.saturating_sub(4800)..(j + 4800).min(left.len())];
+                // Longest run below -40 dBFS (the sine peaks near -6 dB, so a dip only
+                // lasts one sample at its zero crossings).
+                let mut run = 0usize;
+                let mut longest = 0usize;
+                for v in window {
+                    if v.abs() < 0.01 {
+                        run += 1;
+                        longest = longest.max(run);
+                    } else {
+                        run = 0;
+                    }
+                }
+                longest as f64 * 1000.0 / rate as f64
+            })
+            .collect();
+        (gaps, left.len() as f64 / rate as f64)
+    }
+
+    /// Gapless across real encoders: the split sine plays as one tone.
+    #[test]
+    #[ignore]
+    fn generated_gapless_sets() {
+        for (prefix, ext, max_gap_ms) in [
+            ("flac", "flac", 0.2),
+            ("mp3", "mp3", 1.0),
+            ("opus", "opus", 1.0),
+        ] {
+            let (gaps, secs) = join_report(prefix, ext);
+            eprintln!("{prefix}: joins {gaps:?} ms of silence, total {secs:.3} s");
+            assert!((secs - 3.0).abs() < 0.03, "{prefix}: {secs} s");
+            for g in gaps {
+                assert!(g <= max_gap_ms, "{prefix}: {g} ms gap at a join");
+            }
+        }
+        // AAC in MP4: reported, not yet required. Symphonia 0.5 ignores the MP4 edit list and
+        // iTunSMPB, so encoder delay and padding stay in (≈45 ms per join). M2-08 fixes it.
+        let (gaps, secs) = join_report("aac", "m4a");
+        eprintln!("aac: joins {gaps:?} ms of silence, total {secs:.3} s");
+    }
+
     #[test]
     fn opus_seeks() {
         let (mut format, _, track_id, _, _) = open_file(&fixture("tone.opus")).unwrap();
