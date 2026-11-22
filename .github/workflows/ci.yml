@@ -103,11 +103,26 @@ jobs:
       - name: Install Dioxus CLI
         if: steps.dx-cache.outputs.cache-hit != 'true'
         run: cargo install dioxus-cli --version "$DX_VERSION" --locked
+      # Gradle's downloads, kept between runs: Maven Central sometimes answers 429 (Too Many Requests).
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ env.DX_VERSION }}-${{ hashFiles('android/glue/build.gradle.kts') }}
+          restore-keys: gradle-${{ env.DX_VERSION }}-
       - name: Build APK
         working-directory: app
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
-          dx bundle --platform android --release --target ${{ matrix.target }}
+          # Retry when Gradle can't download (rate limits); the Rust build is reused.
+          for attempt in 1 2 3; do
+            dx bundle --platform android --release --target ${{ matrix.target }} && break
+            [ $attempt = 3 ] && exit 1
+            echo "::warning::APK build failed (attempt $attempt), retrying in $((attempt * 45)) s"
+            sleep $((attempt * 45))
+          done
           cp ../target/dx/loss/release/android/app/app/build/outputs/apk/debug/app-debug.apk ../Loss-${{ matrix.abi }}.apk
       - uses: actions/upload-artifact@v4
         with:
