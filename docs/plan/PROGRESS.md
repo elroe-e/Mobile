@@ -3,6 +3,18 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-24 (session 5, later): native AAudio output (M2-02)
+
+- **M2-02** `loss-audio/src/aaudio.rs` replaces cpal on Android: chosen format (F32/I16/I24/I32),
+  shared or exclusive (MMAP, falls back), power-saving or low-latency, usage media / content
+  music, spatializer off by default, device id (for M2-04's picker), disconnect → reopen where
+  the song was. `sink::Encoder` with TPDF dither only when samples changed (16-bit stays
+  bit-exact). Four new Android-only settings under Audio; Settings → Audio shows the real stream.
+  Engine tests: dither decision, format change and device loss reopen at the same position.
+- Not verified on a phone yet (no device here); the DEVICE-TESTS round M2 has the checks.
+- cpal is still compiled into the Android build but unused there; drop it if size matters.
+- Next: M2-06 (DAC probe), M2-05 (Direct USB), M2-04 (output modes + picker).
+
 ## 2026-11-24 (session 5, later): route and device monitor (M2-03)
 
 - **M2-03** `loss_platform::route` (device kinds, rates, encodings, active output), Kotlin

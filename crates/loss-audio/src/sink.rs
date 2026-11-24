@@ -43,6 +43,171 @@ pub fn choose_rate(src: u32, caps: &Caps) -> u32 {
         .unwrap_or(rates[0])
 }
 
+/// A sample format an output can take.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SampleFormat {
+    #[default]
+    F32,
+    I16,
+    /// 24-bit in 3 bytes.
+    I24,
+    I32,
+}
+
+impl SampleFormat {
+    /// Bits of an integer format; None for float.
+    pub fn int_bits(self) -> Option<u32> {
+        match self {
+            SampleFormat::F32 => None,
+            SampleFormat::I16 => Some(16),
+            SampleFormat::I24 => Some(24),
+            SampleFormat::I32 => Some(32),
+        }
+    }
+
+    pub fn bytes(self) -> usize {
+        match self {
+            SampleFormat::I16 => 2,
+            SampleFormat::I24 => 3,
+            SampleFormat::F32 | SampleFormat::I32 => 4,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            SampleFormat::F32 => "F32",
+            SampleFormat::I16 => "I16",
+            SampleFormat::I24 => "I24",
+            SampleFormat::I32 => "I32",
+        }
+    }
+
+    /// From the `output_format` setting: "float", "16", "24", "32"; None for "auto".
+    pub fn parse_setting(s: &str) -> Option<SampleFormat> {
+        match s {
+            "float" => Some(SampleFormat::F32),
+            "16" => Some(SampleFormat::I16),
+            "24" => Some(SampleFormat::I24),
+            "32" => Some(SampleFormat::I32),
+            _ => None,
+        }
+    }
+}
+
+/// How to open the output (M2-02). Outputs that can't do something ignore it.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct OutputPrefs {
+    /// None: float through the shared mixer, the device's own format when exclusive.
+    pub format: Option<SampleFormat>,
+    /// Ask for an exclusive (MMAP) stream; Android falls back to shared when it can't.
+    pub exclusive: bool,
+    /// Low-latency performance mode (smaller buffers, more battery) instead of power saving.
+    pub low_latency: bool,
+    /// Let Android's spatializer process the stream.
+    pub spatial: bool,
+    /// Play on this device id; 0 lets Android route.
+    pub device_id: i32,
+}
+
+/// What an output actually opened with.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct OutputInfo {
+    pub format: SampleFormat,
+    pub exclusive: bool,
+    pub low_latency: bool,
+    pub device_id: i32,
+    pub buffer_frames: u32,
+    /// What the hardware runs at, when the system says (Android 14+), e.g. "I24 48000 Hz".
+    pub hardware: Option<String>,
+}
+
+impl OutputInfo {
+    /// For logs and the format details, e.g. "I24 · exclusive · low latency · 48000 Hz".
+    pub fn describe(&self, rate: u32) -> String {
+        let mut parts = vec![self.format.name().to_string()];
+        parts.push(
+            if self.exclusive {
+                "exclusive"
+            } else {
+                "shared"
+            }
+            .into(),
+        );
+        parts.push(
+            if self.low_latency {
+                "low latency"
+            } else {
+                "power saving"
+            }
+            .into(),
+        );
+        parts.push(format!("{rate} Hz"));
+        if self.buffer_frames > 0 {
+            parts.push(format!("buffer {}", self.buffer_frames));
+        }
+        if let Some(h) = &self.hardware {
+            parts.push(format!("hardware {h}"));
+        }
+        parts.join(" · ")
+    }
+}
+
+/// Turns the ring's f32 samples into an output format's little-endian bytes. Integer formats
+/// below 32 bits get TPDF dither when `dither` is set (the samples were changed on the way, or
+/// have more bits than the output); otherwise samples are rounded, which keeps 16-bit content
+/// bit-exact on a 16-bit output.
+pub struct Encoder {
+    format: SampleFormat,
+    channels: usize,
+    dither: Option<crate::resample::Dither>,
+}
+
+impl Encoder {
+    pub fn new(format: SampleFormat, channels: usize) -> Encoder {
+        let dither = match format.int_bits() {
+            // High-pass TPDF at 16 bits moves the noise where it's least audible.
+            Some(16) => Some(crate::resample::Dither::new(16, channels, true)),
+            Some(24) => Some(crate::resample::Dither::new(24, channels, false)),
+            _ => None,
+        };
+        Encoder {
+            format,
+            channels: channels.max(1),
+            dither,
+        }
+    }
+
+    /// Fills `out` (whole samples of the format) from `next`, which yields one sample per call.
+    pub fn write(&mut self, out: &mut [u8], dither: bool, mut next: impl FnMut() -> f32) {
+        let n = out.len() / self.format.bytes();
+        for i in 0..n {
+            let v = next() as f64;
+            let c = i % self.channels;
+            let at = i * self.format.bytes();
+            match self.format {
+                SampleFormat::F32 => out[at..at + 4].copy_from_slice(&(v as f32).to_le_bytes()),
+                SampleFormat::I32 => {
+                    let q = (v * 2_147_483_648.0)
+                        .round()
+                        .clamp(-2_147_483_648.0, 2_147_483_647.0);
+                    out[at..at + 4].copy_from_slice(&(q as i32).to_le_bytes());
+                }
+                SampleFormat::I16 | SampleFormat::I24 => {
+                    let bits = self.format.int_bits().unwrap_or(16);
+                    let scale = (1u64 << (bits - 1)) as f64;
+                    let q = match (&mut self.dither, dither) {
+                        (Some(d), true) => d.quantize(v, c),
+                        _ => (v * scale).round().clamp(-scale, scale - 1.0),
+                    } as i32;
+                    let b = q.to_le_bytes();
+                    let w = self.format.bytes();
+                    out[at..at + w].copy_from_slice(&b[..w]);
+                }
+            }
+        }
+    }
+}
+
 /// Pauses and resumes a stream.
 pub trait Control {
     fn play(&self);
@@ -58,7 +223,13 @@ pub struct Stream {
     pub latency_frames: Arc<AtomicU64>,
     pub rate: u32,
     pub channels: usize,
-    control: Box<dyn Control>,
+    /// The format and mode the output opened with.
+    pub info: OutputInfo,
+    /// Set by the engine: dither integer output (see [`Encoder`]).
+    pub dither: Arc<AtomicBool>,
+    /// Set by the output when its device went away (unplugged, re-routed); the engine reopens.
+    pub lost: Arc<AtomicBool>,
+    pub(crate) control: Box<dyn Control>,
 }
 
 impl Stream {
@@ -82,6 +253,8 @@ pub trait Sink: Send {
     fn caps(&mut self) -> Result<Caps, String>;
     /// Opens a stream at `rate` that applies `volume` (f32 bits, 0..1).
     fn open(&mut self, rate: u32, volume: Arc<AtomicU32>) -> Result<Stream, String>;
+    /// How later streams should open (format, exclusive, device…).
+    fn set_prefs(&mut self, _prefs: OutputPrefs) {}
 }
 
 /// Pulls one buffer's worth from the ring, applying the volume. Returns samples taken.
@@ -254,6 +427,16 @@ impl Sink for CpalSink {
             latency_frames: latency,
             rate: config.sample_rate.0,
             channels: config.channels as usize,
+            info: OutputInfo {
+                format: match format {
+                    cpal::SampleFormat::I16 | cpal::SampleFormat::U16 => SampleFormat::I16,
+                    cpal::SampleFormat::I32 => SampleFormat::I32,
+                    _ => SampleFormat::F32,
+                },
+                ..OutputInfo::default()
+            },
+            dither: Arc::new(AtomicBool::new(false)),
+            lost: Arc::new(AtomicBool::new(false)),
             control: Box::new(CpalControl(stream)),
         })
     }
@@ -276,6 +459,9 @@ struct FakeShared {
     playing: AtomicBool,
     heard: Mutex<Vec<f32>>,
     opened: Mutex<Vec<u32>>,
+    prefs: Mutex<OutputPrefs>,
+    /// The open stream's dither and lost flags.
+    flags: Mutex<Option<(Arc<AtomicBool>, Arc<AtomicBool>)>>,
 }
 
 impl FakeClock {
@@ -308,6 +494,24 @@ impl FakeClock {
 
     pub fn is_playing(&self) -> bool {
         self.inner.playing.load(Ordering::Relaxed)
+    }
+
+    /// Whether the engine asked the open stream to dither.
+    pub fn dithering(&self) -> bool {
+        let f = self.inner.flags.lock().unwrap();
+        f.as_ref().is_some_and(|(d, _)| d.load(Ordering::Relaxed))
+    }
+
+    /// The device goes away, as when the Beats are unplugged.
+    pub fn lose_device(&self) {
+        if let Some((_, lost)) = self.inner.flags.lock().unwrap().as_ref() {
+            lost.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// The preferences the sink was last given.
+    pub fn prefs(&self) -> OutputPrefs {
+        *self.inner.prefs.lock().unwrap()
     }
 }
 
@@ -356,20 +560,88 @@ impl Sink for FakeSink {
             Some((slot.clone(), played.clone(), channels, volume));
         self.clock.inner.opened.lock().unwrap().push(rate);
         self.clock.inner.playing.store(false, Ordering::Relaxed);
+        let prefs = *self.clock.inner.prefs.lock().unwrap();
+        let (dither, lost) = (
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+        );
+        *self.clock.inner.flags.lock().unwrap() = Some((dither.clone(), lost.clone()));
         Ok(Stream {
             slot,
             played,
             latency_frames: Arc::new(AtomicU64::new(self.latency_frames)),
             rate,
             channels,
+            info: OutputInfo {
+                format: prefs.format.unwrap_or_default(),
+                exclusive: prefs.exclusive,
+                low_latency: prefs.low_latency,
+                device_id: prefs.device_id,
+                ..OutputInfo::default()
+            },
+            dither,
+            lost,
             control: Box::new(FakeControl(self.clock.inner.clone())),
         })
+    }
+
+    fn set_prefs(&mut self, prefs: OutputPrefs) {
+        *self.clock.inner.prefs.lock().unwrap() = prefs;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn enc(format: SampleFormat, dither: bool, input: &[f32]) -> Vec<u8> {
+        let mut out = vec![0u8; input.len() * format.bytes()];
+        let mut it = input.iter().copied();
+        Encoder::new(format, 1).write(&mut out, dither, || it.next().unwrap_or(0.0));
+        out
+    }
+
+    #[test]
+    fn sixteen_bit_content_stays_bit_exact_without_dither() {
+        // Every 16-bit value survives f32 and back unchanged.
+        let values: Vec<i16> = (-32768..=32767).step_by(7).collect();
+        let input: Vec<f32> = values.iter().map(|&v| v as f32 / 32768.0).collect();
+        let out = enc(SampleFormat::I16, false, &input);
+        let back: Vec<i16> = out
+            .chunks(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .collect();
+        assert_eq!(back, values);
+    }
+
+    #[test]
+    fn twenty_four_bit_is_packed_little_endian() {
+        let out = enc(SampleFormat::I24, false, &[0.5, -1.0, 1.0]);
+        assert_eq!(&out[0..3], &[0x00, 0x00, 0x40]); // 0x400000
+        assert_eq!(&out[3..6], &[0x00, 0x00, 0x80]); // -0x800000
+        assert_eq!(&out[6..9], &[0xFF, 0xFF, 0x7F]); // clipped to the largest value
+        let f = enc(SampleFormat::F32, false, &[0.25]);
+        assert_eq!(f32::from_le_bytes([f[0], f[1], f[2], f[3]]), 0.25);
+        let i = enc(SampleFormat::I32, false, &[-0.5]);
+        assert_eq!(i32::from_le_bytes([i[0], i[1], i[2], i[3]]), -1 << 30);
+    }
+
+    #[test]
+    fn dither_turns_a_quiet_tone_into_noise_not_steps() {
+        // A tone at a quarter of an LSB: without dither it rounds to silence; with dither its
+        // average survives (the error is noise, not distortion).
+        let lsb = 1.0 / 32768.0;
+        let input: Vec<f32> = (0..48000).map(|_| 0.25 * lsb).collect();
+        let plain = enc(SampleFormat::I16, false, &input);
+        assert!(plain.iter().all(|&b| b == 0));
+        let d = enc(SampleFormat::I16, true, &input);
+        let mean: f64 = d
+            .chunks(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]]) as f64)
+            .sum::<f64>()
+            / 48000.0;
+        assert!((mean - 0.25).abs() < 0.05, "mean {mean}");
+    }
 
     fn caps(rates: &[u32]) -> Caps {
         Caps {

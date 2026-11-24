@@ -27,7 +27,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 |---|---|---|---|---|
 | M0 | Foundations: CI, glue module, bridge, store, settings, i18n, UI kit, diagnostics | 13 | 11 | 4–5 sessions |
 | M1 | The 7 problems fixed + phone verification | 8 | 7 | 2–3 sessions |
-| M2 | Audio engine v2, hi-fi output, USB, DSP | 24 | 3 | 8–10 sessions |
+| M2 | Audio engine v2, hi-fi output, USB, DSP | 24 | 4 | 8–10 sessions |
 | M3 | Player and queue | 16 | 0 | 3–4 sessions |
 | M4 | Library v2 | 25 | 0 | 6–8 sessions |
 | M5 | Lyrics v2 | 12 | 0 | 4–5 sessions |
@@ -36,7 +36,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 | M8 | Home, discovery, stats, social, audio tools | 13 | 0 | 5–6 sessions |
 | M9 | Devices and platform integrations | 8 | 0 | 5–6 sessions |
 | M10 | Look, app shell, desktop, iOS, languages, release | 14 | 0 | 6–7 sessions |
-| **Total** | | **155** | **21** | **≈ 50–60 sessions** |
+| **Total** | | **155** | **22** | **≈ 50–60 sessions** |
 
 A "session" here means one working session of the length used so far. Numbers are estimates.
 
@@ -49,7 +49,7 @@ A "session" here means one working session of the length used so far. Numbers ar
 3. Then **M2** (audio engine, hi-fi output for the Beats). The device report is in
    (`docs/plan/reports/2026-11-21-xiaomi-beats.txt`): the Beats take 32/48 kHz only and this phone has
    no bit-perfect mixer. So the order is ~~M2-01~~, ~~M2-07~~ (our own 44.1 → 48 kHz resampling, which affects most of
-   the library), ~~M2-03~~ (the Beats' real rates, so M2-07 takes effect), **M2-02**, **M2-06** (raw descriptors), then **M2-05**
+   the library), ~~M2-03~~ (the Beats' real rates, so M2-07 takes effect), ~~M2-02~~ (native AAudio output), **M2-06** (raw descriptors), then **M2-05**
    (Direct USB, the only bit-perfect route here) and **M2-04**.
 
 ## Open decisions (defaults apply until the owner decides)
@@ -166,7 +166,7 @@ updated; this file's checkbox is ticked. Commit messages start with the task ID 
   (rates, formats, channels). Sample-accurate position (frames minus latency). A fake sink for tests.
   The integer pass-through path for bit-perfect. *Done when:* the engine test suite runs against the
   fake sink with sample-exact positions.
-- [ ] **M2-02 Native AAudio sink.** `ndk::audio` replaces cpal on Android:
+- [x] **M2-02 Native AAudio sink.** `ndk::audio` replaces cpal on Android:
   - formats F32, I16, I24 packed, I32
   - shared or exclusive (MMAP); performance mode (low-latency or power-saving)
   - usage and content type; target a specific device id

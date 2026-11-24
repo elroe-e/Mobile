@@ -1,9 +1,11 @@
 //! Loss audio engine: decodes with Symphonia (pure Rust: FLAC, MP3, AAC/ALAC,
-//! Vorbis, WAV...) and plays through cpal (AAudio on Android).
+//! Vorbis, WAV...) and plays through AAudio on Android (`aaudio.rs`), cpal elsewhere.
 //!
 //! The player runs on its own thread. The UI sends [`Command`]s and reads a
 //! snapshot of [`PlayerState`].
 
+#[cfg(target_os = "android")]
+mod aaudio;
 mod dsp;
 mod engine;
 mod opus;
@@ -18,6 +20,8 @@ pub struct AudioOptions {
     pub quality: Quality,
     /// Highest output rate in Hz; 0 for no limit.
     pub max_rate: u32,
+    /// Format and mode of the output stream (M2-02).
+    pub output: sink::OutputPrefs,
 }
 
 use std::path::PathBuf;
@@ -68,6 +72,8 @@ pub struct StreamInfo {
     /// What Loss does to the samples on the way out ("resample 44100→48000 Hz"); empty when they
     /// reach the output unchanged.
     pub processing: Vec<String>,
+    /// How the output stream opened, e.g. "I24 · exclusive · low latency · 48000 Hz".
+    pub output: String,
 }
 
 impl StreamInfo {

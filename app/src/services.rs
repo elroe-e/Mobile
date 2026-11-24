@@ -47,6 +47,13 @@ fn audio_options(s: &Settings) -> loss_audio::AudioOptions {
     loss_audio::AudioOptions {
         quality: loss_audio::Quality::parse(&s.resample_quality),
         max_rate: s.max_sample_rate,
+        output: loss_audio::sink::OutputPrefs {
+            format: loss_audio::sink::SampleFormat::parse_setting(&s.output_format),
+            exclusive: s.exclusive_output,
+            low_latency: s.low_latency_output,
+            spatial: s.spatial_audio,
+            device_id: 0,
+        },
     }
 }
 

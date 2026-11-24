@@ -382,6 +382,8 @@ fn LogsRow() -> Element {
 /// What Loss plays through and the rates it takes (Android; M2-03).
 #[component]
 fn OutputRow() -> Element {
+    let st = state();
+    let stream = st.player.read().info.output.clone();
     let Some(d) = services::get().output.lock().ok().and_then(|o| o.clone()) else {
         return rsx! {};
     };
@@ -405,6 +407,9 @@ fn OutputRow() -> Element {
             div { class: "row-text",
                 div { class: "title", {t!("output-playing-through", name = d.name.clone())} }
                 div { class: "subtitle", {t!("output-rates", rates = rates)} }
+                if !stream.is_empty() {
+                    div { class: "subtitle", {t!("output-stream", format = stream)} }
+                }
             }
         }
     }

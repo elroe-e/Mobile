@@ -129,6 +129,14 @@ const fn def(
     }
 }
 
+/// A setting that only does something on Android.
+const fn android(def: SettingDef) -> SettingDef {
+    SettingDef {
+        platforms: Platforms::ANDROID,
+        ..def
+    }
+}
+
 impl SettingDef {
     pub fn title(&self) -> String {
         loss_i18n::tr(&format!("setting-{}", self.key))
@@ -185,6 +193,46 @@ pub static SETTINGS: &[SettingDef] = &[
         Kind::Choice(&["none", "48000", "96000", "192000"]),
         &["sample rate", "limit", "hi-res", "khz", "battery"],
     ),
+    android(def(
+        "output_format",
+        Section::Audio,
+        Kind::Choice(&["auto", "float", "16", "24", "32"]),
+        &[
+            "bit depth",
+            "bits",
+            "24-bit",
+            "16-bit",
+            "float",
+            "pcm",
+            "dither",
+            "dac",
+        ],
+    )),
+    android(def(
+        "exclusive_output",
+        Section::Audio,
+        Kind::Toggle,
+        &[
+            "mmap",
+            "exclusive",
+            "bit-perfect",
+            "mixer",
+            "direct",
+            "latency",
+        ],
+    )),
+    android(def(
+        "low_latency_output",
+        Section::Audio,
+        Kind::Toggle,
+        &["latency", "buffer", "battery", "performance"],
+    )),
+    android(def(
+        "spatial_audio",
+        Section::Audio,
+        Kind::Toggle,
+        &["spatial", "3d", "surround", "virtualizer", "head tracking"],
+    )),
     def(
         "download_dir",
         Section::Downloads,
@@ -325,6 +373,10 @@ pub fn get(s: &Settings, key: &str) -> Option<Value> {
             0 => "none".into(),
             r => r.to_string(),
         }),
+        "output_format" => Text(s.output_format.clone()),
+        "exclusive_output" => Bool(s.exclusive_output),
+        "low_latency_output" => Bool(s.low_latency_output),
+        "spatial_audio" => Bool(s.spatial_audio),
         _ => return None,
     })
 }
@@ -366,6 +418,10 @@ pub fn set(s: &mut Settings, key: &str, value: Value) -> Result<(), SetError> {
         ("language", Value::Text(v)) => s.language = v,
         ("resample_quality", Value::Text(v)) => s.resample_quality = v,
         ("max_sample_rate", Value::Text(v)) => s.max_sample_rate = v.parse().unwrap_or(0),
+        ("output_format", Value::Text(v)) => s.output_format = v,
+        ("exclusive_output", Value::Bool(v)) => s.exclusive_output = v,
+        ("low_latency_output", Value::Bool(v)) => s.low_latency_output = v,
+        ("spatial_audio", Value::Bool(v)) => s.spatial_audio = v,
         _ => return Err(SetError::Invalid),
     }
     Ok(())

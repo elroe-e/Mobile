@@ -95,6 +95,13 @@ Android bit-perfect mixer for them.
 - [ ] (M2-03) With the Beats plugged in, play a 16/44.1 FLAC: the now-playing format details list
       the conversion to 48 kHz (Loss converts, not Android). Plug in during playback: the song
       keeps its position.
+- [ ] (M2-02) Play FLAC, MP3 and Opus with the Beats: they sound as before. Settings → Audio shows
+      "Stream: F32 · shared · power saving · 48000 Hz …".
+- [ ] (M2-02) Turn on Exclusive output, then try each Output format (Automatic, 16, 24, float):
+      the Stream line shows what was asked, or "shared" if the phone refused exclusive. Send the
+      Stream line for each (Settings → Help → logs also has "AAudio asked …; opened …").
+- [ ] (M2-02) Unplug the Beats during playback and plug them back: playback pauses, and pressing
+      play works again from the same place.
 - [ ] Settings → Audio output → **DAC probe** with the Beats plugged in → Copy report → send it to
       Claude. This adds the raw USB descriptors (does a hidden 44.1 kHz setting exist?).
 - [ ] Output mode **Bit-perfect** is shown as unavailable, with the reason (recheck after HyperOS

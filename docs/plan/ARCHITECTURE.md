@@ -155,6 +155,21 @@ sends `Command::SetOutputCaps` (the device's rates; none → any rate) and the e
 output at the right rate where the song was if the current rate no longer fits. Settings → Audio
 shows the device and its rates. Bluetooth codec is not exposed by public APIs (left for M2-06/M9).
 
+Status (M2-02): on Android the engine plays through `aaudio.rs`, a thin wrapper over the NDK's
+AAudio C API (`ndk-sys`, a system library, no bundled C code); cpal remains the desktop output.
+Settings → Audio (Android only): output format (Automatic = float when shared, the device's own
+format when exclusive; or F32/I16/I24 packed/I32), exclusive (MMAP; falls back to shared when
+refused), low latency (else power saving; exclusive forces low latency), spatial audio (off =
+`SPATIALIZATION_BEHAVIOR_NEVER`). Usage media, content type music; `OutputPrefs::device_id` can
+target a device (the picker comes with M2-04). Functions newer than API 26 (usage, content type,
+spatializer, hardware format) are looked up with `dlsym`. `sink::Encoder` writes the callback's
+bytes: integer formats get TPDF dither (high-pass at 16 bits) only when the samples changed
+(resampled, volume below 100 %) or carry more bits than the output, so 16-bit content on a 16-bit
+stream stays bit-exact (tests). Latency comes from `AAudioStream_getTimestamp`. The error
+callback (disconnect) sets `Stream::lost`; the engine reopens where the song was.
+`StreamInfo::output` / the log line "AAudio asked …; opened …" report the real stream
+(format, sharing, performance mode, buffer, and the hardware format on Android 14+).
+
 Status (M2-07): `resample.rs` uses `rubato` 5 (pure Rust): Fast = cubic polynomial, Medium/High/Best =
 synchronous FFT with longer filters. Measured (tests): Best is flat within ±0.01 dB to 20 kHz and
 keeps aliasing/imaging below −120 dB; lengths are exact (start-up delay trimmed, tail flushed at

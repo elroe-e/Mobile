@@ -3002,7 +3002,9 @@ version = "0.1.0"
 dependencies = [
  "audioadapter-buffers",
  "cpal",
+ "libc",
  "log",
+ "ndk-sys",
  "opus-decoder",
  "rtrb",
  "rubato",

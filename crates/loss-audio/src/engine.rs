@@ -1,7 +1,7 @@
 //! The player thread: owns the decoder, the output stream and the queue.
 
 use crate::dsp::Graph;
-use crate::sink::{choose_rate, Caps, CpalSink, Sink, Stream};
+use crate::sink::{choose_rate, Caps, Sink, Stream};
 use crate::{
     AudioOptions, Command, PlayError, PlayErrorKind, PlayerState, Quality, QueueItem, Repeat,
     Status, StreamInfo,
@@ -121,6 +121,7 @@ fn open_file(path: &Path) -> Result<OpenedFile, String> {
         channels: params.channels.map(|c| c.count() as u16).unwrap_or(2),
         output_rate: 0,
         processing: Vec::new(),
+        output: String::new(),
     };
     Ok((format, decoder, track_id, info, duration))
 }
@@ -220,6 +221,7 @@ impl Session {
     ) -> Session {
         let (format, decoder, track_id, mut info, duration) = opened;
         info.output_rate = out_rate;
+        info.output = prev.info.output.clone();
         let src_channels = info.channels.max(1) as usize;
         let graph = Graph::new(
             info.sample_rate,
@@ -384,6 +386,7 @@ impl Engine {
         }
         let out = self.output.as_ref().unwrap();
         info.output_rate = out.rate;
+        info.output = out.info.describe(out.rate);
         let capacity = (out.rate as usize * out.channels) / 2; // ~0.5 s
         let (producer, consumer) = rtrb::RingBuffer::new(capacity);
         *out.slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(consumer);
@@ -398,6 +401,8 @@ impl Engine {
             quality,
         );
         info.processing = graph.describe();
+        out.dither
+            .store(wants_dither(&info, out), Ordering::Relaxed);
         let mut session = Session {
             item,
             format,
@@ -663,7 +668,16 @@ impl Engine {
                 self.st().volume = v;
             }
             Command::SetShuffle(on) => self.set_shuffle(on),
-            Command::SetAudioOptions(o) => self.options = o,
+            Command::SetAudioOptions(o) => {
+                let reopen = o.output != self.options.output;
+                self.options = o;
+                if reopen {
+                    self.sink.set_prefs(o.output);
+                    if self.output.is_some() {
+                        self.reload_here(true);
+                    }
+                }
+            }
             Command::SetOutputCaps(c) => {
                 self.caps_override = c;
                 // Playing at a rate the new output doesn't suit: reopen where we are.
@@ -672,14 +686,7 @@ impl Engine {
                     _ => false,
                 };
                 if wrong {
-                    let (idx, playing) = {
-                        let s = self.st();
-                        (s.index, s.status == Status::Playing)
-                    };
-                    if let Some(i) = idx {
-                        let at = self.position();
-                        self.load(i, at, playing);
-                    }
+                    self.reload_here(false);
                 }
             }
             Command::SetRepeat(r) => self.st().repeat = r,
@@ -725,6 +732,16 @@ impl Engine {
     }
 
     fn tick(&mut self) {
+        // The device went away (unplugged, re-routed): open the output again where we were.
+        if self
+            .output
+            .as_ref()
+            .is_some_and(|o| o.lost.load(Ordering::Relaxed))
+        {
+            log::info!("output lost; reopening");
+            self.caps = None;
+            self.reload_here(true);
+        }
         let Some(out) = &self.output else { return };
         let (ch, rate) = (out.channels, out.rate);
         let played = self.heard_samples();
@@ -746,6 +763,8 @@ impl Engine {
                 .unwrap_or(current);
             st.index = Some(idx);
             st.duration = sw.duration;
+            out.dither
+                .store(wants_dither(&sw.info, out), Ordering::Relaxed);
             st.info = sw.info;
             st.position = 0.0;
             drop(st);
@@ -843,8 +862,39 @@ impl Engine {
     }
 }
 
+impl Engine {
+    /// Loads the current track again where it is (same play/pause state), on a fresh output
+    /// stream when `reopen` is set.
+    fn reload_here(&mut self, reopen: bool) {
+        let (idx, playing) = {
+            let s = self.st();
+            (s.index, s.status == Status::Playing)
+        };
+        let at = self.position();
+        if reopen {
+            self.output = None;
+        }
+        match idx {
+            Some(i) if self.session.is_some() => self.load(i, at, playing),
+            _ => {}
+        }
+    }
+}
+
+/// Integer output dithers unless the samples arrive untouched with no more bits than it holds.
+fn wants_dither(info: &StreamInfo, out: &Stream) -> bool {
+    out.info
+        .format
+        .int_bits()
+        .is_some_and(|bits| !info.untouched() || info.bits_per_sample.is_none_or(|b| b > bits))
+}
+
 pub fn run(rx: Receiver<Command>, state: Arc<Mutex<PlayerState>>) {
-    let mut engine = Engine::new(state, Box::new(CpalSink));
+    #[cfg(target_os = "android")]
+    let sink: Box<dyn Sink> = Box::new(crate::aaudio::AAudioSink::default());
+    #[cfg(not(target_os = "android"))]
+    let sink: Box<dyn Sink> = Box::new(crate::sink::CpalSink);
+    let mut engine = Engine::new(state, sink);
     loop {
         let active = engine.session.is_some();
         let wait = Duration::from_millis(if active { 10 } else { 200 });
@@ -1336,6 +1386,84 @@ mod tests {
         );
     }
 
+    fn beats_engine() -> (Engine, FakeClock) {
+        let (sink, clock) = FakeSink::new(
+            Caps {
+                rates: vec![32000, 48000],
+                any_rate: false,
+                channels: 2,
+            },
+            0,
+        );
+        let state = Arc::new(Mutex::new(PlayerState {
+            volume: 1.0,
+            ..Default::default()
+        }));
+        (Engine::new(state, Box::new(sink)), clock)
+    }
+
+    #[test]
+    fn a_16_bit_output_dithers_only_when_the_samples_changed() {
+        let (mut e, clock) = beats_engine();
+        let exact = tmp("dither48.wav");
+        write_wav(&exact, 48000, 0.2, 0, 9600);
+        let cd = tmp("dither44.wav");
+        write_wav(&cd, 44100, 0.2, 0, 8820);
+        let i16_out = crate::sink::OutputPrefs {
+            format: Some(crate::sink::SampleFormat::I16),
+            ..Default::default()
+        };
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            output: i16_out,
+            ..AudioOptions::default()
+        }));
+        assert_eq!(clock.prefs(), i16_out);
+        e.handle(Command::SetQueue {
+            items: vec![item(&exact), item(&cd)],
+            start: 0,
+        });
+        // 16-bit at 48 kHz reaches a 16-bit output untouched: bit-exact, no dither.
+        assert!(e.st().info.output.starts_with("I16 · shared"));
+        assert!(!clock.dithering());
+        // The CD-rate file is resampled, so its samples are dithered down to 16 bits.
+        e.handle(Command::Next);
+        assert!(clock.dithering());
+    }
+
+    #[test]
+    fn changing_the_output_format_or_losing_the_device_reopens_where_we_were() {
+        let (mut e, clock) = beats_engine();
+        let path = tmp("reopen.wav");
+        write_wav(&path, 48000, 1.0, 0, 48000);
+        e.handle(Command::SetQueue {
+            items: vec![item(&path)],
+            start: 0,
+        });
+        play(&mut e, &clock, 12000, 1000);
+        assert_eq!(e.st().info.output, "F32 · shared · power saving · 48000 Hz");
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            output: crate::sink::OutputPrefs {
+                format: Some(crate::sink::SampleFormat::I24),
+                exclusive: true,
+                low_latency: true,
+                ..Default::default()
+            },
+            ..AudioOptions::default()
+        }));
+        assert_eq!(clock.opened(), vec![48000, 48000]);
+        assert_eq!(
+            e.st().info.output,
+            "I24 · exclusive · low latency · 48000 Hz"
+        );
+        assert!((e.position() - 0.25).abs() < 0.01, "{}", e.position());
+        assert_eq!(e.st().status, Status::Playing);
+        // Unplugged mid-song: the stream reports it lost and the engine opens a new one.
+        clock.lose_device();
+        e.tick();
+        assert_eq!(clock.opened().len(), 3);
+        assert!((e.position() - 0.25).abs() < 0.01, "{}", e.position());
+    }
+
     #[test]
     fn hi_res_reaches_the_beats_at_48k_and_respects_the_limit() {
         // 96 kHz → 48 kHz (integer ratio), the whole file comes out at exactly its length.
@@ -1356,6 +1484,7 @@ mod tests {
         e.handle(Command::SetAudioOptions(AudioOptions {
             quality: Quality::High,
             max_rate: 96000,
+            ..AudioOptions::default()
         }));
         let path = tmp("hires192.wav");
         write_wav(&path, 192000, 0.1, 0, 19200);

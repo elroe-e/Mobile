@@ -211,9 +211,7 @@ pub fn map_channels(input: &[f64], src: usize, dst: usize, out: &mut Vec<f64>) {
 /// Dither for reducing bit depth (e.g. to a 16-bit output): adds triangular (TPDF) noise of
 /// ±1 LSB so rounding error becomes benign noise instead of distortion. `shaped` uses high-pass
 /// TPDF (the difference of successive random values), which moves the noise up in frequency.
-/// Inserted by M2-02 when the output takes fewer bits than the source (an integer AAudio or USB
-/// format); unused while every output is float.
-#[cfg_attr(not(test), allow(dead_code))]
+/// Used by [`crate::sink::Encoder`] for integer outputs (M2-02).
 pub struct Dither {
     bits: u32,
     shaped: bool,
@@ -222,7 +220,6 @@ pub struct Dither {
     prev: Vec<f64>,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 impl Dither {
     pub fn new(bits: u32, channels: usize, shaped: bool) -> Dither {
         Dither {
@@ -243,21 +240,27 @@ impl Dither {
         v as f64 / (1u64 << 53) as f64 - 0.5
     }
 
+    /// One sample of channel `c`, dithered and quantised: the integer value (as f64).
+    pub fn quantize(&mut self, v: f64, c: usize) -> f64 {
+        let scale = (1u64 << (self.bits - 1)) as f64;
+        let c = c % self.channels;
+        let noise = if self.shaped {
+            let r = self.uniform();
+            let n = r - self.prev[c];
+            self.prev[c] = r;
+            n
+        } else {
+            self.uniform() + self.uniform()
+        };
+        (v * scale + noise).round().clamp(-scale, scale - 1.0)
+    }
+
     /// Adds the dither and quantises to the target depth (values stay in -1..1).
+    #[cfg(test)]
     pub fn process(&mut self, input: &[f64], out: &mut Vec<f64>) {
         let scale = (1u64 << (self.bits - 1)) as f64;
         for (i, &v) in input.iter().enumerate() {
-            let c = i % self.channels;
-            let noise = if self.shaped {
-                let r = self.uniform();
-                let n = r - self.prev[c];
-                self.prev[c] = r;
-                n
-            } else {
-                self.uniform() + self.uniform()
-            };
-            let q = (v * scale + noise).round().clamp(-scale, scale - 1.0);
-            out.push(q / scale);
+            out.push(self.quantize(v, i) / scale);
         }
     }
 }
