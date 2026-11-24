@@ -10,6 +10,7 @@
 pub mod descriptors;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub mod devfs;
+pub mod stream;
 
 pub use descriptors::{parse, AltSetting, Direction, Feature, Parsed, Rates, Sync, Terminal};
 

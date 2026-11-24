@@ -3,6 +3,22 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-24 (session 5, later): Direct USB groundwork (M2-05, started)
+
+- CI on the M2-06 code is green, including both APKs and the API 34 emulator smoke run. That run
+  only starts the app, so it shows the APK with the AAudio code loads and starts; no stream was
+  opened. (The first M2-06 run failed on a hard-coded env-var name; fixed.)
+- **M2-05** (not ticked) `loss_usb::stream`: picks the playback setting for a rate and bit depth
+  (stereo PCM, exact depth, else deeper), SET_CUR rate requests (UAC1 endpoint 3 bytes, UAC2 clock
+  4 bytes), volume/mute requests, `PacketSizer` (exact 44.1 kHz-family spreading: 9×44 + 45;
+  high-speed microframes; follows async feedback as Q16.16) and `parse_feedback` (10.14 / 16.16
+  with Linux-style format guessing). The parser now records feedback endpoints and the UAC2
+  terminal's clock.
+- Left for M2-05: claim/release the streaming interface (usbdevfs DISCONNECT/CLAIM/SETINTERFACE),
+  isochronous OUT URBs + feedback reads on a real-time thread, a `Sink` in loss-audio that uses it
+  (I16/I24/I32 packing via `sink::Encoder`), hardware volume with a safety prompt, unplug recovery.
+  Needs the Beats report (M2-06) to confirm UAC version, endpoints and sync type first.
+
 ## 2026-11-24 (session 5, later): USB DAC details (M2-06, waiting for the report)
 
 - **M2-06** new crate `loss-usb`: UAC 1/2/3 descriptor parser, DAC report (summary + hex that

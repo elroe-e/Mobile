@@ -82,6 +82,8 @@ pub struct AltSetting {
     pub bits: u8,
     pub rates: Rates,
     pub endpoint: Option<Endpoint>,
+    /// The asynchronous feedback endpoint (IN) for an OUT setting, if any.
+    pub feedback: Option<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -89,6 +91,8 @@ pub struct Terminal {
     pub id: u8,
     pub kind: u16,
     pub input: bool,
+    /// UAC2: the clock entity the terminal runs on.
+    pub clock: Option<u8>,
 }
 
 impl Terminal {
@@ -296,6 +300,7 @@ pub fn parse(raw: &[u8]) -> Result<Parsed, String> {
                         bits: 0,
                         rates: Rates::Discrete(vec![]),
                         endpoint: None,
+                        feedback: None,
                     });
                 }
                 if d[5] == AUDIO && d[6] == AUDIO_CONTROL {
@@ -310,7 +315,14 @@ pub fn parse(raw: &[u8]) -> Result<Parsed, String> {
                     // endpoint follows it with usage bits set.
                     let iso = d[3] & 3 == 1;
                     let feedback = (d[3] >> 4) & 3 == 1;
-                    if s.interface == n && s.alt == a && iso && !feedback && s.endpoint.is_none() {
+                    let ours = s.interface == n && s.alt == a && iso;
+                    // An IN endpoint after an OUT data endpoint feeds back the DAC's clock
+                    // (UAC2 marks it with usage bits; UAC1 leaves them zero).
+                    let out_data = s.endpoint.as_ref().is_some_and(|e| e.address & 0x80 == 0);
+                    if ours && out_data && d[2] & 0x80 != 0 && s.feedback.is_none() {
+                        s.feedback = Some(d[2]);
+                    }
+                    if ours && !feedback && s.endpoint.is_none() {
                         s.direction = if d[2] & 0x80 != 0 {
                             Direction::In
                         } else {
@@ -332,15 +344,18 @@ pub fn parse(raw: &[u8]) -> Result<Parsed, String> {
                         uac2 = v >= 0x0200;
                         p.audio_version.get_or_insert(v);
                     }
+                    // UAC2 terminals name their clock (input: byte 7, output: byte 8).
                     2 if len >= 6 => p.terminals.push(Terminal {
                         id: d[3],
                         kind: u16_at(d, 4),
                         input: true,
+                        clock: uac2.then(|| d.get(7).copied()).flatten(),
                     }),
                     3 if len >= 6 => p.terminals.push(Terminal {
                         id: d[3],
                         kind: u16_at(d, 4),
                         input: false,
+                        clock: uac2.then(|| d.get(8).copied()).flatten(),
                     }),
                     6 if len >= 6 => {
                         let (mute, volume) = if uac2 {
@@ -570,8 +585,10 @@ mod tests {
         assert_eq!((out[0].channels, out[0].subslot, out[0].bits), (2, 4, 32));
         assert_eq!(out[0].rates, Rates::FromClock);
         let ep = out[0].endpoint.as_ref().unwrap();
-        // The data endpoint, not the feedback one.
+        // The data endpoint, not the feedback one, which is noted separately.
         assert_eq!((ep.address, ep.sync), (0x01, Sync::Async));
+        assert_eq!(out[0].feedback, Some(0x81));
+        assert_eq!(p.terminals[0].clock, Some(41));
     }
 
     #[test]
