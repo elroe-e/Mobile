@@ -22,13 +22,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: System packages
-        # A slow Ubuntu mirror once held this step for 40 minutes: each attempt gets 8 minutes
-        # and apt gives up on stalled downloads, then the whole step tries again.
+        # Twice the Ubuntu step stalled for 40 minutes. Only the Ubuntu archive is used (the
+        # runner's extra sources, e.g. Microsoft and PPAs, aren't needed); each attempt gets
+        # 8 minutes; from the second attempt on, the main Ubuntu mirror replaces Azure's.
         timeout-minutes: 30
         run: |
+          sudo mkdir -p /etc/apt/sources.list.d.off
+          sudo find /etc/apt/sources.list.d -maxdepth 1 -type f ! -name 'ubuntu.sources' \
+            -exec mv -t /etc/apt/sources.list.d.off {} +
           apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
           for attempt in 1 2 3; do
-            if sudo timeout 480 apt-get $apt_opts update -qq &&
+            if [ "$attempt" -gt 1 ]; then
+              sudo sed -i 's#http://azure.archive.ubuntu.com#http://archive.ubuntu.com#g' \
+                /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2> /dev/null || true
+            fi
+            if sudo timeout 480 apt-get $apt_opts update &&
                sudo timeout 480 apt-get $apt_opts install -y -qq libasound2-dev pkg-config \
                  libwebkit2gtk-4.1-dev libxdo-dev ffmpeg xvfb xdotool imagemagick pulseaudio; then
               exit 0
