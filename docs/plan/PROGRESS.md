@@ -3,6 +3,20 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-24 (session 5): high-quality resampling (M2-07)
+
+- **M2-07** `rubato` 5 resampler with four presets, exact lengths (delay trimmed, tail flushed at end
+  of file), Best flat ±0.01 dB to 20 kHz and < −120 dB aliasing (tests), TPDF/high-pass dither
+  (ready for M2-02's integer outputs). Settings → Audio: conversion quality and highest sample rate
+  (`AudioOptions` → engine). Engine tests: 96 → 48 kHz for the Beats with exact length; a 192 kHz
+  DAC capped at 96 kHz.
+- On the phone nothing changes yet: cpal's default Android output says it takes every rate, so the
+  file's rate is kept and Android's mixer converts. **M2-03** (device monitor: the Beats' real
+  rates from AudioDeviceInfo) makes Loss do the 44.1 → 48 kHz conversion itself. Do M2-03 next.
+- The worker restarted mid-task; the engine edits had not been written and were redone. The disk
+  filled up (12 GB in `target/debug/deps`); cleaned build caches (see CLAUDE.md gotcha).
+- Next: M2-03, M2-02, M2-06, M2-05, M2-04.
+
 ## 2026-11-22 (session 4): settings, translations, test harness (M0-08, M0-09, M0-12)
 
 - **M0-08** `loss_core::registry`: every user setting with section, kind, keywords, platforms;

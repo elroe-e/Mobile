@@ -331,3 +331,18 @@ count-plays = { $count ->
 gallery-virtual-grid = A grid you can resize
 gallery-pinch = Pinch with two fingers (or Ctrl + mouse wheel) to make the tiles bigger or smaller.
 
+## Audio settings (M2-07)
+section-audio = Audio
+setting-resample_quality = Sample-rate conversion
+setting-resample_quality-desc = When your headphones or DAC can't play a song's own rate (the Beats Studio Pro take only 48 kHz), Loss converts it. Best is the cleanest; Fast uses the least battery.
+choice-resample_quality-best = Best
+choice-resample_quality-high = High
+choice-resample_quality-medium = Medium
+choice-resample_quality-fast = Fast
+setting-max_sample_rate = Highest sample rate
+setting-max_sample_rate-desc = Higher-rate files are converted down to this rate. Lower rates use less battery.
+choice-max_sample_rate-none = No limit
+choice-max_sample_rate-48000 = 48 kHz
+choice-max_sample_rate-96000 = 96 kHz
+choice-max_sample_rate-192000 = 192 kHz
+

@@ -3,7 +3,8 @@
 use crate::dsp::Graph;
 use crate::sink::{choose_rate, Caps, CpalSink, Sink, Stream};
 use crate::{
-    Command, PlayError, PlayErrorKind, PlayerState, QueueItem, Repeat, Status, StreamInfo,
+    AudioOptions, Command, PlayError, PlayErrorKind, PlayerState, Quality, QueueItem, Repeat,
+    Status, StreamInfo,
 };
 use std::fs::File;
 use std::path::Path;
@@ -29,6 +30,7 @@ struct Session {
     src_rate: u32,
     src_channels: usize,
     graph: Graph,
+    quality: Quality,
     producer: rtrb::Producer<f32>,
     capacity: usize,
     pending: Vec<f32>,
@@ -147,11 +149,11 @@ impl Session {
             let packet = match self.format.next_packet() {
                 Ok(p) => p,
                 Err(SymError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                    self.eof = true;
+                    self.finish();
                     continue;
                 }
                 Err(SymError::ResetRequired) => {
-                    self.eof = true;
+                    self.finish();
                     continue;
                 }
                 Err(e) => return Err(e.to_string()),
@@ -172,7 +174,13 @@ impl Session {
             if spec.rate != self.src_rate || spec.channels.count() != self.src_channels {
                 self.src_rate = spec.rate;
                 self.src_channels = spec.channels.count();
-                self.graph = Graph::new(self.src_rate, self.src_channels, out_rate, out_channels);
+                self.graph = Graph::new(
+                    self.src_rate,
+                    self.src_channels,
+                    out_rate,
+                    out_channels,
+                    self.quality,
+                );
             }
             let mut buf = SampleBuffer::<f64>::new(decoded.capacity() as u64, spec);
             buf.copy_interleaved_ref(decoded);
@@ -181,6 +189,14 @@ impl Session {
             // The ring and the output are f32: exact for every 16- and 24-bit sample.
             self.pending.extend(processed.iter().map(|&v| v as f32));
         }
+    }
+
+    /// End of the file: the graph hands over what it held back (resampler tail).
+    fn finish(&mut self) {
+        let mut tail = Vec::new();
+        self.graph.flush(&mut tail);
+        self.pending.extend(tail.iter().map(|&v| v as f32));
+        self.eof = true;
     }
 
     /// Everything is decoded and in the ring (it may still be playing).
@@ -200,11 +216,18 @@ impl Session {
         opened: OpenedFile,
         out_rate: u32,
         out_channels: usize,
+        quality: Quality,
     ) -> Session {
         let (format, decoder, track_id, mut info, duration) = opened;
         info.output_rate = out_rate;
         let src_channels = info.channels.max(1) as usize;
-        let graph = Graph::new(info.sample_rate, src_channels, out_rate, out_channels);
+        let graph = Graph::new(
+            info.sample_rate,
+            src_channels,
+            out_rate,
+            out_channels,
+            quality,
+        );
         info.processing = graph.describe();
         Session {
             item,
@@ -214,6 +237,7 @@ impl Session {
             src_rate: info.sample_rate,
             src_channels,
             graph,
+            quality,
             producer: prev.producer,
             capacity: prev.capacity,
             pending: Vec::new(),
@@ -229,6 +253,7 @@ impl Session {
 
 struct Engine {
     state: Arc<Mutex<PlayerState>>,
+    options: AudioOptions,
     sink: Box<dyn Sink>,
     /// What the output accepts (asked once per output opening).
     caps: Option<Caps>,
@@ -342,7 +367,7 @@ impl Engine {
                 channels: 2,
             }));
         }
-        let want = choose_rate(info.sample_rate, self.caps.as_ref().unwrap());
+        let want = self.output_rate_for(info.sample_rate);
         let need_new = match &self.output {
             Some(o) => o.rate != want,
             None => true,
@@ -362,7 +387,14 @@ impl Engine {
         *out.slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(consumer);
         out.played.store(0, Ordering::Relaxed);
         let src_channels = info.channels.max(1) as usize;
-        let graph = Graph::new(info.sample_rate, src_channels, out.rate, out.channels);
+        let quality = self.options.quality;
+        let graph = Graph::new(
+            info.sample_rate,
+            src_channels,
+            out.rate,
+            out.channels,
+            quality,
+        );
         info.processing = graph.describe();
         let mut session = Session {
             item,
@@ -372,6 +404,7 @@ impl Engine {
             src_rate: info.sample_rate,
             src_channels,
             graph,
+            quality,
             producer,
             capacity,
             pending: Vec::new(),
@@ -403,6 +436,38 @@ impl Engine {
         let mut s = self.st();
         s.status = Status::Stopped;
         s.position = 0.0;
+    }
+
+    /// The output rate for a source rate: what the output takes (`choose_rate`), within the
+    /// owner's maximum rate.
+    fn output_rate_for(&self, src: u32) -> u32 {
+        let caps = self.caps.clone().unwrap_or(Caps {
+            rates: vec![],
+            any_rate: true,
+            channels: 2,
+        });
+        let max = self.options.max_rate;
+        if max == 0 || src <= max {
+            return choose_rate(src, &caps);
+        }
+        // Above the limit: choose among the allowed rates as if the output took only those.
+        let pool: Vec<u32> = if caps.any_rate || caps.rates.is_empty() {
+            crate::sink::COMMON_RATES.to_vec()
+        } else {
+            caps.rates.clone()
+        };
+        let allowed: Vec<u32> = pool.into_iter().filter(|&r| r <= max).collect();
+        if allowed.is_empty() {
+            return choose_rate(src, &caps);
+        }
+        choose_rate(
+            src,
+            &Caps {
+                rates: allowed,
+                any_rate: false,
+                channels: caps.channels,
+            },
+        )
     }
 
     /// Samples the listener has heard on the current output (played minus output latency).
@@ -592,6 +657,7 @@ impl Engine {
                 self.st().volume = v;
             }
             Command::SetShuffle(on) => self.set_shuffle(on),
+            Command::SetAudioOptions(o) => self.options = o,
             Command::SetRepeat(r) => self.st().repeat = r,
             Command::Stop => {
                 self.stop();
@@ -729,15 +795,15 @@ impl Engine {
             self.no_preload = true;
             return;
         };
-        let caps = self.caps.clone();
-        let same_output = |src: u32| caps.as_ref().map(|c| choose_rate(src, c)) == Some(out_rate);
+        let same_output = |src: u32| self.output_rate_for(src) == out_rate;
         match open_file(&item.path) {
             // The output stays as it is (same rate after conversion), so join seamlessly, even
             // between a 44.1 kHz and a 48 kHz file when both play at 48 kHz.
             Ok(opened) if same_output(opened.3.sample_rate) => {
                 let prev = self.session.take().unwrap();
                 let at = prev.pushed;
-                let next = Session::handover(prev, item, opened, out_rate, out_channels);
+                let quality = self.options.quality;
+                let next = Session::handover(prev, item, opened, out_rate, out_channels, quality);
                 self.switch = Some(Switch {
                     at,
                     item_id: next.item.id.clone(),
@@ -783,6 +849,7 @@ impl Engine {
             | 1;
         Engine {
             state,
+            options: AudioOptions::default(),
             sink,
             caps: None,
             output: None,
@@ -846,7 +913,14 @@ mod tests {
             track_id,
             src_rate: info.sample_rate,
             src_channels: info.channels as usize,
-            graph: Graph::new(info.sample_rate, info.channels as usize, out_rate, out_ch),
+            graph: Graph::new(
+                info.sample_rate,
+                info.channels as usize,
+                out_rate,
+                out_ch,
+                Quality::Best,
+            ),
+            quality: Quality::Best,
             producer,
             capacity,
             pending: vec![],
@@ -868,7 +942,14 @@ mod tests {
             if s.decoded_all() && next < paths.len() {
                 joins.push(s.pushed);
                 let opened = open_file(&paths[next]).unwrap();
-                s = Session::handover(s, item(&paths[next]), opened, out_rate, out_ch);
+                s = Session::handover(
+                    s,
+                    item(&paths[next]),
+                    opened,
+                    out_rate,
+                    out_ch,
+                    Quality::Best,
+                );
                 next += 1;
             } else if s.drained() {
                 break;
@@ -1182,10 +1263,47 @@ mod tests {
         assert_eq!(clock.opened(), vec![48000]);
         let info = e.st().info.clone();
         assert_eq!(info.output_rate, 48000);
-        assert_eq!(info.processing, vec!["resample 44100→48000 Hz".to_string()]);
+        assert_eq!(
+            info.processing,
+            vec!["resample 44100→48000 Hz (best)".to_string()]
+        );
         assert!(!info.untouched());
         play(&mut e, &clock, 24000, 1000);
         assert!((e.position() - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hi_res_reaches_the_beats_at_48k_and_respects_the_limit() {
+        // 96 kHz → 48 kHz (integer ratio), the whole file comes out at exactly its length.
+        let path = tmp("hires.wav");
+        write_wav(&path, 96000, 0.5, 0, 48000);
+        let (mut e, clock) = engine_with(&[32000, 48000], 0);
+        e.handle(Command::SetQueue {
+            items: vec![item(&path)],
+            start: 0,
+        });
+        assert_eq!(clock.opened(), vec![48000]);
+        play(&mut e, &clock, 30000, 1000);
+        // 0.5 s at 48 kHz, to the frame, then the output stops.
+        let heard: usize = clock.heard().len() / 2;
+        assert_eq!(heard, 24000);
+        // The owner's limit: a DAC that takes 192 kHz, capped at 96 kHz.
+        let (mut e, clock) = engine_with(&[44100, 48000, 96000, 192000], 0);
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            quality: Quality::High,
+            max_rate: 96000,
+        }));
+        let path = tmp("hires192.wav");
+        write_wav(&path, 192000, 0.1, 0, 19200);
+        e.handle(Command::SetQueue {
+            items: vec![item(&path)],
+            start: 0,
+        });
+        assert_eq!(clock.opened(), vec![96000]);
+        assert_eq!(
+            e.st().info.processing,
+            vec!["resample 192000→96000 Hz (high)".to_string()]
+        );
     }
 
     #[test]

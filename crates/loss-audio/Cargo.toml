@@ -7,5 +7,7 @@ edition.workspace = true
 log.workspace = true
 symphonia = { version = "0.5", features = ["all"] }
 cpal = "0.16"
+rubato = "5.1"
+audioadapter-buffers = "5.2"
 rtrb = "0.3"
 opus-decoder = "0.1"

@@ -10,6 +10,15 @@ mod opus;
 pub mod sink;
 pub use opus::codecs;
 mod resample;
+pub use resample::Quality;
+
+/// How the engine converts and limits the output (M2-07).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct AudioOptions {
+    pub quality: Quality,
+    /// Highest output rate in Hz; 0 for no limit.
+    pub max_rate: u32,
+}
 
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Sender};
@@ -125,6 +134,8 @@ impl PlayerState {
 
 #[derive(Debug)]
 pub enum Command {
+    /// Conversion quality and rate limit; used from the next track (or seek) on.
+    SetAudioOptions(AudioOptions),
     /// Replace the queue and start playing at `start`.
     SetQueue {
         items: Vec<QueueItem>,

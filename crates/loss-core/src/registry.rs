@@ -43,6 +43,7 @@ pub enum Kind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Section {
     Library,
+    Audio,
     Downloads,
     Sources,
     Look,
@@ -51,8 +52,9 @@ pub enum Section {
 
 impl Section {
     /// In screen order.
-    pub const ALL: [Section; 5] = [
+    pub const ALL: [Section; 6] = [
         Section::Library,
+        Section::Audio,
         Section::Downloads,
         Section::Sources,
         Section::Look,
@@ -62,6 +64,7 @@ impl Section {
     fn id(self) -> &'static str {
         match self {
             Section::Library => "section-library",
+            Section::Audio => "section-audio",
             Section::Downloads => "section-downloads",
             Section::Sources => "section-sources",
             Section::Look => "section-look",
@@ -160,6 +163,18 @@ pub static SETTINGS: &[SettingDef] = &[
         Section::Library,
         Kind::Custom,
         &["library", "scan", "storage", "directory", "path"],
+    ),
+    def(
+        "resample_quality",
+        Section::Audio,
+        Kind::Choice(&["best", "high", "medium", "fast"]),
+        &["resample", "sample rate", "conversion", "quality", "44.1", "48", "hi-res", "src"],
+    ),
+    def(
+        "max_sample_rate",
+        Section::Audio,
+        Kind::Choice(&["none", "48000", "96000", "192000"]),
+        &["sample rate", "limit", "hi-res", "khz", "battery"],
     ),
     def(
         "download_dir",
@@ -296,6 +311,11 @@ pub fn get(s: &Settings, key: &str) -> Option<Value> {
         "accent" => Text(s.accent.clone()),
         "detailed_logging" => Bool(s.detailed_logging),
         "language" => Text(s.language.clone()),
+        "resample_quality" => Text(s.resample_quality.clone()),
+        "max_sample_rate" => Text(match s.max_sample_rate {
+            0 => "none".into(),
+            r => r.to_string(),
+        }),
         _ => return None,
     })
 }
@@ -335,6 +355,8 @@ pub fn set(s: &mut Settings, key: &str, value: Value) -> Result<(), SetError> {
         ("accent", Value::Text(v)) => s.accent = v,
         ("detailed_logging", Value::Bool(v)) => s.detailed_logging = v,
         ("language", Value::Text(v)) => s.language = v,
+        ("resample_quality", Value::Text(v)) => s.resample_quality = v,
+        ("max_sample_rate", Value::Text(v)) => s.max_sample_rate = v.parse().unwrap_or(0),
         _ => return Err(SetError::Invalid),
     }
     Ok(())

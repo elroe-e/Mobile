@@ -146,6 +146,13 @@ need only the same output rate, not the same source rate. Sample formats (I16/I2
 negotiated in M2-02 with the native AAudio sink. On Android, cpal's default output reports every
 rate, so the file's rate is kept until M2-03/M2-07 use the device's real rates.
 
+Status (M2-07): `resample.rs` uses `rubato` 5 (pure Rust): Fast = cubic polynomial, Medium/High/Best =
+synchronous FFT with longer filters. Measured (tests): Best is flat within ±0.01 dB to 20 kHz and
+keeps aliasing/imaging below −120 dB; lengths are exact (start-up delay trimmed, tail flushed at
+end of file through `Graph::flush`). `Dither` (TPDF, high-pass TPDF) is ready for integer outputs
+(M2-02). Settings → Audio: conversion quality and highest sample rate (`AudioOptions`, sent with
+`Command::SetAudioOptions`). Gapless joins measured after the change: FLAC/MP3/Opus still clean.
+
 ### 4.3 DSP blocks (loss-dsp)
 
 Biquad EQ (graphic 5/10/15/31 ISO bands plus parametric peaking/shelf/HP/LP), bass and treble shelves,

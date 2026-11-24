@@ -514,3 +514,6 @@ input.seek.dragging::-webkit-slider-thumb { margin-top: -8px; }
 }
 .row, .album-card { -webkit-user-select: none; user-select: none; }
 .demo-tile { aspect-ratio: 1; border-radius: var(--r-m); display: grid; place-items: center; font-weight: 700; color: var(--on-primary-container); }
+/* Search boxes show focus on the whole pill, not the bare input inside it. */
+.search-box input:focus-visible { outline: none; }
+.search-box:focus-within { box-shadow: 0 0 0 2px var(--primary); }

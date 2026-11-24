@@ -50,6 +50,10 @@ pub struct Settings {
     pub reliability_notice_dismissed: bool,
     /// Smallest album-cover width in the library grid (px); pinch changes it.
     pub album_grid_size: u32,
+    /// Sample-rate conversion quality: "best", "high", "medium" or "fast".
+    pub resample_quality: String,
+    /// Highest output sample rate in Hz; 0 for no limit.
+    pub max_sample_rate: u32,
 }
 
 impl Default for Settings {
@@ -76,6 +80,8 @@ impl Default for Settings {
             language: "system".into(),
             reliability_notice_dismissed: false,
             album_grid_size: 150,
+            resample_quality: "best".into(),
+            max_sample_rate: 0,
         }
     }
 }

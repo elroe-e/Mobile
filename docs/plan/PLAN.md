@@ -27,7 +27,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 |---|---|---|---|---|
 | M0 | Foundations: CI, glue module, bridge, store, settings, i18n, UI kit, diagnostics | 13 | 11 | 4–5 sessions |
 | M1 | The 7 problems fixed + phone verification | 8 | 7 | 2–3 sessions |
-| M2 | Audio engine v2, hi-fi output, USB, DSP | 24 | 1 | 8–10 sessions |
+| M2 | Audio engine v2, hi-fi output, USB, DSP | 24 | 2 | 8–10 sessions |
 | M3 | Player and queue | 16 | 0 | 3–4 sessions |
 | M4 | Library v2 | 25 | 0 | 6–8 sessions |
 | M5 | Lyrics v2 | 12 | 0 | 4–5 sessions |
@@ -36,7 +36,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 | M8 | Home, discovery, stats, social, audio tools | 13 | 0 | 5–6 sessions |
 | M9 | Devices and platform integrations | 8 | 0 | 5–6 sessions |
 | M10 | Look, app shell, desktop, iOS, languages, release | 14 | 0 | 6–7 sessions |
-| **Total** | | **155** | **19** | **≈ 50–60 sessions** |
+| **Total** | | **155** | **20** | **≈ 50–60 sessions** |
 
 A "session" here means one working session of the length used so far. Numbers are estimates.
 
@@ -48,7 +48,7 @@ A "session" here means one working session of the length used so far. Numbers ar
    (built; waiting for the owner's 30-minute screen-off check in DEVICE-TESTS round M1), **M0-04** release workflow (needs decision D3, the signing key).
 3. Then **M2** (audio engine, hi-fi output for the Beats). The device report is in
    (`docs/plan/reports/2026-11-21-xiaomi-beats.txt`): the Beats take 32/48 kHz only and this phone has
-   no bit-perfect mixer. So the order is ~~M2-01~~ (done), **M2-07** (our own 44.1 → 48 kHz resampling, which
+   no bit-perfect mixer. So the order is ~~M2-01~~, ~~M2-07~~ (done; on the phone it takes effect with M2-03), (our own 44.1 → 48 kHz resampling, which
    affects most of the library), **M2-02**, **M2-03**, **M2-06** (raw descriptors), then **M2-05**
    (Direct USB, the only bit-perfect route here) and **M2-04**.
 
@@ -196,7 +196,7 @@ updated; this file's checkbox is ticked. Commit messages start with the task ID 
 - [ ] **M2-06 DAC probe screen.** Lists each USB DAC's interfaces, formats, bit depths, rates and volume
   range; "Copy report" shares raw descriptors. Used to tune the Beats profile and to add descriptor
   fixtures to tests. *Done when:* the owner shares the Beats report and it's committed as a test fixture.
-- [ ] **M2-07 Resampling and dither.** rubato sinc presets (Fast, Medium, High, Best). Integer-ratio
+- [x] **M2-07 Resampling and dither.** rubato sinc presets (Fast, Medium, High, Best). Integer-ratio
   paths (96→48, 192→48, 88.2→44.1, 176.4→44.1) and rational 44.1-family → 48 kHz (160/147) for DACs
   without 44.1, like the Beats. Target rate picked from the sink's reported rates. Maximum-sample-rate
   setting. TPDF and high-pass TPDF dither when bit depth drops. *Done when:* tests show passband

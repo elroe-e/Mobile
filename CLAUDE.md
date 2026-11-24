@@ -83,6 +83,9 @@ plays instantly. Set `HOME`/`LOSS_DATA_DIR` to a scratch dir, drive it with `xdo
 
 ## Gotchas (learned the hard way)
 
+* The container's disk allowance is small: `target/debug/deps` grows past 10 GB. When a build fails
+  to link or the disk is full, delete `target/debug/incremental`, `target/release` and the per-ABI
+  Android dirs under `target/` (all regenerable).
 * Run `cargo fmt --all` right before every commit: CI fails on any formatting diff.
 * CI (`.github/workflows/ci.yml`) runs fmt, clippy `-D warnings` and tests on every push. Code
   that only Android uses must still compile without warnings on desktop

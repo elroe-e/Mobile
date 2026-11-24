@@ -77,6 +77,8 @@ Security
 - [ ] Library → Albums: pinch with two fingers to make covers bigger or smaller; it's remembered.
 - [ ] In a long list, a thin handle on the right edge can be dragged to jump through it.
 - [ ] Icons look like before but rounder; the active tab's icon is filled.
+- [ ] Settings → Audio shows Sample-rate conversion (Best… Fast) and Highest sample rate. (They
+      affect the Beats once Loss knows their rates, M2-03.)
 - [ ] Settings → remove a music folder: "Folder removed" with **Undo**; Undo brings it back.
 - [ ] A song with a long title: in the player and the mini player the title scrolls sideways.
 - [ ] Changing a setting's option (Theme, Downloads at once): a light tick vibration.

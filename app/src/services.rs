@@ -40,6 +40,14 @@ pub fn get() -> &'static Services {
     SERVICES.get_or_init(Services::init)
 }
 
+/// The engine's conversion options from settings.
+fn audio_options(s: &Settings) -> loss_audio::AudioOptions {
+    loss_audio::AudioOptions {
+        quality: loss_audio::Quality::parse(&s.resample_quality),
+        max_rate: s.max_sample_rate,
+    }
+}
+
 fn save_settings(store: Option<&Store>, s: &Settings) {
     if let Some(Err(e)) = store.map(|st| st.put_settings(s)) {
         log::error!("saving settings: {e}");
@@ -139,6 +147,7 @@ impl Services {
         } else {
             settings.volume
         });
+        player.send(loss_audio::Command::SetAudioOptions(audio_options(&settings)));
         let downloads =
             DownloadManager::new(manager_config(&settings), paths.data.join("downloads.json"));
         let covers = Covers::new(paths.data.join("covers"));
@@ -209,6 +218,8 @@ impl Services {
         };
         save_settings(self.store.as_ref(), &s);
         let _ = std::fs::create_dir_all(&s.download_dir);
+        self.player
+            .send(loss_audio::Command::SetAudioOptions(audio_options(&s)));
         self.downloads.set_config(manager_config(&s));
     }
 
