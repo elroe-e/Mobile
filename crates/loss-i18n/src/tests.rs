@@ -13,13 +13,13 @@ fn english_file_has_no_errors() {
     let mut args = FluentArgs::new();
     for k in [
         "count", "songs", "plays", "albums", "running", "done", "failed", "shown", "total",
-        "owned", "attempt", "number",
+        "owned", "attempt", "number", "channels", "bits",
     ] {
         args.set(k, FluentValue::from(2));
     }
     for k in [
         "title", "query", "folder", "speed", "length", "error", "version", "name", "rates",
-        "format",
+        "format", "min", "max",
     ] {
         args.set(k, FluentValue::from("x"));
     }

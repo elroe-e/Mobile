@@ -42,6 +42,13 @@ mod imp {
             Event::OutputsAdded(t) | Event::OutputsRemoved(t) => {
                 log::info!("audio outputs changed: {event:?} {t:?}");
                 svc.refresh_route();
+                svc.usb_version
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            Event::UsbPermission { name, granted } => {
+                log::info!("USB permission for {name}: {granted}");
+                svc.usb_version
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
             Event::Focus(_) | Event::Noisy => log::info!("{event:?} -> {reaction:?}"),
         }

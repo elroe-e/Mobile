@@ -49,7 +49,7 @@ A "session" here means one working session of the length used so far. Numbers ar
 3. Then **M2** (audio engine, hi-fi output for the Beats). The device report is in
    (`docs/plan/reports/2026-11-21-xiaomi-beats.txt`): the Beats take 32/48 kHz only and this phone has
    no bit-perfect mixer. So the order is ~~M2-01~~, ~~M2-07~~ (our own 44.1 → 48 kHz resampling, which affects most of
-   the library), ~~M2-03~~ (the Beats' real rates, so M2-07 takes effect), ~~M2-02~~ (native AAudio output), **M2-06** (raw descriptors), then **M2-05**
+   the library), ~~M2-03~~ (the Beats' real rates, so M2-07 takes effect), ~~M2-02~~ (native AAudio output), **M2-06** (built; waiting for the owner's Beats report), then **M2-05**
    (Direct USB, the only bit-perfect route here) and **M2-04**.
 
 ## Open decisions (defaults apply until the owner decides)

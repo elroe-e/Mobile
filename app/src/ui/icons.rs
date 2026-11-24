@@ -53,6 +53,8 @@ pub fn symbol(name: &str) -> &'static str {
         "history" => "history",
         "palette" => "palette",
         "info" => "info",
+        "usb" => "usb",
+        "copy" => "content_copy",
         _ => "info",
     }
 }

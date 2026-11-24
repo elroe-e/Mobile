@@ -102,8 +102,10 @@ Android bit-perfect mixer for them.
       Stream line for each (Settings → Help → logs also has "AAudio asked …; opened …").
 - [ ] (M2-02) Unplug the Beats during playback and plug them back: playback pauses, and pressing
       play works again from the same place.
-- [ ] Settings → Audio output → **DAC probe** with the Beats plugged in → Copy report → send it to
-      Claude. This adds the raw USB descriptors (does a hidden 44.1 kHz setting exist?).
+- [ ] (M2-06) Settings → Audio → **USB DAC details** with the Beats plugged in → Read details →
+      allow access when Android asks → Copy report → send it to Claude. This adds the raw USB
+      descriptors (does a hidden 44.1 kHz setting exist?) and the volume range. Note whether
+      playback was disturbed while it read.
 - [ ] Output mode **Bit-perfect** is shown as unavailable, with the reason (recheck after HyperOS
       updates).
 - [ ] Output mode **Direct USB**: Android asks for USB permission once; 16/48 and 24/48 files show

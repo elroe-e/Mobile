@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/loss-core", "crates/loss-audio", "crates/loss-download", "crates/loss-platform", "crates/loss-store", "crates/loss-i18n", "app"]
+members = ["crates/loss-core", "crates/loss-usb", "crates/loss-audio", "crates/loss-download", "crates/loss-platform", "crates/loss-store", "crates/loss-i18n", "app"]
 resolver = "2"
 
 [workspace.package]
@@ -9,6 +9,7 @@ edition = "2021"
 [workspace.dependencies]
 loss-core = { path = "crates/loss-core" }
 loss-audio = { path = "crates/loss-audio" }
+loss-usb = { path = "crates/loss-usb" }
 loss-download = { path = "crates/loss-download" }
 loss-platform = { path = "crates/loss-platform" }
 loss-store = { path = "crates/loss-store" }

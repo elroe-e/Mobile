@@ -170,6 +170,19 @@ callback (disconnect) sets `Stream::lost`; the engine reopens where the song was
 `StreamInfo::output` / the log line "AAudio asked …; opened …" report the real stream
 (format, sharing, performance mode, buffer, and the hardware format on Android 14+).
 
+Status (M2-06): `crates/loss-usb` (pure Rust, no dependencies but `libc` on Linux/Android)
+parses device/configuration/interface/endpoint descriptors and the UAC 1/2/3 class records
+(AudioControl header, terminals, feature units with mute/volume, UAC2 clock sources;
+AudioStreaming AS_GENERAL and FORMAT_TYPE I with UAC1 rate lists or ranges; the data endpoint's
+sync type, skipping feedback endpoints). `devfs` reads descriptors from a usbdevfs fd and sends
+class GET requests through `USBDEVFS_CONTROL` (UAC1 GET_MIN/MAX/RES volume, UAC2 RANGE for volume
+and clock rates); refusals (EBUSY while the kernel driver holds the interface) are reported, not
+fatal. The glue only lists devices (`usbDevices`), asks permission and hands over
+`UsbDeviceConnection.getFileDescriptor()` (`usbOpen`/`usbClose`); the answer arrives as the
+`usb_permission` event. Settings → Audio → USB DAC details shows the formats, rates and volume
+range and copies/shares the report (parsed summary + hex). On desktop Linux the same page reads
+`/sys/bus/usb/devices/*/descriptors`. Fixtures: `crates/loss-usb/fixtures/*.hex`.
+
 Status (M2-07): `resample.rs` uses `rubato` 5 (pure Rust): Fast = cubic polynomial, Medium/High/Best =
 synchronous FFT with longer filters. Measured (tests): Best is flat within ±0.01 dB to 20 kHz and
 keeps aliasing/imaging below −120 dB; lengths are exact (start-up delay trimmed, tail flushed at

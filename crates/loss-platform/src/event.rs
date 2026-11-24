@@ -65,6 +65,11 @@ pub enum Event {
     OutputsRemoved(Vec<i32>),
     /// Audio outputs appeared (same codes).
     OutputsAdded(Vec<i32>),
+    /// Android answered a USB permission request (M2-06): device path and the answer.
+    UsbPermission {
+        name: String,
+        granted: bool,
+    },
     /// The phone's media volume changed (hardware buttons, other apps, or Loss itself).
     Volume {
         level: i32,
@@ -88,6 +93,12 @@ struct TypesJson {
 struct VolumeJson {
     level: i32,
     max: i32,
+}
+
+#[derive(Deserialize)]
+struct UsbJson {
+    name: String,
+    granted: bool,
 }
 
 impl Event {
@@ -114,6 +125,13 @@ impl Event {
             }
             "outputs_added" => {
                 Event::OutputsAdded(serde_json::from_str::<TypesJson>(json).ok()?.types)
+            }
+            "usb_permission" => {
+                let v: UsbJson = serde_json::from_str(json).ok()?;
+                Event::UsbPermission {
+                    name: v.name,
+                    granted: v.granted,
+                }
             }
             "volume" => {
                 let v: VolumeJson = serde_json::from_str(json).ok()?;
@@ -182,6 +200,16 @@ mod tests {
         assert_eq!(
             Event::parse("outputs_removed", r#"{"types":[22,2]}"#),
             Some(Event::OutputsRemoved(vec![22, 2]))
+        );
+        assert_eq!(
+            Event::parse(
+                "usb_permission",
+                r#"{"name":"/dev/bus/usb/001/002","granted":true}"#
+            ),
+            Some(Event::UsbPermission {
+                name: "/dev/bus/usb/001/002".into(),
+                granted: true
+            })
         );
         assert_eq!(
             Event::parse("volume", r#"{"level":200,"max":150}"#),

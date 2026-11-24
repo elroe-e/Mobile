@@ -17,7 +17,7 @@ no bit-perfect mixer on this phone, see `docs/plan/reports/`).
 
 ## End of every session
 
-1. `cargo test -p loss-core -p loss-audio -p loss-download -p loss-platform -p loss-store -p loss-i18n` (plus new crates) and an Android build pass.
+1. `cargo test -p loss-core -p loss-audio -p loss-download -p loss-platform -p loss-store -p loss-i18n -p loss-usb` (plus new crates) and an Android build pass.
 2. Tick finished tasks in PLAN.md; update the Status table counts; update **Next up**.
 3. `python3 scripts/check-plan.py --sync` updates PARITY.md states from the ticked tasks.
 4. Add a PROGRESS.md entry (what changed, what's left, gotchas).
@@ -50,6 +50,7 @@ crates/loss-download   download manager + legal sources + post-processing
 crates/loss-store      database (redb `loss.redb`): library, settings; versioned migrations
 crates/loss-i18n       translations (Fluent): t!() macro, en/loss.ftl, pseudo-locales en-XA / ar-XB
 crates/loss-platform   Android events, focus/unplug policy, JNI bridge (RegisterNatives, cached classes)
+crates/loss-usb        USB Audio Class descriptors, DAC report, usbdevfs control requests (Direct USB later)
 app/src/ui/            Dioxus screens (home, library, now_playing, discover, downloads, settings), theme.rs
 app/src/{services,media,platform}.rs   app services, Android media bridge, JNI helpers
 app/src/{diag,nav,notify}.rs           logging/crash reports, Back plumbing, downloads notification
@@ -63,7 +64,7 @@ scripts/               setup-env, build-android, check-plan, fetch-mornye
 ## Build and test
 
 ```sh
-cargo test -p loss-core -p loss-audio -p loss-download -p loss-platform -p loss-store -p loss-i18n
+cargo test -p loss-core -p loss-audio -p loss-download -p loss-platform -p loss-store -p loss-i18n -p loss-usb
 cargo test -p loss --no-default-features --features desktop          # app unit tests (theme…)
 cargo build -p loss --no-default-features --features desktop         # desktop window for UI checks
 scripts/build-android.sh                                             # APK → dist/Loss-arm64.apk
@@ -128,6 +129,8 @@ plays instantly. Set `HOME`/`LOSS_DATA_DIR` to a scratch dir, drive it with `xdo
 * Data lives in `loss.redb` (loss-store). Values are JSON, so new fields need `#[serde(default)]`; a
   new table or a changed meaning needs a migration step in `loss-store` (bump `SCHEMA_VERSION`).
 * `scripts/emulator-smoke.sh <apk>` checks a build on an emulator or a phone over adb (M0-03).
+* Pages for UI checks: `LOSS_DEBUG_PAGE=gallery` or `=dac` (debug builds). `LOSS_DAC_FIXTURE=<hex>`
+  adds a pretend USB DAC from a report or `crates/loss-usb/fixtures/*.hex` on desktop.
 * WebKitGTK on CI runners needs `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1`, `WEBKIT_DISABLE_DMABUF_RENDERER=1`
   and `LIBGL_ALWAYS_SOFTWARE=1` (ui-smoke.sh sets them), or the window stays black; the script fails
   on blank screenshots and on an app that never logs its start line.

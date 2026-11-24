@@ -1,5 +1,6 @@
 //! The Loss user interface (Dioxus).
 
+mod dac_probe;
 mod discover;
 mod downloads;
 mod gallery;
@@ -225,12 +226,18 @@ pub fn App() -> Element {
     let lib_nav = library::use_provide_nav();
     let discover_nav = discover::use_provide_nav();
     let settings_nav = settings::use_provide_nav();
-    // Debug builds: LOSS_DEBUG_PAGE=gallery opens the component gallery (UI tests).
+    // Debug builds: LOSS_DEBUG_PAGE=gallery opens the component gallery, =dac the USB DAC page
+    // (UI tests).
     use_hook(move || {
-        if cfg!(debug_assertions) && std::env::var("LOSS_DEBUG_PAGE").as_deref() == Ok("gallery") {
+        let start = match std::env::var("LOSS_DEBUG_PAGE").as_deref() {
+            Ok("gallery") => Some(settings::SettingsPage::Gallery),
+            Ok("dac") => Some(settings::SettingsPage::DacProbe),
+            _ => None,
+        };
+        if let Some(p) = start.filter(|_| cfg!(debug_assertions)) {
             let (mut tab, mut page) = (tab, settings_nav.0);
             tab.set(Tab::Settings);
-            page.set(settings::SettingsPage::Gallery);
+            page.set(p);
         }
     });
 

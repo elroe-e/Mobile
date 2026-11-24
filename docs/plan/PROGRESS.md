@@ -3,6 +3,20 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-24 (session 5, later): USB DAC details (M2-06, waiting for the report)
+
+- **M2-06** new crate `loss-usb`: UAC 1/2/3 descriptor parser, DAC report (summary + hex that
+  `unhex` reads back as a fixture), usbdevfs control requests for volume ranges and UAC2 clock
+  rates. Kotlin glue lists USB devices, asks permission, hands Rust the fd. Settings → Audio →
+  USB DAC details: formats, rates, volume range, Copy/Share report. Desktop: sysfs; debug
+  `LOSS_DEBUG_PAGE=dac` + `LOSS_DAC_FIXTURE=crates/loss-usb/fixtures/uac1-headset.hex` shows it
+  with a made-up headset (screenshot checked).
+- Not ticked: done when the owner's Beats report is committed as a fixture
+  (`crates/loss-usb/fixtures/beats-studio-pro.hex`, with a test of what it says).
+- New icons: usb, copy (icon font regenerated). CI now lints and tests `loss-usb`.
+- Next: M2-05 (Direct USB: claim the streaming interface, isochronous OUT) builds on `loss-usb`;
+  then M2-04.
+
 ## 2026-11-24 (session 5, later): native AAudio output (M2-02)
 
 - **M2-02** `loss-audio/src/aaudio.rs` replaces cpal on Android: chosen format (F32/I16/I24/I32),

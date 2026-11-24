@@ -298,6 +298,86 @@ object LossBridge {
         return JSONObject().put("devices", list).put("active", active).toString()
     }
 
+    // ---- USB DACs (M2-06; M2-05 builds on it). Rust parses everything; Kotlin only lists
+    // devices, asks Android for permission and hands over the open file descriptor.
+
+    private const val USB_PERMISSION = "app.loss.USB_PERMISSION"
+    private val usbOpen = HashMap<String, android.hardware.usb.UsbDeviceConnection>()
+    private var usbReceiverRegistered = false
+
+    private val usbReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val dev: android.hardware.usb.UsbDevice? = if (Build.VERSION.SDK_INT >= 33) {
+                intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, android.hardware.usb.UsbDevice::class.java)
+            } else {
+                @Suppress("DEPRECATION") intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+            }
+            val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+            emit("usb_permission", JSONObject().put("name", dev?.deviceName ?: "").put("granted", granted).toString())
+        }
+    }
+
+    /** Rust: USB devices as JSON (name, vendor, product, names, interface classes, permission). */
+    @JvmStatic
+    fun usbDevices(ctx: Context): String {
+        val um = ctx.getSystemService(Context.USB_SERVICE) as UsbManager
+        val list = JSONArray()
+        for (d in um.deviceList.values) {
+            val classes = JSONArray()
+            for (i in 0 until d.interfaceCount) classes.put(d.getInterface(i).interfaceClass)
+            list.put(
+                JSONObject()
+                    .put("name", d.deviceName)
+                    .put("vendor", d.vendorId)
+                    .put("product", d.productId)
+                    .put("manufacturer", d.manufacturerName ?: "")
+                    .put("product_name", d.productName ?: "")
+                    .put("classes", classes)
+                    .put("permitted", um.hasPermission(d))
+            )
+        }
+        return list.toString()
+    }
+
+    /**
+     * Rust: open the device and return its file descriptor; -1 and a permission prompt when
+     * Android hasn't allowed it yet (the answer arrives as a "usb_permission" event); -2 when
+     * the device is gone or can't be opened.
+     */
+    @JvmStatic
+    fun usbOpen(ctx: Context, name: String): Int {
+        val app = ctx.applicationContext
+        val um = app.getSystemService(Context.USB_SERVICE) as UsbManager
+        val dev = um.deviceList[name] ?: return -2
+        if (!um.hasPermission(dev)) {
+            if (!usbReceiverRegistered) {
+                val filter = IntentFilter(USB_PERMISSION)
+                if (Build.VERSION.SDK_INT >= 33) {
+                    app.registerReceiver(usbReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                } else {
+                    app.registerReceiver(usbReceiver, filter)
+                }
+                usbReceiverRegistered = true
+            }
+            val flags = if (Build.VERSION.SDK_INT >= 31) android.app.PendingIntent.FLAG_MUTABLE else 0
+            val intent = Intent(USB_PERMISSION).setPackage(app.packageName)
+            um.requestPermission(dev, android.app.PendingIntent.getBroadcast(app, 0, intent, flags))
+            return -1
+        }
+        synchronized(usbOpen) {
+            usbOpen[name]?.let { return it.fileDescriptor }
+            val conn = um.openDevice(dev) ?: return -2
+            usbOpen[name] = conn
+            return conn.fileDescriptor
+        }
+    }
+
+    /** Rust: done with the device. */
+    @JvmStatic
+    fun usbClose(name: String) {
+        synchronized(usbOpen) { usbOpen.remove(name)?.close() }
+    }
+
     @JvmStatic
     fun diagnostics(ctx: Context): String {
         val sb = StringBuilder()

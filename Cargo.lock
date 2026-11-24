@@ -2990,8 +2990,10 @@ dependencies = [
  "loss-i18n",
  "loss-platform",
  "loss-store",
+ "loss-usb",
  "manganis",
  "ndk-context",
+ "serde",
  "serde_json",
  "tokio",
 ]
@@ -3077,6 +3079,13 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "loss-usb"
+version = "0.1.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

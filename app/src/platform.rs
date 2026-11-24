@@ -403,6 +403,58 @@ pub fn outputs() -> Option<loss_platform::route::Outputs> {
     }
 }
 
+/// USB devices as the glue reports them (JSON, see `LossBridge.usbDevices`).
+#[cfg(target_os = "android")]
+pub fn usb_devices() -> Option<String> {
+    android::with_env(|env, act| {
+        let cls = android::bridge_class(env, act)?;
+        let s = env
+            .call_static_method(
+                &cls,
+                "usbDevices",
+                "(Landroid/content/Context;)Ljava/lang/String;",
+                &[jni::objects::JValue::Object(act)],
+            )?
+            .l()?;
+        Ok(env.get_string(&jni::objects::JString::from(s))?.into())
+    })
+}
+
+/// Opens a USB device: its file descriptor, -1 while Android asks for permission, -2 if it
+/// can't be opened.
+#[cfg(target_os = "android")]
+pub fn usb_open(name: &str) -> Option<i32> {
+    android::with_env(|env, act| {
+        let cls = android::bridge_class(env, act)?;
+        let n = env.new_string(name)?;
+        env.call_static_method(
+            &cls,
+            "usbOpen",
+            "(Landroid/content/Context;Ljava/lang/String;)I",
+            &[
+                jni::objects::JValue::Object(act),
+                jni::objects::JValue::Object(&n),
+            ],
+        )?
+        .i()
+    })
+}
+
+#[cfg(target_os = "android")]
+pub fn usb_close(name: &str) {
+    android::with_env(|env, act| {
+        let cls = android::bridge_class(env, act)?;
+        let n = env.new_string(name)?;
+        env.call_static_method(
+            &cls,
+            "usbClose",
+            "(Ljava/lang/String;)V",
+            &[jni::objects::JValue::Object(&n)],
+        )?;
+        Ok(())
+    });
+}
+
 /// The device's language as a BCP 47 tag (e.g. "en-GB"), if known.
 pub fn system_locale() -> Option<String> {
     #[cfg(target_os = "android")]

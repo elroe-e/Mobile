@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 loss-core.workspace = true
 loss-audio.workspace = true
+loss-usb.workspace = true
 loss-download.workspace = true
 loss-platform.workspace = true
 loss-store.workspace = true
@@ -17,6 +18,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tokio = { version = "1", features = ["time", "sync"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 serde_json.workspace = true
+serde.workspace = true
 # Bundles android/glue/ into the APK (see src/glue.rs).
 manganis = "=0.7.10"
 

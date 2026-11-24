@@ -31,6 +31,7 @@ pub enum SettingsPage {
     Main,
     Logs,
     Reliability,
+    DacProbe,
     /// Debug builds only.
     Gallery,
 }
@@ -49,6 +50,7 @@ pub fn SettingsTab() -> Element {
         SettingsPage::Main => rsx! { SettingsMain {} },
         SettingsPage::Logs => rsx! { super::logs::LogsPage {} },
         SettingsPage::Reliability => rsx! { super::reliability::ReliabilityPage {} },
+        SettingsPage::DacProbe => rsx! { super::dac_probe::DacProbePage {} },
         SettingsPage::Gallery => rsx! { super::gallery::GalleryPage {} },
     }
 }
@@ -313,6 +315,7 @@ fn SectionCard(
         div { class: "card",
             if section == Section::Audio {
                 OutputRow {}
+                DacProbeRow {}
             }
             if section == Section::Help {
                 LogsRow {}
@@ -411,6 +414,25 @@ fn OutputRow() -> Element {
                     div { class: "subtitle", {t!("output-stream", format = stream)} }
                 }
             }
+        }
+    }
+}
+
+#[component]
+fn DacProbeRow() -> Element {
+    rsx! {
+        button {
+            class: "setting nav-row",
+            onclick: move |_| {
+                let mut page = use_context::<SettingsNav>().0;
+                page.set(SettingsPage::DacProbe);
+            },
+            Icon { name: "usb", size: 22 }
+            div { class: "row-text",
+                div { class: "title", {t!("dac-title")} }
+                div { class: "subtitle", {t!("dac-open-desc")} }
+            }
+            Icon { name: "chevron_right" }
         }
     }
 }

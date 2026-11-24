@@ -1,0 +1,9 @@
+[package]
+name = "loss-usb"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
+libc = "0.2"

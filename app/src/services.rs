@@ -32,6 +32,8 @@ pub struct Services {
     pub system_volume: std::sync::atomic::AtomicU32,
     /// The output music plays through (Android), for display and the engine's rate choice.
     pub output: Mutex<Option<loss_platform::route::Device>>,
+    /// Bumped when USB devices or permissions change; the DAC probe page watches it.
+    pub usb_version: AtomicU64,
     pub scan_progress: AtomicU64,
     covers: Covers,
 }
@@ -174,6 +176,7 @@ impl Services {
             library_version: AtomicU64::new(1),
             scanning: AtomicBool::new(false),
             output: Mutex::new(None),
+            usb_version: AtomicU64::new(0),
             system_volume: std::sync::atomic::AtomicU32::new(
                 follows_system.unwrap_or(f32::NAN).to_bits(),
             ),
