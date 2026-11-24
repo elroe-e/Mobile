@@ -229,7 +229,8 @@ pub fn App() -> Element {
     // Debug builds: LOSS_DEBUG_PAGE=gallery opens the component gallery, =dac the USB DAC page
     // (UI tests).
     use_hook(move || {
-        let start = match std::env::var("LOSS_DEBUG_PAGE").as_deref() {
+        let page = std::env::var("LOSS_DEBUG_PAGE"); // i18n: ignore (env var)
+        let start = match page.as_deref() {
             Ok("gallery") => Some(settings::SettingsPage::Gallery),
             Ok("dac") => Some(settings::SettingsPage::DacProbe),
             _ => None,
