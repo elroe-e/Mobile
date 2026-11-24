@@ -168,7 +168,16 @@ pub static SETTINGS: &[SettingDef] = &[
         "resample_quality",
         Section::Audio,
         Kind::Choice(&["best", "high", "medium", "fast"]),
-        &["resample", "sample rate", "conversion", "quality", "44.1", "48", "hi-res", "src"],
+        &[
+            "resample",
+            "sample rate",
+            "conversion",
+            "quality",
+            "44.1",
+            "48",
+            "hi-res",
+            "src",
+        ],
     ),
     def(
         "max_sample_rate",

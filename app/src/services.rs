@@ -147,7 +147,9 @@ impl Services {
         } else {
             settings.volume
         });
-        player.send(loss_audio::Command::SetAudioOptions(audio_options(&settings)));
+        player.send(loss_audio::Command::SetAudioOptions(audio_options(
+            &settings,
+        )));
         let downloads =
             DownloadManager::new(manager_config(&settings), paths.data.join("downloads.json"));
         let covers = Covers::new(paths.data.join("covers"));
