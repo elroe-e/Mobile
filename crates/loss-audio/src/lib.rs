@@ -136,6 +136,9 @@ impl PlayerState {
 pub enum Command {
     /// Conversion quality and rate limit; used from the next track (or seek) on.
     SetAudioOptions(AudioOptions),
+    /// What the active output takes (from the platform's device list), or None to ask the
+    /// output itself. A different best rate reopens the output at the current position.
+    SetOutputCaps(Option<sink::Caps>),
     /// Replace the queue and start playing at `start`.
     SetQueue {
         items: Vec<QueueItem>,

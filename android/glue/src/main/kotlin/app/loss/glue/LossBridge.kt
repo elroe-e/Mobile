@@ -89,6 +89,13 @@ object LossBridge {
     }
     private var volumeRegistered = false
 
+    // Outputs coming and going (headphones, the USB DAC, Bluetooth), for the whole app's life:
+    // Rust pauses on unplug and picks the new output's sample rates (M1-02, M2-03).
+    private val deviceCallback = object : android.media.AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) = outputs("outputs_added", added)
+        override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) = outputs("outputs_removed", removed)
+    }
+
     /** Rust: natives are registered. Delivers queued events and starts reporting volume. */
     @JvmStatic
     fun nativeReady(ctx: Context) {
@@ -101,6 +108,8 @@ object LossBridge {
         }
         main.post {
             if (!volumeRegistered) {
+                (app.getSystemService(Context.AUDIO_SERVICE) as AudioManager)
+                    .registerAudioDeviceCallback(deviceCallback, main)
                 val filter = IntentFilter("android.media.VOLUME_CHANGED_ACTION")
                 if (Build.VERSION.SDK_INT >= 33) {
                     app.registerReceiver(volumeReceiver, filter, Context.RECEIVER_EXPORTED)
@@ -257,6 +266,38 @@ object LossBridge {
     }
 
     /** Rust: device and audio-output details for bug reports and DAC checks. */
+    /**
+     * Rust: every audio output as JSON, and the ids media plays through right now (Android 13+;
+     * empty before). Rust picks the active output and its rates (M2-03).
+     */
+    @JvmStatic
+    fun outputs(ctx: Context): String {
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val list = JSONArray()
+        for (d in am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+            list.put(
+                JSONObject()
+                    .put("id", d.id)
+                    .put("type", d.type)
+                    .put("name", d.productName?.toString() ?: "")
+                    .put("rates", JSONArray(d.sampleRates.toList()))
+                    .put("channels", JSONArray(d.channelCounts.toList()))
+                    .put("encodings", JSONArray(d.encodings.toList()))
+            )
+        }
+        val active = JSONArray()
+        if (Build.VERSION.SDK_INT >= 33) {
+            try {
+                val attrs = android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA).build()
+                for (d in am.getAudioDevicesForAttributes(attrs)) active.put(d.id)
+            } catch (e: Exception) {
+                android.util.Log.w("Loss", "media route unknown: $e")
+            }
+        }
+        return JSONObject().put("devices", list).put("active", active).toString()
+    }
+
     @JvmStatic
     fun diagnostics(ctx: Context): String {
         val sb = StringBuilder()

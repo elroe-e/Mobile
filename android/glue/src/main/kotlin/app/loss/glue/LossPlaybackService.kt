@@ -18,8 +18,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.drawable.Icon
 import android.media.AudioAttributes
-import android.media.AudioDeviceCallback
-import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaMetadata
@@ -87,13 +85,6 @@ class LossPlaybackService : Service() {
         }
     }
 
-    private val deviceCallback = object : AudioDeviceCallback() {
-        override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) =
-            LossBridge.outputs("outputs_added", added)
-
-        override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) =
-            LossBridge.outputs("outputs_removed", removed)
-    }
 
     private fun requestFocus(): Boolean {
         if (hasFocus) return true
@@ -175,7 +166,6 @@ class LossPlaybackService : Service() {
         } else {
             registerReceiver(noisyReceiver, noisy)
         }
-        audioManager.registerAudioDeviceCallback(deviceCallback, mainHandler)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -279,7 +269,6 @@ class LossPlaybackService : Service() {
     override fun onDestroy() {
         instance = null
         try { unregisterReceiver(noisyReceiver) } catch (e: IllegalArgumentException) { }
-        audioManager.unregisterAudioDeviceCallback(deviceCallback)
         abandonFocus()
         wakeLock?.release()
         session.isActive = false

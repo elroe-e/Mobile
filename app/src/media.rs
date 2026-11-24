@@ -40,7 +40,8 @@ mod imp {
                     .store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
             }
             Event::OutputsAdded(t) | Event::OutputsRemoved(t) => {
-                log::info!("audio outputs changed: {event:?} {t:?}")
+                log::info!("audio outputs changed: {event:?} {t:?}");
+                svc.refresh_route();
             }
             Event::Focus(_) | Event::Noisy => log::info!("{event:?} -> {reaction:?}"),
         }
@@ -69,6 +70,7 @@ mod imp {
             }),
             back: Box::new(crate::nav::request_back),
         });
+        svc.refresh_route();
     }
 
     fn push_downloads(n: &crate::notify::DownloadsNotice) {

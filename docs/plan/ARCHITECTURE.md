@@ -146,6 +146,15 @@ need only the same output rate, not the same source rate. Sample formats (I16/I2
 negotiated in M2-02 with the native AAudio sink. On Android, cpal's default output reports every
 rate, so the file's rate is kept until M2-03/M2-07 use the device's real rates.
 
+Status (M2-03): `loss_platform::route` parses the output list that `LossBridge.outputs()` builds
+from `AudioManager.getDevices(OUTPUTS)` (id, type, name, rates, channel counts, encodings) plus the
+devices media is routed to (`getAudioDevicesForAttributes`, API 33+). `Outputs::active()` takes the
+routed device, else the best plugged-in one (USB > wired > Bluetooth > HDMI > speaker). An
+app-level `AudioDeviceCallback` emits `outputs_added`/`outputs_removed`; `Services::refresh_route`
+sends `Command::SetOutputCaps` (the device's rates; none → any rate) and the engine reopens the
+output at the right rate where the song was if the current rate no longer fits. Settings → Audio
+shows the device and its rates. Bluetooth codec is not exposed by public APIs (left for M2-06/M9).
+
 Status (M2-07): `resample.rs` uses `rubato` 5 (pure Rust): Fast = cubic polynomial, Medium/High/Best =
 synchronous FFT with longer filters. Measured (tests): Best is flat within ±0.01 dB to 20 kHz and
 keeps aliasing/imaging below −120 dB; lengths are exact (start-up delay trimmed, tail flushed at

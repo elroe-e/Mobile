@@ -257,6 +257,8 @@ struct Engine {
     sink: Box<dyn Sink>,
     /// What the output accepts (asked once per output opening).
     caps: Option<Caps>,
+    /// What the platform says the active output takes; preferred over `caps`.
+    caps_override: Option<Caps>,
     output: Option<Stream>,
     session: Option<Session>,
     display: Option<Display>,
@@ -441,11 +443,15 @@ impl Engine {
     /// The output rate for a source rate: what the output takes (`choose_rate`), within the
     /// owner's maximum rate.
     fn output_rate_for(&self, src: u32) -> u32 {
-        let caps = self.caps.clone().unwrap_or(Caps {
-            rates: vec![],
-            any_rate: true,
-            channels: 2,
-        });
+        let caps = self
+            .caps_override
+            .clone()
+            .or(self.caps.clone())
+            .unwrap_or(Caps {
+                rates: vec![],
+                any_rate: true,
+                channels: 2,
+            });
         let max = self.options.max_rate;
         if max == 0 || src <= max {
             return choose_rate(src, &caps);
@@ -658,6 +664,24 @@ impl Engine {
             }
             Command::SetShuffle(on) => self.set_shuffle(on),
             Command::SetAudioOptions(o) => self.options = o,
+            Command::SetOutputCaps(c) => {
+                self.caps_override = c;
+                // Playing at a rate the new output doesn't suit: reopen where we are.
+                let wrong = match (&self.session, &self.output) {
+                    (Some(s), Some(o)) => self.output_rate_for(s.info.sample_rate) != o.rate,
+                    _ => false,
+                };
+                if wrong {
+                    let (idx, playing) = {
+                        let s = self.st();
+                        (s.index, s.status == Status::Playing)
+                    };
+                    if let Some(i) = idx {
+                        let at = self.position();
+                        self.load(i, at, playing);
+                    }
+                }
+            }
             Command::SetRepeat(r) => self.st().repeat = r,
             Command::Stop => {
                 self.stop();
@@ -852,6 +876,7 @@ impl Engine {
             options: AudioOptions::default(),
             sink,
             caps: None,
+            caps_override: None,
             output: None,
             session: None,
             display: None,
@@ -1270,6 +1295,45 @@ mod tests {
         assert!(!info.untouched());
         play(&mut e, &clock, 24000, 1000);
         assert!((e.position() - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn plugging_in_the_beats_reopens_at_48k_where_the_song_was() {
+        // The output itself says "anything" (Android's mixer); then the platform reports the
+        // Beats (32/48 kHz) as the active output.
+        let path = tmp("plug.wav");
+        write_wav(&path, 44100, 1.0, 0, 44100);
+        let (sink, clock) = FakeSink::new(
+            Caps {
+                rates: vec![],
+                any_rate: true,
+                channels: 2,
+            },
+            0,
+        );
+        let state = Arc::new(Mutex::new(PlayerState {
+            volume: 1.0,
+            ..Default::default()
+        }));
+        let mut e = Engine::new(state, Box::new(sink));
+        e.handle(Command::SetQueue {
+            items: vec![item(&path)],
+            start: 0,
+        });
+        assert_eq!(clock.opened(), vec![44100]);
+        play(&mut e, &clock, 22050, 1000);
+        e.handle(Command::SetOutputCaps(Some(Caps {
+            rates: vec![32000, 48000],
+            any_rate: false,
+            channels: 2,
+        })));
+        assert_eq!(clock.opened(), vec![44100, 48000]);
+        assert!((e.position() - 0.5).abs() < 0.01, "{}", e.position());
+        assert_eq!(e.st().status, Status::Playing);
+        assert_eq!(
+            e.st().info.processing,
+            vec!["resample 44100→48000 Hz (best)".to_string()]
+        );
     }
 
     #[test]

@@ -30,6 +30,8 @@ pub struct Services {
     pub scanning: AtomicBool,
     /// Phone media volume (0..1) as f32 bits; NaN where not available.
     pub system_volume: std::sync::atomic::AtomicU32,
+    /// The output music plays through (Android), for display and the engine's rate choice.
+    pub output: Mutex<Option<loss_platform::route::Device>>,
     pub scan_progress: AtomicU64,
     covers: Covers,
 }
@@ -164,6 +166,7 @@ impl Services {
             memory_secrets: Mutex::new(Default::default()),
             library_version: AtomicU64::new(1),
             scanning: AtomicBool::new(false),
+            output: Mutex::new(None),
             system_volume: std::sync::atomic::AtomicU32::new(
                 follows_system.unwrap_or(f32::NAN).to_bits(),
             ),
@@ -223,6 +226,33 @@ impl Services {
         self.player
             .send(loss_audio::Command::SetAudioOptions(audio_options(&s)));
         self.downloads.set_config(manager_config(&s));
+    }
+
+    /// Reads the outputs again and tells the engine what the active one takes, so Loss converts
+    /// sample rates itself (M2-03). Called at start and whenever outputs come or go.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    pub fn refresh_route(&self) {
+        let Some(outputs) = platform::outputs() else {
+            return;
+        };
+        let active = outputs.active().cloned();
+        let caps = active.as_ref().and_then(|d| {
+            (!d.rates.is_empty()).then(|| loss_audio::sink::Caps {
+                rates: d.rates.clone(),
+                any_rate: false,
+                channels: if d.channels.is_empty() || d.channels.contains(&2) {
+                    2
+                } else {
+                    d.channels[0] as usize
+                },
+            })
+        });
+        match &active {
+            Some(d) => log::info!("output: {} ({:?}), rates {:?}", d.name, d.kind(), d.rates),
+            None => log::info!("output: unknown"),
+        }
+        self.player.send(loss_audio::Command::SetOutputCaps(caps));
+        *lock(&self.output) = active;
     }
 
     /// Saves the whole library (after a scan): only changed songs are written.

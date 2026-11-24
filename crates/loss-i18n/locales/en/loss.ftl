@@ -346,3 +346,7 @@ choice-max_sample_rate-48000 = 48 kHz
 choice-max_sample_rate-96000 = 96 kHz
 choice-max_sample_rate-192000 = 192 kHz
 
+output-playing-through = Playing through { $name }
+output-rates = Takes { $rates }
+output-any-rate = any sample rate (Android converts)
+

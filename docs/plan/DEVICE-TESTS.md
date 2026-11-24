@@ -90,6 +90,11 @@ Security
 Known from the 2026-11-21 report: the Beats take 32/48 kHz only, and this phone doesn't offer the
 Android bit-perfect mixer for them.
 
+- [ ] (M2-03) Plug in the Beats: Settings → Audio shows "Playing through … Beats Studio Pro" and
+      "Takes 32, 48 kHz". Unplug: it changes to the speaker (or the Bluetooth device).
+- [ ] (M2-03) With the Beats plugged in, play a 16/44.1 FLAC: the now-playing format details list
+      the conversion to 48 kHz (Loss converts, not Android). Plug in during playback: the song
+      keeps its position.
 - [ ] Settings → Audio output → **DAC probe** with the Beats plugged in → Copy report → send it to
       Claude. This adds the raw USB descriptors (does a hidden 44.1 kHz setting exist?).
 - [ ] Output mode **Bit-perfect** is shown as unavailable, with the reason (recheck after HyperOS

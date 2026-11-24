@@ -3,6 +3,17 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-24 (session 5, later): route and device monitor (M2-03)
+
+- **M2-03** `loss_platform::route` (device kinds, rates, encodings, active output), Kotlin
+  `LossBridge.outputs()` and an app-level `AudioDeviceCallback` (moved out of the playback
+  service so it works before playback starts). `Services::refresh_route` → `Command::SetOutputCaps`;
+  the engine reopens at the device's rate where the song was (test: plugging in the Beats mid-song
+  reopens at 48 kHz). Settings → Audio shows "Playing through …" and the rates. With this, 44.1 kHz
+  files are converted to 48 kHz by Loss (M2-07, Best) instead of the Android mixer.
+- Bluetooth codec isn't in the public API; not shown.
+- Next: M2-02 (native AAudio sink with I16/I24/F32 and dither), M2-06, M2-05, M2-04.
+
 ## 2026-11-24 (session 5): high-quality resampling (M2-07)
 
 - **M2-07** `rubato` 5 resampler with four presets, exact lengths (delay trimmed, tail flushed at end

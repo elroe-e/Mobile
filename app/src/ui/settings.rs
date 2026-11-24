@@ -311,6 +311,9 @@ fn SectionCard(
     let has_server = defs.contains(&"subsonic");
     rsx! {
         div { class: "card",
+            if section == Section::Audio {
+                OutputRow {}
+            }
             if section == Section::Help {
                 LogsRow {}
                 ReliabilityRow {}
@@ -372,6 +375,37 @@ fn LogsRow() -> Element {
                 div { class: "subtitle", {t!("settings-logs-desc")} }
             }
             Icon { name: "chevron_right" }
+        }
+    }
+}
+
+/// What Loss plays through and the rates it takes (Android; M2-03).
+#[component]
+fn OutputRow() -> Element {
+    let Some(d) = services::get().output.lock().ok().and_then(|o| o.clone()) else {
+        return rsx! {};
+    };
+    let rates = if d.rates.is_empty() {
+        t!("output-any-rate")
+    } else {
+        d.rates
+            .iter()
+            .map(|r| {
+                format!("{:.1}", *r as f64 / 1000.0)
+                    .trim_end_matches(".0")
+                    .to_string()
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+            + " kHz" // i18n: ignore (unit)
+    };
+    rsx! {
+        div { class: "setting",
+            Icon { name: "volume_up", size: 22 }
+            div { class: "row-text",
+                div { class: "title", {t!("output-playing-through", name = d.name.clone())} }
+                div { class: "subtitle", {t!("output-rates", rates = rates)} }
+            }
         }
     }
 }

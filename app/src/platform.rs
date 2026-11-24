@@ -379,6 +379,30 @@ pub fn open_reliability(screen: &str) {
     });
 }
 
+/// Every audio output and the current media route (Android), or None (desktop).
+pub fn outputs() -> Option<loss_platform::route::Outputs> {
+    #[cfg(target_os = "android")]
+    {
+        let json: String = android::with_env(|env, act| {
+            let cls = android::bridge_class(env, act)?;
+            let s = env
+                .call_static_method(
+                    &cls,
+                    "outputs",
+                    "(Landroid/content/Context;)Ljava/lang/String;",
+                    &[jni::objects::JValue::Object(act)],
+                )?
+                .l()?;
+            Ok(env.get_string(&jni::objects::JString::from(s))?.into())
+        })?;
+        loss_platform::route::Outputs::parse(&json)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        None
+    }
+}
+
 /// The device's language as a BCP 47 tag (e.g. "en-GB"), if known.
 pub fn system_locale() -> Option<String> {
     #[cfg(target_os = "android")]
