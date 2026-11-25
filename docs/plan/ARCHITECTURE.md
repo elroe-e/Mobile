@@ -205,6 +205,8 @@ limits of Symphonia 0.5: no 32-bit FLAC, FLAC rates ≤ 655,350 Hz (both fail cl
 DSD: `dsd.rs` (DSF/DFF reader + FIR decimating decoder → 88.2/96 kHz PCM), registered through
 `opus::probe()` and `opus::codecs()`; library facts and tags in `loss-core/src/dsd.rs`.
 WavPack: `wavpack.rs` over `wavicle` (pure Rust, MIT/Apache), one block per packet.
+CUE: `loss_core::cue` + `Track::from_cue`; tracks carry `start`/`end` (seconds in the file), and
+the engine plays them as a `Trim` window with a seek to the start (also at gapless handover).
 
 Status (M2-07): `resample.rs` uses `rubato` 5 (pure Rust): Fast = cubic polynomial, Medium/High/Best =
 synchronous FFT with longer filters. Measured (tests): Best is flat within ±0.01 dB to 20 kHz and

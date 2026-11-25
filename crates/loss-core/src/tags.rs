@@ -84,6 +84,19 @@ fn meta_from(file: &lofty::file::TaggedFile) -> TrackMeta {
     meta
 }
 
+/// A CUE sheet stored in the file's tags (FLAC, WavPack and APE keep one as CUESHEET).
+pub fn embedded_cuesheet(path: &Path) -> Option<String> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    if !matches!(ext.as_str(), "flac" | "wv" | "ape") {
+        return None;
+    }
+    let file = lofty::read_from_path(path).ok()?;
+    let tag = file.primary_tag().or_else(|| file.first_tag())?;
+    tag.get_string(&ItemKey::Unknown("CUESHEET".into()))
+        .map(|s| s.to_string())
+        .filter(|s| s.contains("TRACK"))
+}
+
 /// Returns (bytes, mime type) of the embedded front cover, if any.
 pub fn read_cover(path: &Path) -> Option<(Vec<u8>, String)> {
     let file = open_tagged(path).ok()?;

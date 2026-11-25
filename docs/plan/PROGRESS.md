@@ -27,8 +27,17 @@ next session must know.
   for 16-bit, 32-bit int and float. `wavpack.rs`: a reader indexing block headers (seek by
   block) and a per-block decoder; mono/stereo lossless only (hybrid, DSD-in-WV, >2 ch fail with
   an error). Fixtures: 16/44.1, 24/96, float/48. Every fixture format now also passes a seek test.
-- Left in M2-08: CUE virtual tracks; APE (`ape-decoder` 0.3, MIT/Apache, looks right, but there
-  is no APE encoder here to make a fixture: needs a sample file).
+- **CUE sheets**: `loss-core/src/cue.rs` parser (FILE/TRACK/TITLE/PERFORMER/INDEX 01/REM
+  DATE, GENRE; BOM, CRLF, Windows paths). The scanner turns a file named by a `.cue` in its
+  folder, or with an embedded CUESHEET tag (FLAC/WV/APE), into one track per CUE track
+  (`Track::start/end`, id `path#n`, play stats kept on rescan). `QueueItem::start/end`; the
+  engine treats a range as a trim window on top of MP4 priming, seeks into the file at start
+  and at gapless handover, and shows the range's duration. Fixture tests: the album scans into
+  First/Second/Third and plays back as one continuous tone (no gap, no jump).
+  **Note for M4:** deleting or editing tags of a CUE track must act on the sheet, not the
+  shared file.
+- Left in M2-08: APE (`ape-decoder` 0.3, MIT/Apache, looks right, but there is no APE encoder
+  here and its sample files are in a repository outside this session: needs a sample .ape).
 
 ## 2026-11-25 (session 5, later): output modes (M2-04)
 

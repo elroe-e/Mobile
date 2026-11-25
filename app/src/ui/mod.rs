@@ -162,6 +162,8 @@ pub fn queue_items(ids: &[String]) -> Vec<QueueItem> {
         .map(|t| QueueItem {
             id: t.id.clone(),
             path: t.path.clone(),
+            start: t.start,
+            end: t.end,
         })
         .collect()
 }

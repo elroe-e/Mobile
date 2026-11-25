@@ -44,9 +44,91 @@ pub struct Track {
     pub sample_rate: Option<u32>,
     #[serde(default)]
     pub last_played: u64,
+    /// A track inside a bigger file (CUE sheet): where it starts, in seconds.
+    #[serde(default)]
+    pub start: f64,
+    /// And where it ends; None for the end of the file.
+    #[serde(default)]
+    pub end: Option<f64>,
+}
+
+/// CUE sheets found while scanning, per folder: (sheet file, parsed sheet).
+type FolderCues = HashMap<PathBuf, Vec<(PathBuf, crate::cue::Sheet)>>;
+
+/// The sheet that splits `path` into tracks: a `.cue` in the same folder that names the file,
+/// else one embedded in its tags.
+fn cue_for(
+    path: &Path,
+    cues: &mut FolderCues,
+) -> Option<(crate::cue::Sheet, Vec<crate::cue::CueTrack>)> {
+    let dir = path.parent()?.to_path_buf();
+    let sheets = cues.entry(dir.clone()).or_insert_with(|| {
+        std::fs::read_dir(&dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                p.extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| e.eq_ignore_ascii_case("cue"))
+            })
+            .filter_map(|p| {
+                // Old sheets are often Windows-1252; lossy UTF-8 keeps the structure.
+                let text = String::from_utf8_lossy(&std::fs::read(&p).ok()?).into_owned();
+                Some((p, crate::cue::parse(&text)))
+            })
+            .collect()
+    });
+    let name = path.file_name()?.to_str()?;
+    for (_, sheet) in sheets.iter() {
+        if let Some(t) = sheet.tracks_for(name) {
+            return Some((sheet.clone(), t.to_vec()));
+        }
+    }
+    let sheet = crate::cue::parse(&tags::embedded_cuesheet(path)?);
+    // An embedded sheet names the file it was made for; it applies to this one whatever the name.
+    let tracks = sheet.files.first()?.tracks.clone();
+    (!tracks.is_empty()).then_some((sheet, tracks))
 }
 
 impl Track {
+    /// The tracks a CUE sheet makes of one file.
+    pub fn from_cue(
+        path: &Path,
+        meta: &TrackMeta,
+        sheet: &crate::cue::Sheet,
+        tracks: &[crate::cue::CueTrack],
+        origin: TrackOrigin,
+    ) -> Vec<Track> {
+        tracks
+            .iter()
+            .map(|ct| {
+                let mut t = Track::from_meta(path, meta.clone(), origin);
+                t.id = stable_id(&format!("{}#{}", path.to_string_lossy(), ct.number));
+                t.title = ct.title.clone().unwrap_or_else(|| {
+                    loss_i18n::t!("cue-untitled-track", number = ct.number as i64)
+                });
+                if let Some(p) = ct.performer.clone().or_else(|| sheet.performer.clone()) {
+                    t.artist = p;
+                }
+                if let Some(a) = sheet.title.clone() {
+                    t.album = a;
+                }
+                if let Some(p) = sheet.performer.clone() {
+                    t.album_artist = p;
+                }
+                t.track_no = Some(ct.number);
+                t.year = sheet.date.or(meta.year);
+                t.genre = sheet.genre.clone().or_else(|| meta.genre.clone());
+                t.start = ct.start;
+                t.end = ct.end;
+                t.duration_secs = (ct.end.unwrap_or(meta.duration_secs) - ct.start).max(0.0);
+                t
+            })
+            .collect()
+    }
+
     pub fn from_file(path: &Path, origin: TrackOrigin) -> Result<Track, String> {
         let meta = tags::read_meta(path).unwrap_or_else(|e| {
             log::warn!("no tags for {}: {e}", path.display());
@@ -109,13 +191,15 @@ impl Track {
             bit_depth: meta.bit_depth,
             sample_rate: meta.sample_rate,
             last_played: 0,
+            start: 0.0,
+            end: None,
         }
     }
 
     pub fn is_lossless(&self) -> bool {
         matches!(
             self.format.as_str(),
-            "FLAC" | "WAV" | "AIFF" | "ALAC" | "APE" | "WV"
+            "FLAC" | "WAV" | "AIFF" | "ALAC" | "APE" | "WV" | "DSF" | "DFF"
         ) || (self.format == "AAC" && self.bit_depth.is_some())
     }
 
@@ -300,8 +384,15 @@ impl Library {
             .enumerate()
             .map(|(i, t)| (t.path.clone(), i))
             .collect();
+        let by_id: HashMap<String, usize> = self
+            .tracks
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (t.id.clone(), i))
+            .collect();
         let mut seen: HashSet<PathBuf> = HashSet::new();
         let mut new_tracks: Vec<Track> = Vec::new();
+        let mut cues = FolderCues::new();
 
         let mut roots: Vec<(PathBuf, TrackOrigin)> = folders
             .iter()
@@ -336,6 +427,24 @@ impl Library {
                     continue;
                 }
                 if !seen.insert(path.to_path_buf()) {
+                    continue;
+                }
+                // One file, several tracks (CUE sheet): always rebuilt, keeping play stats.
+                if let Some((sheet, cue_tracks)) = cue_for(path, &mut cues) {
+                    let meta = tags::read_meta(path).unwrap_or_default();
+                    for mut t in Track::from_cue(path, &meta, &sheet, &cue_tracks, origin) {
+                        match by_id.get(&t.id).map(|&i| &self.tracks[i]) {
+                            Some(old) => {
+                                t.added_at = old.added_at;
+                                t.play_count = old.play_count;
+                                t.last_played = old.last_played;
+                                report.updated += 1;
+                            }
+                            None => report.added += 1,
+                        }
+                        new_tracks.push(t);
+                    }
+                    progress(new_tracks.len());
                     continue;
                 }
                 let mtime = file_mtime(path);
@@ -482,6 +591,43 @@ mod tests {
             ..Default::default()
         };
         Track::from_meta(Path::new(path), meta, TrackOrigin::Local)
+    }
+
+    #[test]
+    #[ignore]
+    fn generated_cue_album_scans_into_three_tracks() {
+        let fixtures = std::env::var_os("LOSS_FIXTURES")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/fixtures"));
+        let dir = std::env::temp_dir().join(format!("loss-cue-scan-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for f in ["cue-album.flac", "cue-album.cue"] {
+            std::fs::copy(fixtures.join(f), dir.join(f)).expect("run scripts/make-fixtures.sh");
+        }
+        let mut lib = Library::default();
+        let report = lib.scan(std::slice::from_ref(&dir), None, |_| {});
+        assert_eq!(report.added, 3, "{report:?}");
+        let mut t = lib.tracks.clone();
+        t.sort_by_key(|t| t.track_no);
+        let titles: Vec<&str> = t.iter().map(|t| t.title.as_str()).collect();
+        assert_eq!(titles, ["First", "Second", "Third"]);
+        assert!(t
+            .iter()
+            .all(|t| t.album == "Loss Test Album" && t.artist == "Loss Test Artist"));
+        assert_eq!((t[1].start, t[1].end), (2.0, Some(4.0)));
+        assert_eq!(t[2].end, None);
+        assert!(
+            t.iter().all(|t| (t.duration_secs - 2.0).abs() < 0.05),
+            "{t:?}"
+        );
+        assert!(t.iter().all(|t| t.path == dir.join("cue-album.flac")));
+        // A rescan keeps them (and their play counts).
+        lib.tracks[0].play_count = 4;
+        let id = lib.tracks[0].id.clone();
+        let again = lib.scan(std::slice::from_ref(&dir), None, |_| {});
+        assert_eq!((again.added, again.removed, again.total), (0, 0, 3));
+        assert_eq!(lib.get(&id).map(|t| t.play_count), Some(4));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

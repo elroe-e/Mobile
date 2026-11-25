@@ -31,10 +31,14 @@ use std::path::PathBuf;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct QueueItem {
     pub id: String,
     pub path: PathBuf,
+    /// Where the track starts in the file, in seconds (CUE sheets; 0 for whole files).
+    pub start: f64,
+    /// Where it ends; None for the end of the file.
+    pub end: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

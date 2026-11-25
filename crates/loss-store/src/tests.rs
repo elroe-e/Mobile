@@ -49,6 +49,8 @@ fn track(i: usize) -> Track {
         bit_depth: Some(if i.is_multiple_of(5) { 24 } else { 16 }),
         sample_rate: Some(if i.is_multiple_of(5) { 96_000 } else { 44_100 }),
         last_played: 0,
+        start: 0.0,
+        end: None,
     }
 }
 

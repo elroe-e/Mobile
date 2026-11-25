@@ -1,6 +1,7 @@
 //! Loss core: music library model, folder scanning, tags, settings,
 //! synced lyrics and playlist import. No UI and no platform code.
 
+pub mod cue;
 pub mod dsd;
 pub mod library;
 pub mod lrc;

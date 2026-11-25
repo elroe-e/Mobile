@@ -50,7 +50,59 @@ struct Session {
 }
 
 /// The trim for a file and how its packet timestamps convert to frames.
+/// The part of the file this item plays: encoder priming and padding cut (MP4), narrowed to the
+/// item's own range (a CUE track), in frames of the decoded stream.
 fn gapless_trim(
+    item: &QueueItem,
+    format: &dyn FormatReader,
+    track_id: u32,
+    rate: u32,
+) -> (Trim, (u64, u64)) {
+    let (codec, conv) = codec_trim(&item.path, format, track_id, rate);
+    if item.start <= 0.0 && item.end.is_none() {
+        return (codec, conv);
+    }
+    let frames = |secs: f64| (secs * rate as f64).round() as u64;
+    let start = frames(item.start.max(0.0));
+    let length = match item.end {
+        Some(end) => Some(frames(end).saturating_sub(start)),
+        None => codec.length.map(|n| n.saturating_sub(start)),
+    };
+    (
+        Trim {
+            delay: codec.delay + start,
+            length,
+        },
+        conv,
+    )
+}
+
+/// Seeks (accurately; the trim cuts the exact sample). False if the reader refused.
+fn seek_to(format: &mut dyn FormatReader, track_id: u32, secs: f64) -> bool {
+    match format.seek(
+        SeekMode::Accurate,
+        SeekTo::Time {
+            time: Time::from(secs),
+            track_id: Some(track_id),
+        },
+    ) {
+        Ok(_) => true,
+        Err(e) => {
+            log::warn!("seek failed: {e}");
+            false
+        }
+    }
+}
+
+/// How long an item plays: its range, or the whole file.
+fn item_duration(item: &QueueItem, file: f64) -> f64 {
+    if item.start <= 0.0 && item.end.is_none() {
+        return file;
+    }
+    (item.end.unwrap_or(file) - item.start).max(0.0)
+}
+
+fn codec_trim(
     path: &Path,
     format: &dyn FormatReader,
     track_id: u32,
@@ -295,9 +347,14 @@ impl Session {
         out_channels: usize,
         quality: Quality,
     ) -> Session {
-        let (format, decoder, track_id, mut info, duration) = opened;
-        let (trim, ts_to_frames) =
-            gapless_trim(&item.path, format.as_ref(), track_id, info.sample_rate);
+        let (mut format, decoder, track_id, mut info, duration) = opened;
+        let (trim, ts_to_frames) = gapless_trim(&item, format.as_ref(), track_id, info.sample_rate);
+        let duration = item_duration(&item, duration);
+        // A CUE track further into its file: start reading near it, not from the top.
+        let skip = trim.delay as f64 / info.sample_rate.max(1) as f64;
+        if skip > 0.05 {
+            seek_to(format.as_mut(), track_id, skip);
+        }
         info.output_rate = out_rate;
         info.output = prev.info.output.clone();
         let src_channels = info.channels.max(1) as usize;
@@ -432,22 +489,13 @@ impl Engine {
                 },
                 detail,
             })?;
-        let (trim, ts_to_frames) =
-            gapless_trim(&item.path, format.as_ref(), track_id, info.sample_rate);
+        let (trim, ts_to_frames) = gapless_trim(&item, format.as_ref(), track_id, info.sample_rate);
+        let duration = item_duration(&item, duration);
         let mut start_offset = 0.0;
-        if at > 0.0 {
-            // Positions count from the music, after any encoder priming.
-            let priming = trim.delay as f64 / info.sample_rate.max(1) as f64;
-            match format.seek(
-                SeekMode::Accurate,
-                SeekTo::Time {
-                    time: Time::from(at + priming),
-                    track_id: Some(track_id),
-                },
-            ) {
-                Ok(_) => start_offset = at,
-                Err(e) => log::warn!("seek failed: {e}"),
-            }
+        // Positions count from the music: after encoder priming, and from a CUE track's start.
+        let skip = trim.delay as f64 / info.sample_rate.max(1) as f64;
+        if (at > 0.0 || skip > 0.05) && seek_to(format.as_mut(), track_id, at + skip) {
+            start_offset = at;
         }
         // The output rate: the file's own if the output takes it (see `choose_rate`).
         if self.caps.is_none() || self.output.is_none() {
@@ -1107,10 +1155,15 @@ mod tests {
         let item = |p: &PathBuf| QueueItem {
             id: p.display().to_string(),
             path: p.clone(),
+            ..Default::default()
         };
         let (format, decoder, track_id, info, duration) = open_file(&paths[0]).unwrap();
-        let (trim, ts_to_frames) =
-            gapless_trim(&paths[0], format.as_ref(), track_id, info.sample_rate);
+        let (trim, ts_to_frames) = gapless_trim(
+            &item(&paths[0]),
+            format.as_ref(),
+            track_id,
+            info.sample_rate,
+        );
         let mut s = Session {
             item: item(&paths[0]),
             format,
@@ -1356,6 +1409,60 @@ mod tests {
         assert!((secs - 0.25).abs() < 0.002, "{secs}");
     }
 
+    /// The CUE fixture: one 6 s tone, three 2 s tracks. Played in a row they must give back
+    /// the tone without a gap or a jump at the joins, each track jumping into its file.
+    #[test]
+    #[ignore]
+    fn generated_cue_tracks_play_back_to_back() {
+        let path = generated("cue-album.flac").expect("run scripts/make-fixtures.sh");
+        let (sink, clock) = FakeSink::new(
+            Caps {
+                rates: vec![],
+                any_rate: true,
+                channels: 2,
+            },
+            0,
+        );
+        let state = Arc::new(Mutex::new(PlayerState {
+            volume: 1.0,
+            ..Default::default()
+        }));
+        let mut e = Engine::new(state, Box::new(sink));
+        let range = |n: u32, start: f64, end: Option<f64>| QueueItem {
+            id: format!("cue#{n}"),
+            path: path.clone(),
+            start,
+            end,
+        };
+        e.handle(Command::SetQueue {
+            items: vec![
+                range(1, 0.0, Some(2.0)),
+                range(2, 2.0, Some(4.0)),
+                range(3, 4.0, None),
+            ],
+            start: 0,
+        });
+        assert!((e.st().duration - 2.0).abs() < 0.01);
+        play(&mut e, &clock, 44_100 * 7, 2048);
+        assert_eq!(e.st().status, Status::Stopped);
+        let left: Vec<f32> = clock.heard().iter().step_by(2).copied().collect();
+        let sound = left.iter().rposition(|v| v.abs() > 1e-4).unwrap() + 1;
+        assert!((sound as i64 - 6 * 44_100).abs() < 200, "{sound} frames");
+        let jump = left[..sound]
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0f32, f32::max);
+        // A 330 Hz sine at 1/8 scale moves at most ~0.006 per sample.
+        assert!(jump < 0.02, "discontinuity {jump}");
+
+        // Starting at the second track jumps straight into the file.
+        e.handle(Command::SetQueue {
+            items: vec![range(2, 2.0, Some(4.0))],
+            start: 0,
+        });
+        assert!(e.position().abs() < 0.01);
+    }
+
     #[test]
     fn opus_seeks() {
         let (mut format, _, track_id, _, _) = open_file(&fixture("tone.opus")).unwrap();
@@ -1423,6 +1530,7 @@ mod tests {
         QueueItem {
             id: path.file_name().unwrap().to_string_lossy().into_owned(),
             path: path.to_path_buf(),
+            ..Default::default()
         }
     }
 
