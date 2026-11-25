@@ -1,6 +1,7 @@
 //! The player thread: owns the decoder, the output stream and the queue.
 
 use crate::dsp::Graph;
+use crate::mp4gap::Trim;
 use crate::sink::{choose_rate, Caps, Sink, Stream};
 use crate::{
     AudioOptions, Command, PlayError, PlayErrorKind, PlayerState, Quality, QueueItem, Repeat,
@@ -42,6 +43,29 @@ struct Session {
     /// Samples pushed into this ring buffer since it was created, including by
     /// earlier tracks that handed it over (gapless).
     pushed: u64,
+    /// Encoder priming and padding to cut (MP4); in frames of the decoded stream.
+    trim: Trim,
+    /// Packet timestamps → frames: (numerator, denominator) of the track's time base × rate.
+    ts_to_frames: (u64, u64),
+}
+
+/// The trim for a file and how its packet timestamps convert to frames.
+fn gapless_trim(
+    path: &Path,
+    format: &dyn FormatReader,
+    track_id: u32,
+    rate: u32,
+) -> (Trim, (u64, u64)) {
+    let tb = format
+        .tracks()
+        .iter()
+        .find(|t| t.id == track_id)
+        .and_then(|t| t.codec_params.time_base);
+    let conv = match tb {
+        Some(tb) => (tb.numer as u64 * rate as u64, tb.denom as u64),
+        None => (1, 1),
+    };
+    (crate::mp4gap::read(path).unwrap_or(Trim::NONE), conv)
 }
 
 /// The track the listener hears (it lags behind the decoder by the buffer).
@@ -71,6 +95,22 @@ type OpenedFile = (
     StreamInfo,
     f64,
 );
+
+/// ALAC's bit depth from its codec config (ALACSpecificConfig: frame length u32, compatible
+/// version u8, bit depth u8), which may still carry its 12-byte `alac` atom header.
+fn alac_bits(params: &symphonia::core::codecs::CodecParameters) -> Option<u32> {
+    if params.codec != symphonia::core::codecs::CODEC_TYPE_ALAC {
+        return None;
+    }
+    let cfg = params.extra_data.as_deref()?;
+    let cfg = if cfg.len() >= 36 && &cfg[4..8] == b"alac" {
+        &cfg[12..]
+    } else {
+        cfg
+    };
+    let bits = *cfg.get(5)? as u32;
+    matches!(bits, 16 | 20 | 24 | 32).then_some(bits)
+}
 
 fn open_file(path: &Path) -> Result<OpenedFile, String> {
     let file = File::open(path).map_err(|e| format!("cannot open file: {e}"))?;
@@ -110,6 +150,11 @@ fn open_file(path: &Path) -> Result<OpenedFile, String> {
         (Some(n), None) => n as f64 / rate as f64,
         _ => 0.0,
     };
+    // MP4 with encoder priming and padding: the music's own length.
+    let duration = match crate::mp4gap::read(path).and_then(|t| t.length) {
+        Some(n) => n as f64 / rate.max(1) as f64,
+        None => duration,
+    };
     let codec = crate::opus::codecs()
         .get_codec(params.codec)
         .map(|d| d.short_name.to_string())
@@ -117,7 +162,7 @@ fn open_file(path: &Path) -> Result<OpenedFile, String> {
     let info = StreamInfo {
         codec,
         sample_rate: rate,
-        bits_per_sample: params.bits_per_sample,
+        bits_per_sample: params.bits_per_sample.or_else(|| alac_bits(&params)),
         channels: params.channels.map(|c| c.count() as u16).unwrap_or(2),
         output_rate: 0,
         processing: Vec::new(),
@@ -183,10 +228,32 @@ impl Session {
                     self.quality,
                 );
             }
+            let frames = decoded.frames() as u64;
             let mut buf = SampleBuffer::<f64>::new(decoded.capacity() as u64, spec);
             buf.copy_interleaved_ref(decoded);
-            let mut processed = Vec::with_capacity(buf.samples().len());
-            self.graph.process(buf.samples(), &mut processed);
+            let mut samples = buf.samples();
+            if self.trim != Trim::NONE {
+                // Cut encoder priming and padding by the packet's place in the stream.
+                let (num, den) = self.ts_to_frames;
+                let start = packet.ts() * num / den.max(1);
+                let keep = self.trim.keep(start, frames);
+                let ch = self.src_channels.max(1);
+                samples = &samples[keep.start as usize * ch..keep.end as usize * ch];
+                let past_end = self
+                    .trim
+                    .length
+                    .is_some_and(|n| start + frames >= self.trim.delay + n);
+                if past_end && keep.end < frames {
+                    // The music ends in this packet; what follows is padding.
+                    let mut processed = Vec::with_capacity(samples.len());
+                    self.graph.process(samples, &mut processed);
+                    self.pending.extend(processed.iter().map(|&v| v as f32));
+                    self.finish();
+                    continue;
+                }
+            }
+            let mut processed = Vec::with_capacity(samples.len());
+            self.graph.process(samples, &mut processed);
             // The ring and the output are f32: exact for every 16- and 24-bit sample.
             self.pending.extend(processed.iter().map(|&v| v as f32));
         }
@@ -220,6 +287,8 @@ impl Session {
         quality: Quality,
     ) -> Session {
         let (format, decoder, track_id, mut info, duration) = opened;
+        let (trim, ts_to_frames) =
+            gapless_trim(&item.path, format.as_ref(), track_id, info.sample_rate);
         info.output_rate = out_rate;
         info.output = prev.info.output.clone();
         let src_channels = info.channels.max(1) as usize;
@@ -249,6 +318,8 @@ impl Session {
             duration,
             info,
             pushed: prev.pushed,
+            trim,
+            ts_to_frames,
         }
     }
 }
@@ -352,12 +423,16 @@ impl Engine {
                 },
                 detail,
             })?;
+        let (trim, ts_to_frames) =
+            gapless_trim(&item.path, format.as_ref(), track_id, info.sample_rate);
         let mut start_offset = 0.0;
         if at > 0.0 {
+            // Positions count from the music, after any encoder priming.
+            let priming = trim.delay as f64 / info.sample_rate.max(1) as f64;
             match format.seek(
                 SeekMode::Accurate,
                 SeekTo::Time {
-                    time: Time::from(at),
+                    time: Time::from(at + priming),
                     track_id: Some(track_id),
                 },
             ) {
@@ -424,6 +499,8 @@ impl Engine {
             pending_pos: 0,
             eof: false,
             start_offset,
+            trim,
+            ts_to_frames,
             duration,
             info,
             pushed: 0,
@@ -1023,6 +1100,8 @@ mod tests {
             path: p.clone(),
         };
         let (format, decoder, track_id, info, duration) = open_file(&paths[0]).unwrap();
+        let (trim, ts_to_frames) =
+            gapless_trim(&paths[0], format.as_ref(), track_id, info.sample_rate);
         let mut s = Session {
             item: item(&paths[0]),
             format,
@@ -1047,6 +1126,8 @@ mod tests {
             duration,
             info,
             pushed: 0,
+            trim,
+            ts_to_frames,
         };
         let mut out = Vec::new();
         let mut joins = Vec::new();
@@ -1141,7 +1222,7 @@ mod tests {
             ("flac-24-96000.flac", 96000, Some(24)),
             ("flac-24-192000.flac", 192000, Some(24)),
             // Symphonia doesn't report ALAC's bit depth; M2-18 reads it from the ALAC header.
-            ("alac-16-44100.m4a", 44100, None),
+            ("alac-16-44100.m4a", 44100, Some(16)),
             ("wav-24-96000.wav", 96000, Some(24)),
             ("wav-f32-48000.wav", 48000, None),
             ("tagged-cover.flac", 44100, Some(16)),
@@ -1210,6 +1291,8 @@ mod tests {
             ("flac", "flac", 0.2),
             ("mp3", "mp3", 1.0),
             ("opus", "opus", 1.0),
+            // MP4: priming and padding cut from the edit list (mp4gap).
+            ("aac", "m4a", 1.0),
         ] {
             let (gaps, secs) = join_report(prefix, ext);
             eprintln!("{prefix}: joins {gaps:?} ms of silence, total {secs:.3} s");
@@ -1218,10 +1301,6 @@ mod tests {
                 assert!(g <= max_gap_ms, "{prefix}: {g} ms gap at a join");
             }
         }
-        // AAC in MP4: reported, not yet required. Symphonia 0.5 ignores the MP4 edit list and
-        // iTunSMPB, so encoder delay and padding stay in (≈45 ms per join). M2-08 fixes it.
-        let (gaps, secs) = join_report("aac", "m4a");
-        eprintln!("aac: joins {gaps:?} ms of silence, total {secs:.3} s");
     }
 
     #[test]

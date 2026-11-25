@@ -3,6 +3,16 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-25 (session 5, later): gapless MP4 and ALAC depth (M2-08, started)
+
+- **M2-08** (not ticked) `loss-audio/src/mp4gap.rs` reads encoder priming and length from
+  `iTunSMPB` or the first sound track's edit list (boxes only, seeking past media data). Sessions
+  cut each decoded packet by its timestamp (`Trim::keep`), seeks skip the priming, and the shown
+  duration is the music's own. ffmpeg AAC sets now join like FLAC (0.08 ms, total exactly 3.000 s);
+  `generated_gapless_sets` requires it. ALAC reports its bit depth (from the codec config).
+- Left in M2-08: CUE virtual tracks, APE, DSD (DSF/DFF), WavPack decision, 32-bit FLAC/768 kHz
+  check, multichannel downmix check.
+
 ## 2026-11-25 (session 5, later): output modes (M2-04)
 
 - CI: apt now uses only the Ubuntu archive, with timed retries and the main mirror as fallback

@@ -8,6 +8,7 @@
 mod aaudio;
 mod dsp;
 mod engine;
+mod mp4gap;
 mod opus;
 pub mod sink;
 pub use opus::codecs;
