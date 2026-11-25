@@ -11,6 +11,8 @@ rubato = "5.1"
 audioadapter-buffers = "5.2"
 rtrb = "0.3"
 opus-decoder = "0.1"
+# WavPack (pure Rust, MIT/Apache), M2-08.
+wavicle = "0.1"
 
 [target.'cfg(target_os = "android")'.dependencies]
 # AAudio bindings (the NDK's C API; no extra C code) for the native output, M2-02.

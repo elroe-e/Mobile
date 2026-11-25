@@ -18,7 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// File extensions Loss can decode and play.
 pub const AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "flac", "ogg", "oga", "opus", "m4a", "mp4", "aac", "wav", "aif", "aiff", "alac", "caf",
-    "mka", "webm", "dsf", "dff",
+    "mka", "webm", "dsf", "dff", "wv",
 ];
 
 pub fn is_audio_file(path: &std::path::Path) -> bool {

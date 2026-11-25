@@ -22,7 +22,13 @@ next session must know.
   lossless. Library: `loss-core/src/dsd.rs` reads rate/channels/length from the header and tags
   from the ID3v2 block (wrapped in an in-memory WAV for lofty); scanner takes .dsf/.dff.
   DoP output waits for Direct USB (M2-05).
-- Left in M2-08: CUE virtual tracks, APE, WavPack decision.
+- **WavPack**: decided on `wavicle` (pure Rust, MIT/Apache, a port of the BSD reference; the
+  GPL `symphonia-codec-wavpack` is avoided while D1 is open). Checked bit-exact against ffmpeg
+  for 16-bit, 32-bit int and float. `wavpack.rs`: a reader indexing block headers (seek by
+  block) and a per-block decoder; mono/stereo lossless only (hybrid, DSD-in-WV, >2 ch fail with
+  an error). Fixtures: 16/44.1, 24/96, float/48. Every fixture format now also passes a seek test.
+- Left in M2-08: CUE virtual tracks; APE (`ape-decoder` 0.3, MIT/Apache, looks right, but there
+  is no APE encoder here to make a fixture: needs a sample file).
 
 ## 2026-11-25 (session 5, later): output modes (M2-04)
 

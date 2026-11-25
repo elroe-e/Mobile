@@ -1236,6 +1236,9 @@ mod tests {
             // 5.1 folded to stereo.
             ("flac-51-48000.flac", 48000, Some(16)),
             ("wav-24-96000.wav", 96000, Some(24)),
+            ("wavpack-16-44100.wv", 44100, Some(16)),
+            ("wavpack-24-96000.wv", 96000, Some(24)),
+            ("wavpack-f32-48000.wv", 48000, None),
             ("wav-f32-48000.wav", 48000, None),
             ("tagged-cover.flac", 44100, Some(16)),
         ];
@@ -1249,20 +1252,35 @@ mod tests {
                 assert_eq!(info.bits_per_sample, bits, "{name}");
             }
             assert!((duration - 2.0).abs() < 0.05, "{name}: {duration}");
-            let (out, _) = decode_chain(&[path], 48000, 2);
+            let (out, _) = decode_chain(std::slice::from_ref(&path), 48000, 2);
             let secs = out.len() as f64 / 2.0 / 48000.0;
             assert!((secs - 2.0).abs() < 0.02, "{name}: decoded {secs} s");
             // ffmpeg's sine source is at 1/8 of full scale (rms ≈ 0.088).
             let level = rms(&out[9600..out.len() - 9600]);
             assert!(level > 0.05 && level < 0.15, "{name}: rms {level}");
+            // Seeking to 1 s lands at or before it, and decoding goes on from there.
+            let (mut format, mut decoder, track_id, _, _) = open_file(&path).unwrap();
+            let to = format
+                .seek(
+                    SeekMode::Accurate,
+                    SeekTo::Time {
+                        time: Time::from(1.0),
+                        track_id: Some(track_id),
+                    },
+                )
+                .unwrap_or_else(|e| panic!("{name}: seek: {e}"));
+            assert!(to.actual_ts <= to.required_ts, "{name}: {to:?}");
+            decoder.reset();
+            let packet = format
+                .next_packet()
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert!(decoder.decode(&packet).is_ok(), "{name}: decode after seek");
         }
-        // Not decodable yet; each must fail cleanly, not panic or play noise:
-        // WavPack (M2-08 decides how), and 32-bit FLAC, which Symphonia 0.5 treats as reserved
-        // (it also stops at 655,350 Hz, the old FLAC limit). Revisit with Symphonia 0.6.
-        for name in ["wavpack-16-44100.wv", "flac-32-96000.flac"] {
-            let path = generated(name).unwrap();
-            assert!(open_file(&path).is_err(), "{name}");
-        }
+        // Not decodable yet; must fail cleanly, not panic or play noise: 32-bit FLAC, which
+        // Symphonia 0.5 treats as reserved (it also stops at 655,350 Hz, the old FLAC limit).
+        // Revisit with Symphonia 0.6.
+        let path = generated("flac-32-96000.flac").unwrap();
+        assert!(open_file(&path).is_err(), "32-bit FLAC");
     }
 
     /// Longest run of near-silence around each join, in ms; and the total length in seconds.

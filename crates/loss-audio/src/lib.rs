@@ -12,6 +12,7 @@ mod engine;
 mod mp4gap;
 mod opus;
 pub mod sink;
+mod wavpack;
 pub use opus::codecs;
 mod resample;
 pub use resample::Quality;
