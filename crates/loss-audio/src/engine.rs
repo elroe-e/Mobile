@@ -1221,8 +1221,11 @@ mod tests {
             ("flac-24-48000.flac", 48000, Some(24)),
             ("flac-24-96000.flac", 96000, Some(24)),
             ("flac-24-192000.flac", 192000, Some(24)),
-            // Symphonia doesn't report ALAC's bit depth; M2-18 reads it from the ALAC header.
+            // Symphonia doesn't report ALAC's bit depth; `alac_bits` reads the codec config.
             ("alac-16-44100.m4a", 44100, Some(16)),
+            ("flac-24-384000.flac", 384000, Some(24)),
+            // 5.1 folded to stereo.
+            ("flac-51-48000.flac", 48000, Some(16)),
             ("wav-24-96000.wav", 96000, Some(24)),
             ("wav-f32-48000.wav", 48000, None),
             ("tagged-cover.flac", 44100, Some(16)),
@@ -1244,9 +1247,13 @@ mod tests {
             let level = rms(&out[9600..out.len() - 9600]);
             assert!(level > 0.05 && level < 0.15, "{name}: rms {level}");
         }
-        // WavPack has no decoder yet (M2-08 decides how); it must fail cleanly, not panic.
-        let wv = generated("wavpack-16-44100.wv").unwrap();
-        assert!(open_file(&wv).is_err());
+        // Not decodable yet; each must fail cleanly, not panic or play noise:
+        // WavPack (M2-08 decides how), and 32-bit FLAC, which Symphonia 0.5 treats as reserved
+        // (it also stops at 655,350 Hz, the old FLAC limit). Revisit with Symphonia 0.6.
+        for name in ["wavpack-16-44100.wv", "flac-32-96000.flac"] {
+            let path = generated(name).unwrap();
+            assert!(open_file(&path).is_err(), "{name}");
+        }
     }
 
     /// Longest run of near-silence around each join, in ms; and the total length in seconds.

@@ -10,8 +10,11 @@ next session must know.
   cut each decoded packet by its timestamp (`Trim::keep`), seeks skip the priming, and the shown
   duration is the music's own. ffmpeg AAC sets now join like FLAC (0.08 ms, total exactly 3.000 s);
   `generated_gapless_sets` requires it. ALAC reports its bit depth (from the codec config).
-- Left in M2-08: CUE virtual tracks, APE, DSD (DSF/DFF), WavPack decision, 32-bit FLAC/768 kHz
-  check, multichannel downmix check.
+- Checked with fixtures: FLAC 24/384 kHz, 5.1 FLAC folded to stereo, 32-bit float WAV play.
+  **Limit:** Symphonia 0.5 rejects 32-bit FLAC (sample-size code 7 is "reserved" there, and its
+  i32 side-channel maths can't hold 33 bits) and rates above 655,350 Hz; such files fail with an
+  error (tested). Revisit when moving to Symphonia 0.6.
+- Left in M2-08: CUE virtual tracks, APE, DSD (DSF/DFF), WavPack decision.
 
 ## 2026-11-25 (session 5, later): output modes (M2-04)
 

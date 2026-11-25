@@ -22,6 +22,11 @@ ff -f lavfi -i "$(sine 440 44100 2)" -ac 2 -sample_fmt s16 flac-16-44100.flac
 ff -f lavfi -i "$(sine 440 48000 2)" -ac 2 -sample_fmt s32 -bits_per_raw_sample 24 flac-24-48000.flac
 ff -f lavfi -i "$(sine 440 96000 2)" -ac 2 -sample_fmt s32 -bits_per_raw_sample 24 flac-24-96000.flac
 ff -f lavfi -i "$(sine 440 192000 2)" -ac 2 -sample_fmt s32 -bits_per_raw_sample 24 flac-24-192000.flac
+ff -f lavfi -i "$(sine 440 384000 2)" -ac 2 -sample_fmt s32 -bits_per_raw_sample 24 flac-24-384000.flac
+ff -f lavfi -i "$(sine 440 96000 2)" -ac 2 -sample_fmt s32 -bits_per_raw_sample 32 -strict experimental \
+  flac-32-96000.flac
+ff -f lavfi -i "$(sine 440 48000 2)" -af "pan=5.1|c0=c0|c1=c0|c2=c0|c3=c0|c4=c0|c5=c0" -c:a flac \
+  flac-51-48000.flac
 ff -f lavfi -i "$(sine 440 44100 2)" -ac 2 -c:a alac alac-16-44100.m4a
 ff -f lavfi -i "$(sine 440 44100 2)" -ac 2 -c:a wavpack wavpack-16-44100.wv
 ff -f lavfi -i "$(sine 440 96000 2)" -ac 2 -c:a pcm_s24le wav-24-96000.wav

@@ -199,6 +199,10 @@ bit-perfect formats for the Beats (expected: "This phone doesn't offer it for th
 Settings with more than four choices render as a list with per-choice descriptions
 (`choice-<key>-<value>-desc`).
 
+Status (M2-08, partial): MP4 gapless via `mp4gap.rs` (iTunSMPB or edit list → `Trim`, applied
+per packet timestamp; seeks offset by the priming). ALAC depth from its codec config. Format
+limits of Symphonia 0.5: no 32-bit FLAC, FLAC rates ≤ 655,350 Hz (both fail cleanly; tested).
+
 Status (M2-07): `resample.rs` uses `rubato` 5 (pure Rust): Fast = cubic polynomial, Medium/High/Best =
 synchronous FFT with longer filters. Measured (tests): Best is flat within ±0.01 dB to 20 kHz and
 keeps aliasing/imaging below −120 dB; lengths are exact (start-up delay trimmed, tail flushed at
