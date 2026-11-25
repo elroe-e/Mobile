@@ -6,6 +6,7 @@
 
 #[cfg(target_os = "android")]
 mod aaudio;
+mod dsd;
 mod dsp;
 mod engine;
 mod mp4gap;
@@ -88,6 +89,14 @@ impl StreamInfo {
 impl StreamInfo {
     pub fn label(&self) -> String {
         let mut s = self.codec.to_uppercase();
+        if s.starts_with("DSD") {
+            // "DSD64"; the 88.2 kHz it decodes to is an internal step, so only the output shows.
+            if self.output_rate != 0 {
+                let khz = self.output_rate as f64 / 1000.0;
+                s.push_str(&format!(" → {} kHz", trim_float(khz)));
+            }
+            return s;
+        }
         if let Some(b) = self.bits_per_sample {
             s.push_str(&format!(" · {b}-bit"));
         }
@@ -107,6 +116,7 @@ impl StreamInfo {
             self.codec.to_lowercase().as_str(),
             "flac" | "alac" | "wav" | "pcm" | "aiff"
         ) || self.codec.to_lowercase().starts_with("pcm")
+            || self.codec.to_lowercase().starts_with("dsd")
     }
 }
 

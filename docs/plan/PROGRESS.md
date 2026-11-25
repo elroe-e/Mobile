@@ -14,7 +14,15 @@ next session must know.
   **Limit:** Symphonia 0.5 rejects 32-bit FLAC (sample-size code 7 is "reserved" there, and its
   i32 side-channel maths can't hold 33 bits) and rates above 655,350 Hz; such files fail with an
   error (tested). Revisit when moving to Symphonia 0.6.
-- Left in M2-08: CUE virtual tracks, APE, DSD (DSF/DFF), WavPack decision.
+- **DSD**: `loss-audio/src/dsd.rs` reads DSF and DFF (DST-compressed DFF fails with an error)
+  as Symphonia format/codec (registered in `opus::probe()`/`codecs()`), and decodes with a
+  linear-phase Kaiser FIR (flat to 20 kHz, ≥ 100 dB at the new Nyquist) run from byte lookup
+  tables, decimating to 88.2 kHz (96 kHz for 48k-family DSD). Unity gain (SACD 0 dB = −6 dBFS).
+  0.5 s of DSD64 stereo decodes in 12 ms (release, desktop). Labels show "DSD64"; counts as
+  lossless. Library: `loss-core/src/dsd.rs` reads rate/channels/length from the header and tags
+  from the ID3v2 block (wrapped in an in-memory WAV for lofty); scanner takes .dsf/.dff.
+  DoP output waits for Direct USB (M2-05).
+- Left in M2-08: CUE virtual tracks, APE, WavPack decision.
 
 ## 2026-11-25 (session 5, later): output modes (M2-04)
 

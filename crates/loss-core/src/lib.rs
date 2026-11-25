@@ -1,6 +1,7 @@
 //! Loss core: music library model, folder scanning, tags, settings,
 //! synced lyrics and playlist import. No UI and no platform code.
 
+pub mod dsd;
 pub mod library;
 pub mod lrc;
 pub mod playlist;
@@ -17,7 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// File extensions Loss can decode and play.
 pub const AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "flac", "ogg", "oga", "opus", "m4a", "mp4", "aac", "wav", "aif", "aiff", "alac", "caf",
-    "mka", "webm",
+    "mka", "webm", "dsf", "dff",
 ];
 
 pub fn is_audio_file(path: &std::path::Path) -> bool {

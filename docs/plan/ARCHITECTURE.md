@@ -202,6 +202,8 @@ Settings with more than four choices render as a list with per-choice descriptio
 Status (M2-08, partial): MP4 gapless via `mp4gap.rs` (iTunSMPB or edit list → `Trim`, applied
 per packet timestamp; seeks offset by the priming). ALAC depth from its codec config. Format
 limits of Symphonia 0.5: no 32-bit FLAC, FLAC rates ≤ 655,350 Hz (both fail cleanly; tested).
+DSD: `dsd.rs` (DSF/DFF reader + FIR decimating decoder → 88.2/96 kHz PCM), registered through
+`opus::probe()` and `opus::codecs()`; library facts and tags in `loss-core/src/dsd.rs`.
 
 Status (M2-07): `resample.rs` uses `rubato` 5 (pure Rust): Fast = cubic polynomial, Medium/High/Best =
 synchronous FFT with longer filters. Measured (tests): Best is flat within ±0.01 dB to 20 kHz and

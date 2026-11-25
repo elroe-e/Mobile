@@ -119,7 +119,7 @@ fn open_file(path: &Path) -> Result<OpenedFile, String> {
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
     }
-    let probed = symphonia::default::get_probe()
+    let probed = crate::opus::probe()
         .format(
             &hint,
             mss,
@@ -155,10 +155,19 @@ fn open_file(path: &Path) -> Result<OpenedFile, String> {
         Some(n) => n as f64 / rate.max(1) as f64,
         None => duration,
     };
-    let codec = crate::opus::codecs()
-        .get_codec(params.codec)
-        .map(|d| d.short_name.to_string())
-        .unwrap_or_else(|| "audio".into());
+    let codec = if params.codec == crate::dsd::CODEC_TYPE_DSD {
+        // "dsd64", "dsd128", …: multiples of 44.1 kHz (48 kHz-family files count the same way).
+        let factor = params
+            .extra_data
+            .as_deref()
+            .map(|e| e[0] as u32 | (*e.get(1).unwrap_or(&0) as u32) << 8);
+        format!("dsd{}", factor.unwrap_or(32) * 2)
+    } else {
+        crate::opus::codecs()
+            .get_codec(params.codec)
+            .map(|d| d.short_name.to_string())
+            .unwrap_or_else(|| "audio".into())
+    };
     let info = StreamInfo {
         codec,
         sample_rate: rate,
@@ -1308,6 +1317,25 @@ mod tests {
                 assert!(g <= max_gap_ms, "{prefix}: {g} ms gap at a join");
             }
         }
+    }
+
+    #[test]
+    fn dsd_plays_through_the_engine() {
+        let rate = 2_822_400u32;
+        let n = rate as usize / 4; // 0.25 s
+        let tone =
+            (0..n).map(|i| 0.5 * (i as f64 * 440.0 * std::f64::consts::TAU / rate as f64).sin());
+        let file = crate::dsd::tests::dsf(rate, &crate::dsd::tests::modulate(tone));
+        let path = tmp("tone.dsf");
+        std::fs::write(&path, file).unwrap();
+        let (_, _, _, info, duration) = open_file(&path).unwrap();
+        assert_eq!((info.codec.as_str(), info.sample_rate), ("dsd64", 88_200));
+        assert!(info.is_lossless());
+        assert_eq!(info.label(), "DSD64");
+        assert!((duration - 0.25).abs() < 0.001, "{duration}");
+        let (out, _) = decode_chain(&[path], 48_000, 2);
+        let secs = out.len() as f64 / 2.0 / 48_000.0;
+        assert!((secs - 0.25).abs() < 0.002, "{secs}");
     }
 
     #[test]

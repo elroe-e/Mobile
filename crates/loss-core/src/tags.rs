@@ -30,16 +30,39 @@ fn clean(s: Option<std::borrow::Cow<'_, str>>) -> Option<String> {
     s.map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
 }
 
+/// The file's tags as lofty reads them; DSD files go through `dsd::tagged`.
+fn open_tagged(path: &Path) -> Result<lofty::file::TaggedFile, String> {
+    if crate::dsd::is_dsd(path) {
+        let (_, id3) = crate::dsd::read(path).ok_or("not a DSD file")?;
+        return id3
+            .as_deref()
+            .and_then(crate::dsd::tagged)
+            .ok_or_else(|| "no tags".to_string());
+    }
+    lofty::read_from_path(path).map_err(|e| e.to_string())
+}
+
 pub fn read_meta(path: &Path) -> Result<TrackMeta, String> {
-    let file = lofty::read_from_path(path).map_err(|e| e.to_string())?;
+    if crate::dsd::is_dsd(path) {
+        let (info, _) = crate::dsd::read(path).ok_or("not a DSD file")?;
+        // Tags are optional; the header alone gives length and format.
+        let mut meta = open_tagged(path).map(|f| meta_from(&f)).unwrap_or_default();
+        meta.duration_secs = info.duration_secs();
+        meta.sample_rate = Some(info.rate);
+        meta.bit_depth = Some(1);
+        return Ok(meta);
+    }
+    let file = open_tagged(path)?;
     let props = file.properties();
-    let duration_secs = props.duration().as_secs_f64();
-    let mut meta = TrackMeta {
-        duration_secs,
-        bit_depth: props.bit_depth(),
-        sample_rate: props.sample_rate(),
-        ..Default::default()
-    };
+    let mut meta = meta_from(&file);
+    meta.duration_secs = props.duration().as_secs_f64();
+    meta.bit_depth = props.bit_depth();
+    meta.sample_rate = props.sample_rate();
+    Ok(meta)
+}
+
+fn meta_from(file: &lofty::file::TaggedFile) -> TrackMeta {
+    let mut meta = TrackMeta::default();
     if let Some(tag) = file.primary_tag().or_else(|| file.first_tag()) {
         meta.title = clean(tag.title());
         meta.artist = clean(tag.artist());
@@ -58,12 +81,12 @@ pub fn read_meta(path: &Path) -> Result<TrackMeta, String> {
             .filter(|s| !s.trim().is_empty());
         meta.has_cover = !tag.pictures().is_empty();
     }
-    Ok(meta)
+    meta
 }
 
 /// Returns (bytes, mime type) of the embedded front cover, if any.
 pub fn read_cover(path: &Path) -> Option<(Vec<u8>, String)> {
-    let file = lofty::read_from_path(path).ok()?;
+    let file = open_tagged(path).ok()?;
     let tag = file.primary_tag().or_else(|| file.first_tag())?;
     let pics = tag.pictures();
     let pic = pics

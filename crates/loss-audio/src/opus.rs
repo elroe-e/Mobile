@@ -110,13 +110,25 @@ impl Decoder for OpusDecoder {
     }
 }
 
-/// Symphonia's built-in codecs plus Opus.
+/// Symphonia's built-in codecs plus Opus and DSD.
 pub fn codecs() -> &'static CodecRegistry {
     static REGISTRY: OnceLock<CodecRegistry> = OnceLock::new();
     REGISTRY.get_or_init(|| {
         let mut registry = CodecRegistry::new();
         symphonia::default::register_enabled_codecs(&mut registry);
         registry.register_all::<OpusDecoder>();
+        registry.register_all::<crate::dsd::DsdDecoder>();
         registry
+    })
+}
+
+/// Symphonia's built-in containers plus DSF and DFF.
+pub fn probe() -> &'static symphonia::core::probe::Probe {
+    static PROBE: OnceLock<symphonia::core::probe::Probe> = OnceLock::new();
+    PROBE.get_or_init(|| {
+        let mut probe = symphonia::core::probe::Probe::default();
+        symphonia::default::register_enabled_formats(&mut probe);
+        probe.register_all::<crate::dsd::DsdReader>();
+        probe
     })
 }
