@@ -9,6 +9,7 @@ mod aaudio;
 mod dsd;
 mod dsp;
 mod engine;
+pub mod eq;
 mod mp4gap;
 mod opus;
 pub mod sink;
@@ -18,7 +19,7 @@ mod resample;
 pub use resample::Quality;
 
 /// How the engine converts and limits the output (M2-07).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct AudioOptions {
     pub quality: Quality,
     /// Highest output rate in Hz; 0 for no limit.
@@ -27,6 +28,8 @@ pub struct AudioOptions {
     pub output: sink::OutputPrefs,
     /// ReplayGain levelling (M2-09); off on bit-perfect paths.
     pub normalize: Normalize,
+    /// The equalizer (M2-10) when on; bypassed on bit-perfect paths.
+    pub eq: Option<eq::EqParams>,
 }
 
 use std::path::PathBuf;

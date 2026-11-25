@@ -372,6 +372,9 @@ pub const INTERNAL: &[&str] = &[
     "podcasts",
     "reliability_notice_dismissed",
     "album_grid_size",
+    // Edited on the Equalizer screen.
+    "equalizer",
+    "eq_presets",
 ];
 
 pub fn find(key: &str) -> Option<&'static SettingDef> {

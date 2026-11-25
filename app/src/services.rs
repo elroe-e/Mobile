@@ -85,7 +85,28 @@ fn audio_options(s: &Settings, mixer: Option<&Mixer>) -> loss_audio::AudioOption
             mode: loss_audio::GainMode::parse(&s.normalization_mode),
             preamp_db: s.normalization_preamp.min(0) as f64,
         },
+        eq: eq_params(&s.equalizer),
     }
+}
+
+/// The engine's equalizer from the saved settings; None when it's off.
+pub fn eq_params(e: &loss_core::equalizer::EqSettings) -> Option<loss_audio::eq::EqParams> {
+    e.enabled.then(|| loss_audio::eq::EqParams {
+        gains: e.gains.clone(),
+        parametric: vec![],
+        preamp_db: e.preamp,
+        bass_db: e.bass,
+        treble_db: e.treble,
+        balance: e.balance,
+        auto_headroom: e.auto_headroom,
+        limiter: e.limiter,
+        compressor: e.compressor.then_some(loss_audio::eq::Compressor {
+            threshold_db: e.threshold,
+            ratio: e.ratio,
+            attack_ms: e.attack,
+            release_ms: e.release,
+        }),
+    })
 }
 
 fn save_settings(store: Option<&Store>, s: &Settings) {
@@ -635,6 +656,16 @@ fn load_cover(
         base64::engine::general_purpose::STANDARD.encode(bytes)
     );
     (Some(uri), color)
+}
+
+#[cfg(test)]
+mod eq_tests {
+    #[test]
+    fn band_tables_agree() {
+        for n in loss_core::equalizer::BAND_COUNTS {
+            assert_eq!(loss_core::equalizer::centres(n), loss_audio::eq::centres(n));
+        }
+    }
 }
 
 #[cfg(test)]

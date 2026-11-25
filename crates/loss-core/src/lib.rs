@@ -3,6 +3,7 @@
 
 pub mod cue;
 pub mod dsd;
+pub mod equalizer;
 pub mod library;
 pub mod lrc;
 pub mod playlist;

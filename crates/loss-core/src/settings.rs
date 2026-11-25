@@ -68,6 +68,10 @@ pub struct Settings {
     pub normalization_mode: String,
     /// Pre-amp in dB (≤ 0; shifts the −18 LUFS reference).
     pub normalization_preamp: i64,
+    /// The equalizer (M2-10).
+    pub equalizer: crate::equalizer::EqSettings,
+    /// Presets the user saved or imported.
+    pub eq_presets: Vec<crate::equalizer::EqPreset>,
 }
 
 impl Default for Settings {
@@ -103,6 +107,8 @@ impl Default for Settings {
             normalization: false,
             normalization_mode: "auto".into(),
             normalization_preamp: 0,
+            equalizer: Default::default(),
+            eq_presets: vec![],
         }
     }
 }

@@ -49,6 +49,8 @@ struct Session {
     ts_to_frames: (u64, u64),
     /// ReplayGain as a linear factor (1 for none), applied after the graph.
     gain: f64,
+    /// The equalizer after the gain; handed over across gapless joins with its filter memory.
+    eq: Option<crate::eq::Equalizer>,
 }
 
 /// The trim for a file and how its packet timestamps convert to frames.
@@ -381,6 +383,8 @@ impl Session {
         );
         info.processing = graph.describe();
         info.processing.extend(gain_note(gain));
+        info.processing
+            .extend(prev.eq.as_ref().map(|e| e.params().describe()));
         Session {
             item,
             format,
@@ -402,6 +406,7 @@ impl Session {
             trim,
             ts_to_frames,
             gain: gain_factor(gain),
+            eq: prev.eq,
         }
     }
 }
@@ -555,8 +560,11 @@ impl Engine {
             quality,
         );
         let gain = self.item_gain(&item);
+        let eq = self.make_eq(out.rate, out.channels);
         info.processing = graph.describe();
         info.processing.extend(gain_note(gain));
+        info.processing
+            .extend(eq.as_ref().map(|e| e.params().describe()));
         out.dither
             .store(wants_dither(&info, out), Ordering::Relaxed);
         let mut session = Session {
@@ -577,6 +585,7 @@ impl Engine {
             trim,
             ts_to_frames,
             gain: gain_factor(gain),
+            eq,
             duration,
             info,
             pushed: 0,
@@ -835,13 +844,13 @@ impl Engine {
             Command::SetShuffle(on) => self.set_shuffle(on),
             Command::SetAudioOptions(o) => {
                 let reopen = o.output != self.options.output;
-                let regain = o.normalize != self.options.normalize;
+                let regain = o.normalize != self.options.normalize || o.eq != self.options.eq;
                 self.options = o;
                 if regain && !reopen {
                     self.regain();
                 }
                 if reopen {
-                    self.sink.set_prefs(o.output);
+                    self.sink.set_prefs(self.options.output);
                     if self.output.is_some() {
                         self.reload_here(true);
                     }
@@ -1079,26 +1088,62 @@ impl Engine {
         self.options.normalize.gain_for(item)
     }
 
-    /// Levelling settings changed: the playing track takes the new gain from here on.
+    /// The equalizer for an output, or None when it's off, flat or bypassed (bit-perfect).
+    fn make_eq(&self, rate: u32, channels: usize) -> Option<crate::eq::Equalizer> {
+        let params = self.options.eq.clone()?;
+        if self.options.output.bit_perfect || params.is_flat() {
+            return None;
+        }
+        Some(crate::eq::Equalizer::new(params, rate, channels))
+    }
+
+    /// Levelling or equalizer settings changed: the playing track takes them from here on
+    /// (the equalizer keeps its filter memory, so there's no click).
     fn regain(&mut self) {
         let Some(item) = self.session.as_ref().map(|s| s.item.clone()) else {
             return;
         };
         let gain = self.item_gain(&item);
+        let (rate, channels) = match &self.output {
+            Some(o) => (o.rate, o.channels),
+            None => return,
+        };
+        let want = self.make_eq(rate, channels).map(|e| e.params().clone());
         let Some(s) = self.session.as_mut() else {
             return;
         };
         s.gain = gain_factor(gain);
+        match (want, s.eq.as_mut()) {
+            (Some(p), Some(eq)) => eq.set(p),
+            (Some(p), None) => s.eq = Some(crate::eq::Equalizer::new(p, rate, channels)),
+            (None, _) => s.eq = None,
+        }
         s.info.processing = s.graph.describe();
         s.info.processing.extend(gain_note(gain));
+        s.info
+            .processing
+            .extend(s.eq.as_ref().map(|e| e.params().describe()));
         let info = s.info.clone();
         if let Some(out) = &self.output {
             out.dither
                 .store(wants_dither(&info, out), Ordering::Relaxed);
         }
-        // The track on screen is this one unless a gapless switch is still on its way.
-        if self.switch.is_none() {
-            self.st().info.processing = info.processing;
+        // The track on screen is this one unless a gapless switch is still on its way: then the
+        // switch carries the new list, and the track on screen gets the new equalizer entry (its
+        // own gain and conversion are already in the buffer).
+        match self.switch.as_mut() {
+            None => self.st().info.processing = info.processing,
+            Some(sw) => {
+                sw.info.processing = info.processing.clone();
+                let eq_note = info
+                    .processing
+                    .iter()
+                    .find(|p| p.starts_with("equalizer"))
+                    .cloned();
+                let mut st = self.st();
+                st.info.processing.retain(|p| !p.starts_with("equalizer"));
+                st.info.processing.extend(eq_note);
+            }
         }
     }
 }
@@ -1264,6 +1309,7 @@ mod tests {
             trim,
             ts_to_frames,
             gain: 1.0,
+            eq: None,
         };
         let mut out = Vec::new();
         let mut joins = Vec::new();
@@ -1669,6 +1715,48 @@ mod tests {
             "{:?}",
             e.st().info.processing
         );
+    }
+
+    #[test]
+    fn equalizer_turns_on_live_crosses_gapless_joins_and_steps_aside_for_bit_perfect() {
+        let (mut e, clock) = hires_dac();
+        let (a, b) = (tmp("eq-a.wav"), tmp("eq-b.wav"));
+        write_wav(&a, 44100, 0.5, 0, 22050);
+        write_wav(&b, 44100, 0.5, 22050, 44100);
+        e.handle(Command::SetQueue {
+            items: vec![item(&a), item(&b)],
+            start: 0,
+        });
+        play(&mut e, &clock, 4410, 1000);
+        assert!(e.st().info.processing.is_empty());
+        let mut eq = crate::eq::EqParams::default();
+        eq.gains[3] = 6.0;
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            eq: Some(eq.clone()),
+            ..AudioOptions::default()
+        }));
+        assert_eq!(
+            e.st().info.processing,
+            vec!["equalizer (10 bands, limiter)".to_string()]
+        );
+        // Through the gapless join into the second file.
+        play(&mut e, &clock, 30_000, 1000);
+        assert!(e
+            .st()
+            .info
+            .processing
+            .contains(&"equalizer (10 bands, limiter)".to_string()));
+        assert_eq!(clock.opened().len(), 1, "still one stream (gapless)");
+        // Bit-perfect leaves the samples alone.
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            eq: Some(eq),
+            output: crate::sink::OutputPrefs {
+                bit_perfect: true,
+                ..Default::default()
+            },
+            ..AudioOptions::default()
+        }));
+        assert!(e.st().info.processing.is_empty());
     }
 
     #[test]
