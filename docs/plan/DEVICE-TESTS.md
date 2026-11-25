@@ -119,8 +119,10 @@ Android bit-perfect mixer for them.
 - [ ] Unplug and replug during playback: playback pauses, then works again after pressing play.
 - [ ] Direct USB volume: the hardware volume control changes loudness smoothly; first-use loudness
       warning appears.
-- [ ] Equalizer and AutoEq "Beats Studio Pro" profile: on/off sounds different; in Bit-perfect mode the
-      app explains that EQ is bypassed.
+- [ ] (M2-10) Settings → Audio → Equalizer: turn it on, pick Bass and Rock: the sound changes while
+      playing without clicks; moving a band slider is heard within half a second; Bit-perfect
+      mode shows the bypass notice. Save a preset, share it, import it back.
+- [ ] AutoEq "Beats Studio Pro" profile (M2-11): on/off sounds different.
 - [ ] (M2-09) Settings → Audio → Volume levelling on: songs with ReplayGain tags from loud and
       quiet albums play at similar loudness; Settings → Audio shows "gain … dB"; in Bit-perfect
       mode the card says levelling is off.

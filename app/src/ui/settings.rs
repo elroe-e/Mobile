@@ -11,7 +11,12 @@ use loss_i18n::t;
 use std::path::PathBuf;
 
 #[component]
-fn Toggle(label: String, hint: String, on: bool, onchange: EventHandler<bool>) -> Element {
+pub(super) fn Toggle(
+    label: String,
+    hint: String,
+    on: bool,
+    onchange: EventHandler<bool>,
+) -> Element {
     rsx! {
         div { class: "setting", onclick: move |_| onchange.call(!on),
             div { class: "row-text",
@@ -32,6 +37,7 @@ pub enum SettingsPage {
     Logs,
     Reliability,
     DacProbe,
+    Equalizer,
     /// Debug builds only.
     Gallery,
 }
@@ -51,6 +57,7 @@ pub fn SettingsTab() -> Element {
         SettingsPage::Logs => rsx! { super::logs::LogsPage {} },
         SettingsPage::Reliability => rsx! { super::reliability::ReliabilityPage {} },
         SettingsPage::DacProbe => rsx! { super::dac_probe::DacProbePage {} },
+        SettingsPage::Equalizer => rsx! { super::equalizer::EqualizerPage {} },
         SettingsPage::Gallery => rsx! { super::gallery::GalleryPage {} },
     }
 }
@@ -343,6 +350,7 @@ fn SectionCard(
             if section == Section::Audio {
                 ModeNotice { mode: cur.output_mode.clone(), levelling: cur.normalization }
                 OutputRow {}
+                EqualizerRow { on: cur.equalizer.enabled }
                 DacProbeRow {}
             }
             if section == Section::Help {
@@ -491,6 +499,27 @@ fn ModeNotice(mode: String, levelling: bool) -> Element {
             div { class: "row-text",
                 div { class: "subtitle", {t!("output-mode-fallback", mode = name, reason = reason)} }
             }
+        }
+    }
+}
+
+#[component]
+fn EqualizerRow(on: bool) -> Element {
+    rsx! {
+        button {
+            class: "setting nav-row",
+            onclick: move |_| {
+                let mut page = use_context::<SettingsNav>().0;
+                page.set(SettingsPage::Equalizer);
+            },
+            Icon { name: "eq", size: 22 }
+            div { class: "row-text",
+                div { class: "title", {t!("eq-title")} }
+                div { class: "subtitle",
+                    if on { {t!("eq-row-on")} } else { {t!("eq-row-off")} }
+                }
+            }
+            Icon { name: "chevron_right" }
         }
     }
 }

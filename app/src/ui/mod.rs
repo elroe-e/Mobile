@@ -3,6 +3,7 @@
 mod dac_probe;
 mod discover;
 mod downloads;
+mod equalizer;
 mod gallery;
 mod home;
 mod icons;
@@ -241,6 +242,7 @@ pub fn App() -> Element {
         let start = match page.as_deref() {
             Ok("gallery") => Some(settings::SettingsPage::Gallery),
             Ok("dac") => Some(settings::SettingsPage::DacProbe),
+            Ok("eq") => Some(settings::SettingsPage::Equalizer),
             _ => None,
         };
         if let Some(p) = start.filter(|_| cfg!(debug_assertions)) {

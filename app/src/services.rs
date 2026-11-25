@@ -297,6 +297,24 @@ impl Services {
         self.downloads.set_config(manager_config(&s));
     }
 
+    /// Lets the engine play an equalizer setting while a slider moves, without saving it.
+    pub fn preview_eq(&self, eq: &loss_core::equalizer::EqSettings) {
+        let mut s = lock(&self.settings).clone();
+        s.equalizer = eq.clone();
+        let mixer = lock(&self.mixer).clone();
+        self.player
+            .send(loss_audio::Command::SetAudioOptions(audio_options(
+                &s,
+                mixer.as_ref(),
+            )));
+    }
+
+    /// The output mode in use now (for notices).
+    pub fn effective_mode(&self) -> Mode {
+        let chosen = Mode::parse(&lock(&self.settings).output_mode);
+        effective_mode(chosen, lock(&self.mixer).as_ref())
+    }
+
     /// Reads the outputs again and tells the engine what the active one takes, so Loss converts
     /// sample rates itself (M2-03). Called at start and whenever outputs come or go.
     #[cfg_attr(not(target_os = "android"), allow(dead_code))]

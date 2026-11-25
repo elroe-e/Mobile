@@ -3,6 +3,25 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-25 (session 5, later): equalizer (M2-10)
+
+- **M2-10** `loss_audio::eq`: RBJ biquads (f64, transposed DF-II) for graphic bands (5/10/15/31
+  ISO centres, constant-Q from the spacing), parametric bands (peak, shelves, HP/LP), bass
+  (150 Hz) and treble (6 kHz) shelves, balance, input gain with automatic headroom from the
+  computed curve's peak, linked peak compressor, 5 ms look-ahead limiter at −0.5 dBFS. Tests:
+  measured sine responses match the designed curve within 0.1 dB; band peaks; limiter ceiling;
+  compressor reduction; flat = bit-identical. Engine: after ReplayGain, carried across gapless
+  joins (filter memory kept), live updates without clicks, bypassed for bit-perfect (test).
+  `loss_core::equalizer`: settings + presets (JSON with Mornye's field names, 64 KB, clamped),
+  band-count changes interpolate the curve, 12 built-in presets with Loss' own curves.
+  Settings → Audio → Equalizer: on/off, curve (SVG) with input gain, presets (built-in + saved,
+  save/import by paste/share), bands (upright sliders in slots: WebKit's vertical range inputs
+  don't move the thumb), tone and stereo, dynamics, reset. Screenshots checked (10 and 31 bands).
+- Known: the limiter's 5 ms look-ahead isn't flushed at the very end of a queue (the last 5 ms
+  of the last song); positions lag by the same 5 ms while it's on.
+- Parametric bands have no editor yet (moved to M2-11 with AutoEq). The EQ isn't reachable from
+  Now Playing yet (player actions sheet, M3).
+
 ## 2026-11-25 (session 5, later): ReplayGain (M2-09)
 
 - **M2-09** Tags: REPLAYGAIN_TRACK/ALBUM_GAIN and R128 (Q7.8, −23 LUFS → +5 dB) read by

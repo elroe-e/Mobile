@@ -104,8 +104,11 @@ plays instantly. Set `HOME`/`LOSS_DATA_DIR` to a scratch dir, drive it with `xdo
   `both`/`forwards` (with `both`, the sheet hid under the bottom bar and the dialog went off-screen).
 * Dioxus `rsx!` format strings can't hold `if` or complex expressions; compute a variable first.
 * Text inputs must use `initial_value`, not `value`: controlled inputs lose keystrokes on re-render.
-* Sliders: use `ui::Slider` (holds the dragged value until the real value catches up). The animated
-  fill needs `@property --pct { inherits: true }`.
+* Sliders: use `ui::Slider` (holds the dragged value until the real value catches up; range starts
+  at 0, so offset negative ranges). The animated fill needs `@property --pct { inherits: true }`.
+  Upright sliders: rotate a horizontal one inside a fixed slot (`.eq-slot`); WebKit's vertical
+  range inputs don't move the thumb.
+* Component props are compared for re-rendering: no fn pointers in props (use an enum).
 * `spawn` is scoped to its component, so timers that must outlive it go through the App tick (see
   toasts).
 * `asset!()` doesn't resolve under plain `cargo run`; CSS and fonts are embedded with
@@ -129,7 +132,7 @@ plays instantly. Set `HOME`/`LOSS_DATA_DIR` to a scratch dir, drive it with `xdo
 * Data lives in `loss.redb` (loss-store). Values are JSON, so new fields need `#[serde(default)]`; a
   new table or a changed meaning needs a migration step in `loss-store` (bump `SCHEMA_VERSION`).
 * `scripts/emulator-smoke.sh <apk>` checks a build on an emulator or a phone over adb (M0-03).
-* Pages for UI checks: `LOSS_DEBUG_PAGE=gallery` or `=dac` (debug builds). `LOSS_DAC_FIXTURE=<hex>`
+* Pages for UI checks: `LOSS_DEBUG_PAGE=gallery`, `=dac` or `=eq` (debug builds). `LOSS_DAC_FIXTURE=<hex>`
   adds a pretend USB DAC from a report or `crates/loss-usb/fixtures/*.hex` on desktop.
 * WebKitGTK on CI runners needs `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1`, `WEBKIT_DISABLE_DMABUF_RENDERER=1`
   and `LIBGL_ALWAYS_SOFTWARE=1` (ui-smoke.sh sets them), or the window stays black; the script fails
