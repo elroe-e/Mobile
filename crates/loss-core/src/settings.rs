@@ -56,8 +56,8 @@ pub struct Settings {
     pub max_sample_rate: u32,
     /// Output sample format: "auto", "float", "16", "24" or "32".
     pub output_format: String,
-    /// Ask Android for an exclusive (MMAP) output stream.
-    pub exclusive_output: bool,
+    /// Output mode: "standard", "hires", "bitperfect", "exclusive" or "usb" (M2-04).
+    pub output_mode: String,
     /// Low-latency output (smaller buffers) instead of power saving.
     pub low_latency_output: bool,
     /// Let Android's spatializer process music.
@@ -91,7 +91,7 @@ impl Default for Settings {
             resample_quality: "best".into(),
             max_sample_rate: 0,
             output_format: "auto".into(),
-            exclusive_output: false,
+            output_mode: "hires".into(),
             low_latency_output: false,
             spatial_audio: false,
         }

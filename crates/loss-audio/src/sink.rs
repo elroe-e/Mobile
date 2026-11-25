@@ -107,6 +107,38 @@ pub struct OutputPrefs {
     pub spatial: bool,
     /// Play on this device id; 0 lets Android route.
     pub device_id: i32,
+    /// Always open at this rate (Standard mode: the system mixer's rate); 0 for the song's.
+    pub fixed_rate: u32,
+    /// Ask the platform for a bit-perfect path (Android 14+ USB) at the song's own format;
+    /// Loss then leaves the samples and the volume alone.
+    pub bit_perfect: bool,
+}
+
+/// The platform's bit-perfect switch (set by the app on Android): given a rate and the music's
+/// bits per sample, prepares a bit-perfect path and returns the format to send and the device
+/// to send it to, or None when it can't. Rate 0 turns bit-perfect off again.
+pub type BitPerfectHook =
+    Box<dyn Fn(u32, Option<u32>) -> Option<(SampleFormat, i32)> + Send + Sync>;
+
+static BIT_PERFECT: std::sync::OnceLock<BitPerfectHook> = std::sync::OnceLock::new();
+
+pub fn set_bit_perfect_hook(hook: BitPerfectHook) {
+    let _ = BIT_PERFECT.set(hook);
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) fn bit_perfect(rate: u32, bits: Option<u32>) -> Option<(SampleFormat, i32)> {
+    BIT_PERFECT.get().and_then(|h| h(rate, bits))
+}
+
+/// The integer format that holds `bits` without loss (float for lossy sources).
+pub fn format_for_bits(bits: Option<u32>) -> SampleFormat {
+    match bits {
+        Some(b) if b <= 16 => SampleFormat::I16,
+        Some(b) if b <= 24 => SampleFormat::I24,
+        Some(_) => SampleFormat::I32,
+        None => SampleFormat::F32,
+    }
 }
 
 /// What an output actually opened with.
@@ -117,6 +149,8 @@ pub struct OutputInfo {
     pub low_latency: bool,
     pub device_id: i32,
     pub buffer_frames: u32,
+    /// The platform confirmed a bit-perfect path.
+    pub bit_perfect: bool,
     /// What the hardware runs at, when the system says (Android 14+), e.g. "I24 48000 Hz".
     pub hardware: Option<String>,
 }
@@ -125,6 +159,9 @@ impl OutputInfo {
     /// For logs and the format details, e.g. "I24 · exclusive · low latency · 48000 Hz".
     pub fn describe(&self, rate: u32) -> String {
         let mut parts = vec![self.format.name().to_string()];
+        if self.bit_perfect {
+            parts.push("bit-perfect".into());
+        }
         parts.push(
             if self.exclusive {
                 "exclusive"
@@ -255,6 +292,8 @@ pub trait Sink: Send {
     fn open(&mut self, rate: u32, volume: Arc<AtomicU32>) -> Result<Stream, String>;
     /// How later streams should open (format, exclusive, device…).
     fn set_prefs(&mut self, _prefs: OutputPrefs) {}
+    /// Bits per sample of the music the next stream carries (bit-perfect picks its format).
+    fn set_source_bits(&mut self, _bits: Option<u32>) {}
 }
 
 /// Pulls one buffer's worth from the ring, applying the volume. Returns samples taken.
@@ -460,6 +499,7 @@ struct FakeShared {
     heard: Mutex<Vec<f32>>,
     opened: Mutex<Vec<u32>>,
     prefs: Mutex<OutputPrefs>,
+    source_bits: Mutex<Option<u32>>,
     /// The open stream's dither and lost flags.
     flags: Mutex<Option<(Arc<AtomicBool>, Arc<AtomicBool>)>>,
 }
@@ -573,7 +613,12 @@ impl Sink for FakeSink {
             rate,
             channels,
             info: OutputInfo {
-                format: prefs.format.unwrap_or_default(),
+                format: if prefs.bit_perfect {
+                    format_for_bits(*self.clock.inner.source_bits.lock().unwrap())
+                } else {
+                    prefs.format.unwrap_or_default()
+                },
+                bit_perfect: prefs.bit_perfect,
                 exclusive: prefs.exclusive,
                 low_latency: prefs.low_latency,
                 device_id: prefs.device_id,
@@ -587,6 +632,10 @@ impl Sink for FakeSink {
 
     fn set_prefs(&mut self, prefs: OutputPrefs) {
         *self.clock.inner.prefs.lock().unwrap() = prefs;
+    }
+
+    fn set_source_bits(&mut self, bits: Option<u32>) {
+        *self.clock.inner.source_bits.lock().unwrap() = bits;
     }
 }
 

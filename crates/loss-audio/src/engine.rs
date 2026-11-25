@@ -261,6 +261,8 @@ struct Engine {
     caps: Option<Caps>,
     /// What the platform says the active output takes; preferred over `caps`.
     caps_override: Option<Caps>,
+    /// Bits per sample of the music the open stream was opened for (bit-perfect mode).
+    out_bits: Option<u32>,
     output: Option<Stream>,
     session: Option<Session>,
     display: Option<Display>,
@@ -372,12 +374,16 @@ impl Engine {
             }));
         }
         let want = self.output_rate_for(info.sample_rate);
+        let bits = info.bits_per_sample;
+        // Bit-perfect streams carry the music's own format, so a new depth needs a new stream.
         let need_new = match &self.output {
-            Some(o) => o.rate != want,
+            Some(o) => o.rate != want || (self.options.output.bit_perfect && self.out_bits != bits),
             None => true,
         };
         if need_new {
             self.output = None; // close the old stream first
+            self.sink.set_source_bits(bits);
+            self.out_bits = bits;
             let opened = self.sink.open(want, self.volume.clone());
             self.output = Some(opened.map_err(|detail| PlayError {
                 kind: PlayErrorKind::Output,
@@ -448,6 +454,10 @@ impl Engine {
     /// The output rate for a source rate: what the output takes (`choose_rate`), within the
     /// owner's maximum rate.
     fn output_rate_for(&self, src: u32) -> u32 {
+        let out = &self.options.output;
+        if out.fixed_rate > 0 && !out.bit_perfect {
+            return out.fixed_rate;
+        }
         let caps = self
             .caps_override
             .clone()
@@ -458,7 +468,9 @@ impl Engine {
                 channels: 2,
             });
         let max = self.options.max_rate;
-        if max == 0 || src <= max {
+        // Bit-perfect plays the song's own rate when the path takes it (the limit is for
+        // conversions Loss chooses, and there are none here).
+        if max == 0 || src <= max || out.bit_perfect {
             return choose_rate(src, &caps);
         }
         // Above the limit: choose among the allowed rates as if the output took only those.
@@ -838,11 +850,15 @@ impl Engine {
             self.no_preload = true;
             return;
         };
-        let same_output = |src: u32| self.output_rate_for(src) == out_rate;
+        let bit_perfect = self.options.output.bit_perfect;
+        let same_output = |info: &StreamInfo| {
+            self.output_rate_for(info.sample_rate) == out_rate
+                && (!bit_perfect || info.bits_per_sample == self.out_bits)
+        };
         match open_file(&item.path) {
             // The output stays as it is (same rate after conversion), so join seamlessly, even
             // between a 44.1 kHz and a 48 kHz file when both play at 48 kHz.
-            Ok(opened) if same_output(opened.3.sample_rate) => {
+            Ok(opened) if same_output(&opened.3) => {
                 let prev = self.session.take().unwrap();
                 let at = prev.pushed;
                 let quality = self.options.quality;
@@ -927,6 +943,7 @@ impl Engine {
             sink,
             caps: None,
             caps_override: None,
+            out_bits: None,
             output: None,
             session: None,
             display: None,
@@ -966,6 +983,31 @@ mod tests {
                 ((i as f32 * 440.0 * std::f32::consts::TAU / rate as f32).sin() * 8000.0) as i16;
             b.extend_from_slice(&v.to_le_bytes());
             b.extend_from_slice(&v.to_le_bytes());
+        }
+        std::fs::write(path, b).unwrap();
+    }
+
+    /// A 24-bit stereo WAV with a quiet tone.
+    fn write_wav24(path: &Path, rate: u32, frames: u32) {
+        let data_len = frames * 6;
+        let mut b = Vec::new();
+        b.extend_from_slice(b"RIFF");
+        b.extend_from_slice(&(36 + data_len).to_le_bytes());
+        b.extend_from_slice(b"WAVEfmt ");
+        b.extend_from_slice(&16u32.to_le_bytes());
+        b.extend_from_slice(&1u16.to_le_bytes());
+        b.extend_from_slice(&2u16.to_le_bytes());
+        b.extend_from_slice(&rate.to_le_bytes());
+        b.extend_from_slice(&(rate * 6).to_le_bytes());
+        b.extend_from_slice(&6u16.to_le_bytes());
+        b.extend_from_slice(&24u16.to_le_bytes());
+        b.extend_from_slice(b"data");
+        b.extend_from_slice(&data_len.to_le_bytes());
+        for i in 0..frames {
+            let v = ((i as f32 * 0.05).sin() * 1_000_000.0) as i32;
+            let x = &v.to_le_bytes()[..3];
+            b.extend_from_slice(x);
+            b.extend_from_slice(x);
         }
         std::fs::write(path, b).unwrap();
     }
@@ -1462,6 +1504,81 @@ mod tests {
         e.tick();
         assert_eq!(clock.opened().len(), 3);
         assert!((e.position() - 0.25).abs() < 0.01, "{}", e.position());
+    }
+
+    fn hires_dac() -> (Engine, FakeClock) {
+        let (sink, clock) = FakeSink::new(
+            Caps {
+                rates: vec![44100, 48000, 96000],
+                any_rate: false,
+                channels: 2,
+            },
+            0,
+        );
+        let state = Arc::new(Mutex::new(PlayerState {
+            volume: 1.0,
+            ..Default::default()
+        }));
+        (Engine::new(state, Box::new(sink)), clock)
+    }
+
+    #[test]
+    fn standard_mode_converts_everything_to_the_mixer_rate() {
+        let (mut e, clock) = hires_dac();
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            output: crate::sink::OutputPrefs {
+                fixed_rate: 48000,
+                ..Default::default()
+            },
+            ..AudioOptions::default()
+        }));
+        let path = tmp("standard96.wav");
+        write_wav(&path, 96000, 0.1, 0, 9600);
+        e.handle(Command::SetQueue {
+            items: vec![item(&path)],
+            start: 0,
+        });
+        assert_eq!(clock.opened(), vec![48000]);
+        assert_eq!(
+            e.st().info.processing,
+            vec!["resample 96000→48000 Hz (best)".to_string()]
+        );
+    }
+
+    #[test]
+    fn bit_perfect_keeps_rate_and_depth_and_reopens_for_a_new_depth() {
+        let (mut e, clock) = hires_dac();
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            // The limit doesn't apply: there is no conversion to limit.
+            max_rate: 48000,
+            output: crate::sink::OutputPrefs {
+                bit_perfect: true,
+                fixed_rate: 48000,
+                ..Default::default()
+            },
+            ..AudioOptions::default()
+        }));
+        let cd = tmp("bp-cd.wav");
+        write_wav(&cd, 44100, 0.1, 0, 4410);
+        let hd = tmp("bp-hd.wav");
+        write_wav24(&hd, 96000, 9600);
+        e.handle(Command::SetQueue {
+            items: vec![item(&cd), item(&hd)],
+            start: 0,
+        });
+        assert_eq!(clock.opened(), vec![44100]);
+        let info = e.st().info.clone();
+        assert!(info.untouched(), "{:?}", info.processing);
+        assert!(
+            info.output.starts_with("I16 · bit-perfect"),
+            "{}",
+            info.output
+        );
+        assert!(!clock.dithering());
+        e.handle(Command::Next);
+        assert_eq!(clock.opened(), vec![44100, 96000]);
+        assert!(e.st().info.output.starts_with("I24 · bit-perfect"));
+        assert!(e.st().info.untouched());
     }
 
     #[test]

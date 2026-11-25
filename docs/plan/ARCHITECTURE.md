@@ -183,6 +183,22 @@ fatal. The glue only lists devices (`usbDevices`), asks permission and hands ove
 range and copies/shares the report (parsed summary + hex). On desktop Linux the same page reads
 `/sys/bus/usb/devices/*/descriptors`. Fixtures: `crates/loss-usb/fixtures/*.hex`.
 
+Status (M2-04): Settings → Audio → Output mode: Standard (Loss converts to the mixer's
+`PROPERTY_OUTPUT_SAMPLE_RATE`, `OutputPrefs::fixed_rate`), Hi-Res (default; the song's rate when
+the device lists it), Bit-perfect, Exclusive (MMAP; replaces the M2-02 toggle), Direct USB (shown
+as not yet available). `loss_platform::modes` decides availability from the glue's `mixerInfo`
+JSON (SDK, mixer rate, the USB DAC's `getSupportedMixerAttributes` with
+`MIXER_BEHAVIOR_BIT_PERFECT`) and falls back to Hi-Res with a reason shown in the Audio card.
+Bit-perfect: caps become the bit-perfect rates; per stream the AAudio sink calls the app's hook
+(`sink::set_bit_perfect_hook`), which picks the encoding for the music's depth
+(`Mixer::bit_perfect_encoding`, smallest container that holds it) and asks Android
+(`setPreferredMixerAttributes`, verified with `getPreferredMixerAttributes`); the stream then
+targets the DAC, ignores software volume, and reopens when the depth changes (gapless only within
+one depth). Rate 0 clears the preferred mixer when leaving the mode. The Xiaomi reports no
+bit-perfect formats for the Beats (expected: "This phone doesn't offer it for this DAC").
+Settings with more than four choices render as a list with per-choice descriptions
+(`choice-<key>-<value>-desc`).
+
 Status (M2-07): `resample.rs` uses `rubato` 5 (pure Rust): Fast = cubic polynomial, Medium/High/Best =
 synchronous FFT with longer filters. Measured (tests): Best is flat within ±0.01 dB to 20 kHz and
 keeps aliasing/imaging below −120 dB; lengths are exact (start-up delay trimmed, tail flushed at

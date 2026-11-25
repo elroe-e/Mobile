@@ -106,8 +106,11 @@ Android bit-perfect mixer for them.
       allow access when Android asks → Copy report → send it to Claude. This adds the raw USB
       descriptors (does a hidden 44.1 kHz setting exist?) and the volume range. Note whether
       playback was disturbed while it read.
-- [ ] Output mode **Bit-perfect** is shown as unavailable, with the reason (recheck after HyperOS
-      updates).
+- [ ] (M2-04) Settings → Audio → Output mode → **Bit-perfect** with the Beats plugged in: the Audio
+      card says "Bit-perfect isn't available: This phone doesn't offer it for this DAC. Playing in
+      Hi-Res." (recheck after HyperOS updates). Logs (Settings → Help) show the "mixer:" line.
+- [ ] (M2-04) **Standard**, **Hi-Res** and **Exclusive** each play; the Stream line in Settings →
+      Audio shows the path (Exclusive: "exclusive" or a fallback to "shared").
 - [ ] Output mode **Direct USB**: Android asks for USB permission once; 16/48 and 24/48 files show
       "Bit-perfect: yes"; a 16/44.1 file shows "resampled to 48 kHz by Loss (Best)".
 - [ ] Standard mode: a 16/44.1 file shows "resampled to 48 kHz by Loss"; Android doesn't resample

@@ -77,6 +77,7 @@ mod imp {
             }),
             back: Box::new(crate::nav::request_back),
         });
+        crate::platform::install_bit_perfect_hook();
         svc.refresh_route();
     }
 

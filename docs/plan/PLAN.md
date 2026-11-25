@@ -27,7 +27,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 |---|---|---|---|---|
 | M0 | Foundations: CI, glue module, bridge, store, settings, i18n, UI kit, diagnostics | 13 | 11 | 4–5 sessions |
 | M1 | The 7 problems fixed + phone verification | 8 | 7 | 2–3 sessions |
-| M2 | Audio engine v2, hi-fi output, USB, DSP | 24 | 4 | 8–10 sessions |
+| M2 | Audio engine v2, hi-fi output, USB, DSP | 24 | 5 | 8–10 sessions |
 | M3 | Player and queue | 16 | 0 | 3–4 sessions |
 | M4 | Library v2 | 25 | 0 | 6–8 sessions |
 | M5 | Lyrics v2 | 12 | 0 | 4–5 sessions |
@@ -36,7 +36,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 | M8 | Home, discovery, stats, social, audio tools | 13 | 0 | 5–6 sessions |
 | M9 | Devices and platform integrations | 8 | 0 | 5–6 sessions |
 | M10 | Look, app shell, desktop, iOS, languages, release | 14 | 0 | 6–7 sessions |
-| **Total** | | **155** | **22** | **≈ 50–60 sessions** |
+| **Total** | | **155** | **23** | **≈ 50–60 sessions** |
 
 A "session" here means one working session of the length used so far. Numbers are estimates.
 
@@ -50,7 +50,8 @@ A "session" here means one working session of the length used so far. Numbers ar
    (`docs/plan/reports/2026-11-21-xiaomi-beats.txt`): the Beats take 32/48 kHz only and this phone has
    no bit-perfect mixer. So the order is ~~M2-01~~, ~~M2-07~~ (our own 44.1 → 48 kHz resampling, which affects most of
    the library), ~~M2-03~~ (the Beats' real rates, so M2-07 takes effect), ~~M2-02~~ (native AAudio output), **M2-06** (built; waiting for the owner's Beats report), then **M2-05**
-   (Direct USB, the only bit-perfect route here) and **M2-04**.
+   (Direct USB, the only bit-perfect route here; stream planning done, I/O waits for the report),
+   ~~M2-04~~ (output modes). Without the phone, continue with M2-08 (formats) and M2-09 (ReplayGain).
 
 ## Open decisions (defaults apply until the owner decides)
 
@@ -177,7 +178,7 @@ updated; this file's checkbox is ticked. Commit messages start with the task ID 
   speaker. Device info: name, type, sample rates, encodings, channel masks; Bluetooth codec where the
   API allows. Feeds the output picker and per-device profiles. *Done when:* plugging the Beats shows
   "Beats Studio Pro (USB)" with its rates in diagnostics.
-- [ ] **M2-04 Output modes.** Standard, Hi-Res, Bit-perfect (Android 14+:
+- [x] **M2-04 Output modes.** Standard, Hi-Res, Bit-perfect (Android 14+:
   `setPreferredMixerAttributes(MIXER_BEHAVIOR_BIT_PERFECT)` for USB, verified with
   `getPreferredMixerAttributes`), Direct USB (M2-05), Exclusive for DAPs (AAudio MMAP). Mode picker
   with clear explanations; covers Mornye's playback-engine choice. *Done when:* each available mode

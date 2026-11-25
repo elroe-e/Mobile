@@ -3,6 +3,21 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-25 (session 5, later): output modes (M2-04)
+
+- CI: apt now uses only the Ubuntu archive, with timed retries and the main mirror as fallback
+  (three runs had stalled 25–40 min on a mirror). Green since.
+- **M2-04** Output mode setting (Standard / Hi-Res / Bit-perfect / Exclusive / Direct USB) with
+  availability and reasons from `loss_platform::modes` (tests with the Xiaomi's facts: no
+  bit-perfect formats → falls back to Hi-Res). Engine: Standard converts to the mixer rate;
+  Bit-perfect keeps rate and depth, reopens for a new depth, no dither, no software volume
+  (tests). Kotlin `mixerInfo` / `setBitPerfect` (Android 14 preferred mixer attributes, verified),
+  `MODIFY_AUDIO_SETTINGS` permission. The Exclusive toggle became a mode.
+- Long choices render as a list with explanations (screenshot checked on desktop).
+- Not verified on a phone: whether HyperOS offers bit-perfect on another DAC; the Stream line in
+  Settings → Audio shows the real path.
+- Next without the phone: M2-08 (formats: CUE, APE, DSD, gapless MP4), M2-09 (ReplayGain).
+
 ## 2026-11-24 (session 5, later): Direct USB groundwork (M2-05, started)
 
 - CI on the M2-06 code is green, including both APKs and the API 34 emulator smoke run. That run

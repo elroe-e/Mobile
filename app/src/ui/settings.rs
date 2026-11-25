@@ -105,6 +105,33 @@ fn SettingRow(
                 },
             }
         },
+        // More than four options: a list, each with its own explanation when it has one.
+        (Kind::Choice(opts), Some(Value::Text(v))) if opts.len() > 4 => rsx! {
+            div { class: "setting col",
+                div { class: "row-text",
+                    div { class: "title", "{title}" }
+                    if !hint.is_empty() { div { class: "subtitle", "{hint}" } }
+                }
+                div { class: "choice-list", role: "radiogroup",
+                    for (opt , label , desc) in opts.iter().map(|o| (*o, d.choice_label(o), d.choice_description(o))) {
+                        button {
+                            class: if v == opt { "choice active" } else { "choice" },
+                            role: "radio",
+                            "aria-checked": if v == opt { "true" } else { "false" },
+                            onclick: move |_| {
+                                super::kit::haptic(super::kit::Haptic::Tick);
+                                on_set.call((key, Value::Text(opt.to_string())))
+                            },
+                            div { class: "row-text",
+                                div { class: "title", "{label}" }
+                                if !desc.is_empty() { div { class: "subtitle", "{desc}" } }
+                            }
+                            if v == opt { Icon { name: "check", size: 20 } }
+                        }
+                    }
+                }
+            }
+        },
         (Kind::Choice(opts), Some(Value::Text(v))) => rsx! {
             div { class: if stacked { "setting col" } else { "setting" },
                 div { class: "row-text",
@@ -314,6 +341,7 @@ fn SectionCard(
     rsx! {
         div { class: "card",
             if section == Section::Audio {
+                ModeNotice { mode: cur.output_mode.clone() }
                 OutputRow {}
                 DacProbeRow {}
             }
@@ -413,6 +441,40 @@ fn OutputRow() -> Element {
                 if !stream.is_empty() {
                     div { class: "subtitle", {t!("output-stream", format = stream)} }
                 }
+            }
+        }
+    }
+}
+
+/// Explains when the chosen output mode can't be used here (M2-04).
+#[component]
+fn ModeNotice(mode: String) -> Element {
+    use loss_platform::modes::{self, Mode, Unavailable};
+    let chosen = Mode::parse(&mode);
+    let mixer = services::get().mixer.lock().ok().and_then(|m| m.clone());
+    let why = match &mixer {
+        Some(m) => m.availability(chosen).err(),
+        None if cfg!(target_os = "android") => None,
+        None => modes::desktop_availability(chosen).err(),
+    };
+    let Some(why) = why else {
+        return rsx! {};
+    };
+    let reason = match why {
+        Unavailable::OldAndroid => t!("mode-unavailable-old-android"),
+        Unavailable::NoUsbDac => t!("mode-unavailable-no-usb"),
+        Unavailable::NotOffered => t!("mode-unavailable-not-offered"),
+        Unavailable::NotYet => t!("mode-unavailable-not-yet"),
+        Unavailable::NotHere => t!("mode-unavailable-not-here"),
+    };
+    let name = registry::find("output_mode")
+        .map(|d| d.choice_label(chosen.key()))
+        .unwrap_or_default();
+    rsx! {
+        div { class: "setting",
+            Icon { name: "info", size: 22 }
+            div { class: "row-text",
+                div { class: "subtitle", {t!("output-mode-fallback", mode = name, reason = reason)} }
             }
         }
     }

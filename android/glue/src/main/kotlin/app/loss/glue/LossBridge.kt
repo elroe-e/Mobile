@@ -378,6 +378,74 @@ object LossBridge {
         synchronized(usbOpen) { usbOpen.remove(name)?.close() }
     }
 
+    // ---- Output modes (M2-04). Rust decides which mode and format; Kotlin reports what the
+    // mixer offers and switches Android 14's bit-perfect mixer for the USB DAC.
+
+    private fun usbOutput(am: AudioManager): AudioDeviceInfo? =
+        am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_USB_HEADSET || it.type == AudioDeviceInfo.TYPE_USB_DEVICE
+        }
+
+    private val mediaAttributes: android.media.AudioAttributes
+        get() = android.media.AudioAttributes.Builder()
+            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+            .build()
+
+    /** Rust: {sdk, mixer_rate, usb: {id, name, bit_perfect: [{rate, encoding}]}} as JSON. */
+    @JvmStatic
+    fun mixerInfo(ctx: Context): String {
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val out = JSONObject().put("sdk", Build.VERSION.SDK_INT)
+        am.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull()?.let { out.put("mixer_rate", it) }
+        val usb = usbOutput(am)
+        if (usb != null) {
+            val formats = JSONArray()
+            if (Build.VERSION.SDK_INT >= 34) {
+                try {
+                    for (m in am.getSupportedMixerAttributes(usb)) {
+                        if (m.mixerBehavior == android.media.AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT) {
+                            formats.put(JSONObject().put("rate", m.format.sampleRate).put("encoding", m.format.encoding))
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("Loss", "mixer attributes unknown: $e")
+                }
+            }
+            out.put(
+                "usb",
+                JSONObject().put("id", usb.id).put("name", usb.productName?.toString() ?: "").put("bit_perfect", formats)
+            )
+        }
+        return out.toString()
+    }
+
+    /**
+     * Rust: ask for the bit-perfect mixer at this rate and encoding on the USB DAC; true only if
+     * Android confirms it as the preferred mixer. Rate 0 clears it.
+     */
+    @JvmStatic
+    fun setBitPerfect(ctx: Context, rate: Int, encoding: Int): Boolean {
+        if (Build.VERSION.SDK_INT < 34) return false
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val usb = usbOutput(am) ?: return false
+        return try {
+            if (rate == 0) {
+                am.clearPreferredMixerAttributes(mediaAttributes, usb)
+                return true
+            }
+            val pick = am.getSupportedMixerAttributes(usb).firstOrNull {
+                it.mixerBehavior == android.media.AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT &&
+                    it.format.sampleRate == rate && it.format.encoding == encoding
+            } ?: return false
+            am.setPreferredMixerAttributes(mediaAttributes, usb, pick) &&
+                am.getPreferredMixerAttributes(mediaAttributes, usb) == pick
+        } catch (e: Exception) {
+            android.util.Log.w("Loss", "bit-perfect mixer refused: $e")
+            false
+        }
+    }
+
     @JvmStatic
     fun diagnostics(ctx: Context): String {
         val sb = StringBuilder()

@@ -151,6 +151,11 @@ impl SettingDef {
     pub fn choice_label(&self, value: &str) -> String {
         loss_i18n::tr(&format!("choice-{}-{value}", self.key))
     }
+
+    /// A choice's explanation (`choice-<key>-<value>-desc`), empty when it has none.
+    pub fn choice_description(&self, value: &str) -> String {
+        loss_i18n::tr_opt(&format!("choice-{}-{value}-desc", self.key)).unwrap_or_default()
+    }
 }
 
 /// Languages offered in Settings, the phone's own first. Debug builds add the pseudo-locales
@@ -193,6 +198,23 @@ pub static SETTINGS: &[SettingDef] = &[
         Kind::Choice(&["none", "48000", "96000", "192000"]),
         &["sample rate", "limit", "hi-res", "khz", "battery"],
     ),
+    def(
+        "output_mode",
+        Section::Audio,
+        Kind::Choice(&["standard", "hires", "bitperfect", "exclusive", "usb"]),
+        &[
+            "bit-perfect",
+            "bitperfect",
+            "exclusive",
+            "mmap",
+            "usb",
+            "dac",
+            "hi-res",
+            "engine",
+            "mixer",
+            "resample",
+        ],
+    ),
     android(def(
         "output_format",
         Section::Audio,
@@ -206,19 +228,6 @@ pub static SETTINGS: &[SettingDef] = &[
             "pcm",
             "dither",
             "dac",
-        ],
-    )),
-    android(def(
-        "exclusive_output",
-        Section::Audio,
-        Kind::Toggle,
-        &[
-            "mmap",
-            "exclusive",
-            "bit-perfect",
-            "mixer",
-            "direct",
-            "latency",
         ],
     )),
     android(def(
@@ -374,7 +383,7 @@ pub fn get(s: &Settings, key: &str) -> Option<Value> {
             r => r.to_string(),
         }),
         "output_format" => Text(s.output_format.clone()),
-        "exclusive_output" => Bool(s.exclusive_output),
+        "output_mode" => Text(s.output_mode.clone()),
         "low_latency_output" => Bool(s.low_latency_output),
         "spatial_audio" => Bool(s.spatial_audio),
         _ => return None,
@@ -419,7 +428,7 @@ pub fn set(s: &mut Settings, key: &str, value: Value) -> Result<(), SetError> {
         ("resample_quality", Value::Text(v)) => s.resample_quality = v,
         ("max_sample_rate", Value::Text(v)) => s.max_sample_rate = v.parse().unwrap_or(0),
         ("output_format", Value::Text(v)) => s.output_format = v,
-        ("exclusive_output", Value::Bool(v)) => s.exclusive_output = v,
+        ("output_mode", Value::Text(v)) => s.output_mode = v,
         ("low_latency_output", Value::Bool(v)) => s.low_latency_output = v,
         ("spatial_audio", Value::Bool(v)) => s.spatial_audio = v,
         _ => return Err(SetError::Invalid),

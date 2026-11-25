@@ -7,6 +7,7 @@ use loss_audio::Player;
 use loss_core::vault::{names, Vault};
 use loss_core::{Library, Settings, TrackOrigin};
 use loss_download::{DownloadManager, ManagerConfig};
+use loss_platform::modes::{Mixer, Mode};
 use loss_store::Store;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -32,6 +33,8 @@ pub struct Services {
     pub system_volume: std::sync::atomic::AtomicU32,
     /// The output music plays through (Android), for display and the engine's rate choice.
     pub output: Mutex<Option<loss_platform::route::Device>>,
+    /// What the phone's mixer offers (output modes, M2-04); None until known.
+    pub mixer: Mutex<Option<Mixer>>,
     /// Bumped when USB devices or permissions change; the DAC probe page watches it.
     pub usb_version: AtomicU64,
     pub scan_progress: AtomicU64,
@@ -44,17 +47,38 @@ pub fn get() -> &'static Services {
     SERVICES.get_or_init(Services::init)
 }
 
-/// The engine's conversion options from settings.
-fn audio_options(s: &Settings) -> loss_audio::AudioOptions {
+/// The output mode in use: the chosen one if this phone and DAC allow it, else Hi-Res.
+pub fn effective_mode(chosen: Mode, mixer: Option<&Mixer>) -> Mode {
+    match mixer {
+        Some(m) => m.effective(chosen),
+        // Android without mixer facts yet: the mixer's own modes only.
+        None if cfg!(target_os = "android") => match chosen {
+            Mode::BitPerfect | Mode::DirectUsb => Mode::HiRes,
+            m => m,
+        },
+        None if loss_platform::modes::desktop_availability(chosen).is_ok() => chosen,
+        None => Mode::HiRes,
+    }
+}
+
+/// The engine's conversion and output options from settings and the mode in use.
+fn audio_options(s: &Settings, mixer: Option<&Mixer>) -> loss_audio::AudioOptions {
+    let mode = effective_mode(Mode::parse(&s.output_mode), mixer);
     loss_audio::AudioOptions {
         quality: loss_audio::Quality::parse(&s.resample_quality),
         max_rate: s.max_sample_rate,
         output: loss_audio::sink::OutputPrefs {
             format: loss_audio::sink::SampleFormat::parse_setting(&s.output_format),
-            exclusive: s.exclusive_output,
+            exclusive: mode == Mode::Exclusive,
             low_latency: s.low_latency_output,
             spatial: s.spatial_audio,
             device_id: 0,
+            fixed_rate: if mode == Mode::Standard {
+                mixer.map(Mixer::rate).unwrap_or(48000)
+            } else {
+                0
+            },
+            bit_perfect: mode == Mode::BitPerfect,
         },
     }
 }
@@ -159,7 +183,7 @@ impl Services {
             settings.volume
         });
         player.send(loss_audio::Command::SetAudioOptions(audio_options(
-            &settings,
+            &settings, None,
         )));
         let downloads =
             DownloadManager::new(manager_config(&settings), paths.data.join("downloads.json"));
@@ -176,6 +200,7 @@ impl Services {
             library_version: AtomicU64::new(1),
             scanning: AtomicBool::new(false),
             output: Mutex::new(None),
+            mixer: Mutex::new(None),
             usb_version: AtomicU64::new(0),
             system_volume: std::sync::atomic::AtomicU32::new(
                 follows_system.unwrap_or(f32::NAN).to_bits(),
@@ -233,8 +258,16 @@ impl Services {
         };
         save_settings(self.store.as_ref(), &s);
         let _ = std::fs::create_dir_all(&s.download_dir);
+        let mixer = lock(&self.mixer).clone();
         self.player
-            .send(loss_audio::Command::SetAudioOptions(audio_options(&s)));
+            .send(loss_audio::Command::SetAudioOptions(audio_options(
+                &s,
+                mixer.as_ref(),
+            )));
+        // The mode may change what the output takes (bit-perfect rates).
+        if cfg!(target_os = "android") {
+            self.refresh_route();
+        }
         self.downloads.set_config(manager_config(&s));
     }
 
@@ -245,16 +278,41 @@ impl Services {
         let Some(outputs) = platform::outputs() else {
             return;
         };
+        let mixer = platform::mixer_info().and_then(|j| Mixer::parse(&j));
+        if let Some(m) = &mixer {
+            log::info!("mixer: {m:?}");
+        }
+        *lock(&self.mixer) = mixer.clone();
+        let settings = lock(&self.settings).clone();
+        let mode = effective_mode(Mode::parse(&settings.output_mode), mixer.as_ref());
+        self.player
+            .send(loss_audio::Command::SetAudioOptions(audio_options(
+                &settings,
+                mixer.as_ref(),
+            )));
         let active = outputs.active().cloned();
-        let caps = active.as_ref().and_then(|d| {
-            (!d.rates.is_empty()).then(|| loss_audio::sink::Caps {
-                rates: d.rates.clone(),
+        // Bit-perfect: only the rates the phone passes through untouched.
+        let bit_perfect = mixer
+            .as_ref()
+            .filter(|_| mode == Mode::BitPerfect)
+            .map(Mixer::bit_perfect_rates)
+            .filter(|r| !r.is_empty())
+            .map(|rates| loss_audio::sink::Caps {
+                rates,
                 any_rate: false,
-                channels: if d.channels.is_empty() || d.channels.contains(&2) {
-                    2
-                } else {
-                    d.channels[0] as usize
-                },
+                channels: 2,
+            });
+        let caps = bit_perfect.or_else(|| {
+            active.as_ref().and_then(|d| {
+                (!d.rates.is_empty()).then(|| loss_audio::sink::Caps {
+                    rates: d.rates.clone(),
+                    any_rate: false,
+                    channels: if d.channels.is_empty() || d.channels.contains(&2) {
+                        2
+                    } else {
+                        d.channels[0] as usize
+                    },
+                })
             })
         });
         match &active {

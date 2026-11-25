@@ -8,6 +8,7 @@
 //!   loader, natives registered with `RegisterNatives`, typed calls into `app.loss.glue.LossBridge`.
 
 pub mod event;
+pub mod modes;
 pub mod policy;
 pub mod reliability;
 pub mod route;

@@ -22,6 +22,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 #[derive(Default)]
 pub struct AAudioSink {
     prefs: OutputPrefs,
+    source_bits: Option<u32>,
+    /// The last stream used the platform's bit-perfect path (turn it off when leaving).
+    was_bit_perfect: bool,
 }
 
 /// What the real-time callback reads and writes. Lives on the heap until the stream is closed.
@@ -37,6 +40,8 @@ struct Shared {
     channels: usize,
     rate: u32,
     calls: u32,
+    /// Bit-perfect: the samples go out untouched, so the software volume is ignored.
+    fixed_volume: bool,
 }
 
 /// Optional entry points (API 28+, 32+, 34+).
@@ -130,7 +135,11 @@ unsafe extern "C" fn on_data(
     let sh = &mut *(user as *mut Shared);
     let samples = frames.max(0) as usize * sh.channels;
     let out = std::slice::from_raw_parts_mut(data as *mut u8, samples * sh.format.bytes());
-    let vol = f32::from_bits(sh.volume.load(Ordering::Relaxed));
+    let vol = if sh.fixed_volume {
+        1.0
+    } else {
+        f32::from_bits(sh.volume.load(Ordering::Relaxed))
+    };
     let dither = sh.dither.load(Ordering::Relaxed) || vol != 1.0;
     let mut popped = 0u64;
     match sh.slot.try_lock() {
@@ -288,6 +297,10 @@ impl Sink for AAudioSink {
         self.prefs = prefs;
     }
 
+    fn set_source_bits(&mut self, bits: Option<u32>) {
+        self.source_bits = bits;
+    }
+
     fn open(&mut self, rate: u32, volume: Arc<AtomicU32>) -> Result<Stream, String> {
         let slot: Slot = Arc::new(Mutex::new(None));
         let played = Arc::new(AtomicU64::new(0));
@@ -306,8 +319,26 @@ impl Sink for AAudioSink {
             channels: 2,
             rate,
             calls: 0,
+            fixed_volume: false,
         }));
-        let prefs = self.prefs;
+        let mut prefs = self.prefs;
+        // Bit-perfect: the platform prepares the path for this rate and depth and says which
+        // format to send where; without it, play normally.
+        let mut bit_perfect = false;
+        if prefs.bit_perfect {
+            match crate::sink::bit_perfect(rate, self.source_bits) {
+                Some((format, device)) => {
+                    prefs.format = Some(format);
+                    prefs.device_id = device;
+                    prefs.exclusive = false;
+                    bit_perfect = true;
+                }
+                None => log::warn!("no bit-perfect path for {rate} Hz; normal output"),
+            }
+        } else if self.was_bit_perfect {
+            crate::sink::bit_perfect(0, None);
+        }
+        self.was_bit_perfect = bit_perfect;
         let opened = unsafe {
             match open_stream(&prefs, prefs.exclusive, rate, shared) {
                 Err(e) if prefs.exclusive => {
@@ -346,6 +377,7 @@ impl Sink for AAudioSink {
             sh.channels = channels;
             sh.rate = got_rate;
             sh.encoder = Encoder::new(format, channels);
+            sh.fixed_volume = bit_perfect;
         }
         latency.store(buffer.max(0) as u64, Ordering::Relaxed);
         let l = late();
@@ -366,6 +398,7 @@ impl Sink for AAudioSink {
             device_id: device,
             buffer_frames: buffer.max(0) as u32,
             hardware,
+            bit_perfect,
         };
         let asked = format!(
             "{} {} {rate} Hz",

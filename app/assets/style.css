@@ -517,3 +517,14 @@ input.seek.dragging::-webkit-slider-thumb { margin-top: -8px; }
 /* Search boxes show focus on the whole pill, not the bare input inside it. */
 .search-box input:focus-visible { outline: none; }
 .search-box:focus-within { box-shadow: 0 0 0 2px var(--primary); }
+
+/* Settings with many options: one row per option (output mode). */
+.choice-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.choice {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 10px 12px; border-radius: 14px; border: 1px solid var(--outline-variant, transparent);
+  background: transparent; color: inherit; text-align: start; font: inherit; cursor: pointer;
+}
+.choice .row-text { flex: 1; min-width: 0; }
+.choice.active { background: var(--secondary-container); color: var(--on-secondary-container); border-color: transparent; }
+.choice:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }

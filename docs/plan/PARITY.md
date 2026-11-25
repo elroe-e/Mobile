@@ -141,7 +141,7 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 | SND-06 | Skip silence | Yes | No | Only in Mornye | M2-14 | todo |
 | SND-07 | Spatial audio | On/off, shows head-tracking support | No | Only in Mornye | M2-16 | todo |
 | SND-08 | Hi-res and bit-perfect output | USB bit-perfect (Android 14+), direct USB driver, DSD over USB, exclusive mode for music players, sample-rate limit | Opens the output at the song’s rate when the phone allows; Android may still resample | Simpler in Loss | M2-02, M2-04, M2-05, M2-06, M2-07 | doing |
-| SND-09 | Choice of playback engine | Old or new (Media3) engine | One engine written in Rust | Different | M2-04 | todo |
+| SND-09 | Choice of playback engine | Old or new (Media3) engine | One engine written in Rust | Different | M2-04 | done |
 | SND-10 | Pause for calls and other apps | Yes | No, keeps playing | Only in Mornye | M1-01 | done |
 | SND-11 | Pause when headphones are unplugged | Yes | No, switches to the speaker | Only in Mornye | M1-02 | done |
 | SND-12 | Resume when headphones or car connect | Off, after a disconnect, or always | No | Only in Mornye | M2-17 | todo |

@@ -455,6 +455,77 @@ pub fn usb_close(name: &str) {
     });
 }
 
+/// What the mixer offers (output modes) as the glue reports it (JSON); None off Android.
+pub fn mixer_info() -> Option<String> {
+    #[cfg(target_os = "android")]
+    {
+        android::with_env(|env, act| {
+            let cls = android::bridge_class(env, act)?;
+            let s = env
+                .call_static_method(
+                    &cls,
+                    "mixerInfo",
+                    "(Landroid/content/Context;)Ljava/lang/String;",
+                    &[jni::objects::JValue::Object(act)],
+                )?
+                .l()?;
+            Ok(env.get_string(&jni::objects::JString::from(s))?.into())
+        })
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        None
+    }
+}
+
+/// Asks Android for its bit-perfect mixer at `rate` and `encoding` on the USB DAC (0 clears it).
+#[cfg(target_os = "android")]
+fn set_bit_perfect(rate: u32, encoding: i32) -> bool {
+    android::with_env(|env, act| {
+        let cls = android::bridge_class(env, act)?;
+        env.call_static_method(
+            &cls,
+            "setBitPerfect",
+            "(Landroid/content/Context;II)Z",
+            &[
+                jni::objects::JValue::Object(act),
+                jni::objects::JValue::Int(rate as i32),
+                jni::objects::JValue::Int(encoding),
+            ],
+        )?
+        .z()
+    })
+    .unwrap_or(false)
+}
+
+/// Lets the audio engine switch the bit-perfect mixer as each song's rate and depth need
+/// (M2-04). The choice of encoding is `loss_platform::modes`'.
+#[cfg(target_os = "android")]
+pub fn install_bit_perfect_hook() {
+    use loss_audio::sink::SampleFormat;
+    use loss_platform::modes as m;
+    loss_audio::sink::set_bit_perfect_hook(Box::new(|rate, bits| {
+        if rate == 0 {
+            set_bit_perfect(0, 0);
+            return None;
+        }
+        let mixer = crate::services::get().mixer.lock().ok()?.clone()?;
+        let encoding = mixer.bit_perfect_encoding(rate, bits.unwrap_or(16))?;
+        let device = mixer.usb.as_ref()?.id;
+        if !set_bit_perfect(rate, encoding) {
+            log::warn!("bit-perfect mixer refused for {rate} Hz, encoding {encoding}");
+            return None;
+        }
+        let format = match encoding {
+            m::ENCODING_PCM_16BIT => SampleFormat::I16,
+            m::ENCODING_PCM_24BIT_PACKED => SampleFormat::I24,
+            m::ENCODING_PCM_32BIT => SampleFormat::I32,
+            _ => SampleFormat::F32,
+        };
+        Some((format, device))
+    }));
+}
+
 /// The device's language as a BCP 47 tag (e.g. "en-GB"), if known.
 pub fn system_locale() -> Option<String> {
     #[cfg(target_os = "android")]
