@@ -341,7 +341,7 @@ fn SectionCard(
     rsx! {
         div { class: "card",
             if section == Section::Audio {
-                ModeNotice { mode: cur.output_mode.clone() }
+                ModeNotice { mode: cur.output_mode.clone(), levelling: cur.normalization }
                 OutputRow {}
                 DacProbeRow {}
             }
@@ -415,6 +415,7 @@ fn LogsRow() -> Element {
 fn OutputRow() -> Element {
     let st = state();
     let stream = st.player.read().info.output.clone();
+    let processing = st.player.read().info.processing.join(", ");
     let Some(d) = services::get().output.lock().ok().and_then(|o| o.clone()) else {
         return rsx! {};
     };
@@ -441,6 +442,9 @@ fn OutputRow() -> Element {
                 if !stream.is_empty() {
                     div { class: "subtitle", {t!("output-stream", format = stream)} }
                 }
+                if !processing.is_empty() {
+                    div { class: "subtitle", {t!("output-processing", list = processing)} }
+                }
             }
         }
     }
@@ -448,7 +452,7 @@ fn OutputRow() -> Element {
 
 /// Explains when the chosen output mode can't be used here (M2-04).
 #[component]
-fn ModeNotice(mode: String) -> Element {
+fn ModeNotice(mode: String, levelling: bool) -> Element {
     use loss_platform::modes::{self, Mode, Unavailable};
     let chosen = Mode::parse(&mode);
     let mixer = services::get().mixer.lock().ok().and_then(|m| m.clone());
@@ -458,6 +462,17 @@ fn ModeNotice(mode: String) -> Element {
         None => modes::desktop_availability(chosen).err(),
     };
     let Some(why) = why else {
+        // Bit-perfect in use: say why levelling does nothing.
+        if chosen == Mode::BitPerfect && levelling {
+            return rsx! {
+                div { class: "setting",
+                    Icon { name: "info", size: 22 }
+                    div { class: "row-text",
+                        div { class: "subtitle", {t!("normalize-off-bit-perfect")} }
+                    }
+                }
+            };
+        }
         return rsx! {};
     };
     let reason = match why {

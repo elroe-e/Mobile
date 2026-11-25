@@ -62,6 +62,12 @@ pub struct Settings {
     pub low_latency_output: bool,
     /// Let Android's spatializer process music.
     pub spatial_audio: bool,
+    /// Volume levelling from ReplayGain/R128 tags (M2-09).
+    pub normalization: bool,
+    /// "auto", "track" or "album".
+    pub normalization_mode: String,
+    /// Pre-amp in dB (≤ 0; shifts the −18 LUFS reference).
+    pub normalization_preamp: i64,
 }
 
 impl Default for Settings {
@@ -94,6 +100,9 @@ impl Default for Settings {
             output_mode: "hires".into(),
             low_latency_output: false,
             spatial_audio: false,
+            normalization: false,
+            normalization_mode: "auto".into(),
+            normalization_preamp: 0,
         }
     }
 }

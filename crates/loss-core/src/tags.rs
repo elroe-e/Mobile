@@ -24,6 +24,28 @@ pub struct TrackMeta {
     pub bit_depth: Option<u8>,
     #[serde(default)]
     pub sample_rate: Option<u32>,
+    /// ReplayGain in dB against the −18 LUFS reference (from RG or R128 tags).
+    #[serde(default)]
+    pub gain_track: Option<f64>,
+    #[serde(default)]
+    pub gain_album: Option<f64>,
+}
+
+/// "−6.48 dB", "+1.2", "-3,5 dB" → dB.
+pub fn parse_gain(s: &str) -> Option<f64> {
+    let s = s.trim().replace(',', ".");
+    let num: String = s
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || matches!(c, '+' | '-' | '.'))
+        .collect();
+    num.parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite() && v.abs() < 60.0)
+}
+
+/// R128 gains (Opus, Q7.8 against −23 LUFS) as ReplayGain dB (against −18 LUFS).
+pub fn r128_to_rg(s: &str) -> Option<f64> {
+    s.trim().parse::<i32>().ok().map(|q| q as f64 / 256.0 + 5.0)
 }
 
 fn clean(s: Option<std::borrow::Cow<'_, str>>) -> Option<String> {
@@ -80,6 +102,18 @@ fn meta_from(file: &lofty::file::TaggedFile) -> TrackMeta {
             .map(|s| s.to_string())
             .filter(|s| !s.trim().is_empty());
         meta.has_cover = !tag.pictures().is_empty();
+        let get = |k: &str| {
+            tag.get_string(&ItemKey::Unknown(k.into()))
+                .map(str::to_string)
+        };
+        meta.gain_track = tag
+            .get_string(&ItemKey::ReplayGainTrackGain)
+            .and_then(parse_gain)
+            .or_else(|| get("R128_TRACK_GAIN").as_deref().and_then(r128_to_rg));
+        meta.gain_album = tag
+            .get_string(&ItemKey::ReplayGainAlbumGain)
+            .and_then(parse_gain)
+            .or_else(|| get("R128_ALBUM_GAIN").as_deref().and_then(r128_to_rg));
     }
     meta
 }
@@ -200,6 +234,15 @@ mod generated_tests {
 
     /// Needs `scripts/make-fixtures.sh` (CI runs it).
     #[test]
+    fn reads_gain_values() {
+        assert_eq!(parse_gain("-6.48 dB"), Some(-6.48));
+        assert_eq!(parse_gain("+1,5 dB"), Some(1.5));
+        assert_eq!(parse_gain("loud"), None);
+        // R128: -2048/256 = -8 dB against -23 LUFS = -3 dB against -18 LUFS.
+        assert_eq!(r128_to_rg("-2048"), Some(-3.0));
+    }
+
+    #[test]
     #[ignore]
     fn reads_tags_cover_and_lyrics_from_generated_fixture() {
         let dir = std::env::var_os("LOSS_FIXTURES")
@@ -217,6 +260,7 @@ mod generated_tests {
         assert!(m.has_cover);
         assert_eq!((m.bit_depth, m.sample_rate), (Some(16), Some(44100)));
         assert!((m.duration_secs - 2.0).abs() < 0.05);
+        assert_eq!((m.gain_track, m.gain_album), (Some(-6.5), Some(-7.25)));
         let lrc = std::fs::read_to_string(dir.join("tagged-cover.lrc")).unwrap();
         let lyrics = crate::lrc::parse(&lrc);
         assert!(lyrics.is_synced());

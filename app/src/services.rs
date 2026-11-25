@@ -80,6 +80,11 @@ fn audio_options(s: &Settings, mixer: Option<&Mixer>) -> loss_audio::AudioOption
             },
             bit_perfect: mode == Mode::BitPerfect,
         },
+        normalize: loss_audio::Normalize {
+            enabled: s.normalization,
+            mode: loss_audio::GainMode::parse(&s.normalization_mode),
+            preamp_db: s.normalization_preamp.min(0) as f64,
+        },
     }
 }
 

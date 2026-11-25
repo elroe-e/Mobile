@@ -215,6 +215,32 @@ pub static SETTINGS: &[SettingDef] = &[
             "resample",
         ],
     ),
+    def(
+        "normalization",
+        Section::Audio,
+        Kind::Toggle,
+        &[
+            "replaygain",
+            "loudness",
+            "normalize",
+            "volume",
+            "level",
+            "r128",
+            "lufs",
+        ],
+    ),
+    def(
+        "normalization_mode",
+        Section::Audio,
+        Kind::Choice(&["auto", "track", "album"]),
+        &["replaygain", "album gain", "track gain"],
+    ),
+    def(
+        "normalization_preamp",
+        Section::Audio,
+        Kind::Steps(&[-12, -9, -6, -3, 0]),
+        &["replaygain", "pre-amp", "preamp", "loudness", "lufs"],
+    ),
     android(def(
         "output_format",
         Section::Audio,
@@ -386,6 +412,9 @@ pub fn get(s: &Settings, key: &str) -> Option<Value> {
         "output_mode" => Text(s.output_mode.clone()),
         "low_latency_output" => Bool(s.low_latency_output),
         "spatial_audio" => Bool(s.spatial_audio),
+        "normalization" => Bool(s.normalization),
+        "normalization_mode" => Text(s.normalization_mode.clone()),
+        "normalization_preamp" => Int(s.normalization_preamp),
         _ => return None,
     })
 }
@@ -431,6 +460,9 @@ pub fn set(s: &mut Settings, key: &str, value: Value) -> Result<(), SetError> {
         ("output_mode", Value::Text(v)) => s.output_mode = v,
         ("low_latency_output", Value::Bool(v)) => s.low_latency_output = v,
         ("spatial_audio", Value::Bool(v)) => s.spatial_audio = v,
+        ("normalization", Value::Bool(v)) => s.normalization = v,
+        ("normalization_mode", Value::Text(v)) => s.normalization_mode = v,
+        ("normalization_preamp", Value::Int(v)) => s.normalization_preamp = v.clamp(-24, 0),
         _ => return Err(SetError::Invalid),
     }
     Ok(())

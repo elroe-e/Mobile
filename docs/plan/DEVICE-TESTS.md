@@ -121,7 +121,9 @@ Android bit-perfect mixer for them.
       warning appears.
 - [ ] Equalizer and AutoEq "Beats Studio Pro" profile: on/off sounds different; in Bit-perfect mode the
       app explains that EQ is bypassed.
-- [ ] ReplayGain album mode: loud and quiet albums play at similar loudness.
+- [ ] (M2-09) Settings → Audio → Volume levelling on: songs with ReplayGain tags from loud and
+      quiet albums play at similar loudness; Settings → Audio shows "gain … dB"; in Bit-perfect
+      mode the card says levelling is off.
 - [ ] Battery: one hour of FLAC playback with the screen off, note the battery drop.
 
 - [ ] (M2-08) Copy to the music folder: an album as one FLAC + .cue, a .dsf, a .wv and an ALAC/AAC

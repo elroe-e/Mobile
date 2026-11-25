@@ -25,6 +25,8 @@ pub struct AudioOptions {
     pub max_rate: u32,
     /// Format and mode of the output stream (M2-02).
     pub output: sink::OutputPrefs,
+    /// ReplayGain levelling (M2-09); off on bit-perfect paths.
+    pub normalize: Normalize,
 }
 
 use std::path::PathBuf;
@@ -39,6 +41,64 @@ pub struct QueueItem {
     pub start: f64,
     /// Where it ends; None for the end of the file.
     pub end: Option<f64>,
+    /// ReplayGain in dB (−18 LUFS reference), from the file's tags.
+    pub gain_track: Option<f64>,
+    pub gain_album: Option<f64>,
+    /// Part of an album played in order (automatic gain mode uses the album gain).
+    pub album_run: bool,
+}
+
+/// Which ReplayGain value levels a track.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GainMode {
+    Track,
+    Album,
+    /// Album gain while an album plays in order, track gain otherwise.
+    #[default]
+    Auto,
+}
+
+impl GainMode {
+    pub fn parse(s: &str) -> GainMode {
+        match s {
+            "track" => GainMode::Track,
+            "album" => GainMode::Album,
+            _ => GainMode::Auto,
+        }
+    }
+}
+
+/// Volume levelling from ReplayGain tags (M2-09). Like Mornye it only turns tracks down
+/// (gain plus pre-amp capped at 0 dB), so it never clips.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Normalize {
+    pub enabled: bool,
+    pub mode: GainMode,
+    /// Shifts the −18 LUFS reference: −6 dB aims at −24 LUFS.
+    pub preamp_db: f64,
+}
+
+impl Normalize {
+    /// The gain for an item in dB (≤ 0) and whether the album value was used; None for none.
+    pub fn gain_for(&self, item: &QueueItem) -> Option<(f64, bool)> {
+        if !self.enabled {
+            return None;
+        }
+        let album_first = match self.mode {
+            GainMode::Track => false,
+            GainMode::Album => true,
+            GainMode::Auto => item.album_run,
+        };
+        let (g, album) = match (album_first, item.gain_track, item.gain_album) {
+            (true, _, Some(a)) => (a, true),
+            (false, Some(t), _) => (t, false),
+            (_, Some(t), None) => (t, false),
+            (_, None, Some(a)) => (a, true),
+            (_, None, None) => return None,
+        };
+        let db = (g + self.preamp_db).min(0.0);
+        (db < -0.005).then_some((db, album))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

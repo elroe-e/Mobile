@@ -27,7 +27,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 |---|---|---|---|---|
 | M0 | Foundations: CI, glue module, bridge, store, settings, i18n, UI kit, diagnostics | 13 | 11 | 4–5 sessions |
 | M1 | The 7 problems fixed + phone verification | 8 | 7 | 2–3 sessions |
-| M2 | Audio engine v2, hi-fi output, USB, DSP | 24 | 5 | 8–10 sessions |
+| M2 | Audio engine v2, hi-fi output, USB, DSP | 24 | 6 | 8–10 sessions |
 | M3 | Player and queue | 16 | 0 | 3–4 sessions |
 | M4 | Library v2 | 25 | 0 | 6–8 sessions |
 | M5 | Lyrics v2 | 12 | 0 | 4–5 sessions |
@@ -36,7 +36,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 | M8 | Home, discovery, stats, social, audio tools | 13 | 0 | 5–6 sessions |
 | M9 | Devices and platform integrations | 8 | 0 | 5–6 sessions |
 | M10 | Look, app shell, desktop, iOS, languages, release | 14 | 0 | 6–7 sessions |
-| **Total** | | **155** | **23** | **≈ 50–60 sessions** |
+| **Total** | | **155** | **24** | **≈ 50–60 sessions** |
 
 A "session" here means one working session of the length used so far. Numbers are estimates.
 
@@ -51,7 +51,7 @@ A "session" here means one working session of the length used so far. Numbers ar
    no bit-perfect mixer. So the order is ~~M2-01~~, ~~M2-07~~ (our own 44.1 → 48 kHz resampling, which affects most of
    the library), ~~M2-03~~ (the Beats' real rates, so M2-07 takes effect), ~~M2-02~~ (native AAudio output), **M2-06** (built; waiting for the owner's Beats report), then **M2-05**
    (Direct USB, the only bit-perfect route here; stream planning done, I/O waits for the report),
-   ~~M2-04~~ (output modes). Without the phone, continue with M2-08 (formats) and M2-09 (ReplayGain).
+   ~~M2-04~~ (output modes). ~~M2-09~~ (ReplayGain). M2-08 is done but APE (needs a sample file). Without the phone, continue with M2-10 (equalizer).
 
 ## Open decisions (defaults apply until the owner decides)
 
@@ -213,7 +213,7 @@ updated; this file's checkbox is ticked. Commit messages start with the task ID 
     join, measured by `generated_gapless_sets`); report ALAC bit depth.
 
   *Done when:* each format's fixture plays, seeks and shows correct info.
-- [ ] **M2-09 ReplayGain and normalisation.** Read RG and R128 tags; track, album or automatic mode
+- [x] **M2-09 ReplayGain and normalisation.** Read RG and R128 tags; track, album or automatic mode
   (album when playing an album in order); pre-amp; clip prevention from the true peak; Mornye's "only
   turns down" rule. Off in bit-perfect paths, and the UI says why. *Done when:* the gain is applied
   sample-accurately in tests and shown in the audio-info sheet.

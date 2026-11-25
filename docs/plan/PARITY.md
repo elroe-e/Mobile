@@ -137,7 +137,7 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 | SND-02 | Gapless playback | Yes (setting) | A short gap between songs | Only in Mornye | M1-06 | done |
 | SND-03 | AutoMix / crossfade | Beat-matched transitions with crossfade, muffled, echo and pitch effects | No | Only in Mornye | M2-15 | todo |
 | SND-04 | Equalizer | 5 to 31 bands, bass, treble, balance, pre-amp, limiter, compressor, presets to save, import and share | No | Only in Mornye | M2-10, M2-11 | todo |
-| SND-05 | Volume levelling (ReplayGain) | By track or album, with pre-amp | No | Only in Mornye | M2-09 | todo |
+| SND-05 | Volume levelling (ReplayGain) | By track or album, with pre-amp | No | Only in Mornye | M2-09 | done |
 | SND-06 | Skip silence | Yes | No | Only in Mornye | M2-14 | todo |
 | SND-07 | Spatial audio | On/off, shows head-tracking support | No | Only in Mornye | M2-16 | todo |
 | SND-08 | Hi-res and bit-perfect output | USB bit-perfect (Android 14+), direct USB driver, DSD over USB, exclusive mode for music players, sample-rate limit | Opens the output at the song’s rate when the phone allows; Android may still resample | Simpler in Loss | M2-02, M2-04, M2-05, M2-06, M2-07 | doing |

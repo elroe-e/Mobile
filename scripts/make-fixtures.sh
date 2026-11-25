@@ -72,7 +72,8 @@ ff -f lavfi -i "$(sine 550 44100 2)" -i cover.png -map 0:a -map 1:v -ac 2 -sampl
   -c:v png -disposition:v attached_pic \
   -metadata title="Tagged Song" -metadata artist="Loss Test Artist" -metadata album="Loss Test Album" \
   -metadata album_artist="Loss Test Artist" -metadata track=3 -metadata disc=1 -metadata date=2024 \
-  -metadata genre="Test" -metadata REPLAYGAIN_TRACK_GAIN="-6.50 dB" tagged-cover.flac
+  -metadata genre="Test" -metadata REPLAYGAIN_TRACK_GAIN="-6.50 dB" \
+  -metadata REPLAYGAIN_ALBUM_GAIN="-7.25 dB" tagged-cover.flac
 
 # Synced lyrics for tagged-cover.flac.
 cat > tagged-cover.lrc <<'LRC'

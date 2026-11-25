@@ -50,7 +50,38 @@ pub struct Track {
     /// And where it ends; None for the end of the file.
     #[serde(default)]
     pub end: Option<f64>,
+    /// ReplayGain in dB (−18 LUFS reference), from the file's tags.
+    #[serde(default)]
+    pub gain_track: Option<f64>,
+    #[serde(default)]
+    pub gain_album: Option<f64>,
+    /// Which version of the tag reader filled this in; older tracks are read again on a scan.
+    #[serde(default)]
+    pub meta_version: u8,
 }
+
+/// For each track of a queue: is it part of an album played in order? True when a neighbour is
+/// the same album with the next or previous track number (ReplayGain "automatic" uses the
+/// album gain then, so the album's own loudness changes are kept).
+pub fn album_runs(queue: &[&Track]) -> Vec<bool> {
+    let follows = |a: &Track, b: &Track| {
+        a.album == b.album
+            && a.album_artist == b.album_artist
+            && a.disc_no.unwrap_or(1) == b.disc_no.unwrap_or(1)
+            && matches!((a.track_no, b.track_no), (Some(x), Some(y)) if y == x + 1)
+    };
+    (0..queue.len())
+        .map(|i| {
+            let prev = i > 0 && follows(queue[i - 1], queue[i]);
+            let next = i + 1 < queue.len() && follows(queue[i], queue[i + 1]);
+            prev || next
+        })
+        .collect()
+}
+
+/// Bump when the tag reader learns something new that existing tracks should get.
+/// 1: ReplayGain (M2-09).
+pub const META_VERSION: u8 = 1;
 
 /// CUE sheets found while scanning, per folder: (sheet file, parsed sheet).
 type FolderCues = HashMap<PathBuf, Vec<(PathBuf, crate::cue::Sheet)>>;
@@ -193,6 +224,9 @@ impl Track {
             last_played: 0,
             start: 0.0,
             end: None,
+            gain_track: meta.gain_track,
+            gain_album: meta.gain_album,
+            meta_version: META_VERSION,
         }
     }
 
@@ -450,7 +484,9 @@ impl Library {
                 let mtime = file_mtime(path);
                 match existing.get(path) {
                     Some(&i)
-                        if self.tracks[i].mtime == mtime && !self.tracks[i].format.is_empty() =>
+                        if self.tracks[i].mtime == mtime
+                            && !self.tracks[i].format.is_empty()
+                            && self.tracks[i].meta_version >= META_VERSION =>
                     {
                         new_tracks.push(self.tracks[i].clone());
                     }
@@ -628,6 +664,21 @@ mod tests {
         assert_eq!((again.added, again.removed, again.total), (0, 0, 3));
         assert_eq!(lib.get(&id).map(|t| t.play_count), Some(4));
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn album_runs_need_neighbours_in_order() {
+        let a1 = make("/m/a/1.flac", "Band", "First", "One", 1);
+        let a2 = make("/m/a/2.flac", "Band", "First", "Two", 2);
+        let a3 = make("/m/a/3.flac", "Band", "First", "Three", 3);
+        let b1 = make("/m/b/1.flac", "Other", "Second", "Solo", 1);
+        assert_eq!(album_runs(&[&a1, &a2, &a3]), [true, true, true]);
+        // Shuffled, or a single from somewhere else: track gain.
+        assert_eq!(
+            album_runs(&[&a3, &a1, &b1, &a2]),
+            [false, false, false, false]
+        );
+        assert_eq!(album_runs(&[&b1, &a1, &a2]), [false, true, true]);
     }
 
     #[test]

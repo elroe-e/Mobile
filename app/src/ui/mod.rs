@@ -157,13 +157,19 @@ pub fn shuffle_tracks(ids: &[String]) {
 
 pub fn queue_items(ids: &[String]) -> Vec<QueueItem> {
     let lib = services::get().library();
-    ids.iter()
-        .filter_map(|id| lib.get(id))
-        .map(|t| QueueItem {
+    let tracks: Vec<_> = ids.iter().filter_map(|id| lib.get(id)).collect();
+    let runs = loss_core::library::album_runs(&tracks);
+    tracks
+        .iter()
+        .zip(runs)
+        .map(|(t, album_run)| QueueItem {
             id: t.id.clone(),
             path: t.path.clone(),
             start: t.start,
             end: t.end,
+            gain_track: t.gain_track,
+            gain_album: t.gain_album,
+            album_run,
         })
         .collect()
 }

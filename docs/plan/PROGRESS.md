@@ -3,6 +3,19 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-25 (session 5, later): ReplayGain (M2-09)
+
+- **M2-09** Tags: REPLAYGAIN_TRACK/ALBUM_GAIN and R128 (Q7.8, −23 LUFS → +5 dB) read by
+  loss-core; `Track::gain_track/gain_album` and `meta_version` (older tracks are re-read once on
+  the next scan). `album_runs` marks queue items that play an album in order. Engine:
+  `Normalize { enabled, mode: Auto|Track|Album, preamp_db }` in `AudioOptions`; Mornye's rule
+  (gain + pre-amp capped at 0 dB: only turns down, never clips); applied per session after the
+  graph, so it switches on the exact sample at gapless joins (test), updates live on a settings
+  change (test), and is off on bit-perfect paths (test; the Audio card says why). Shown in
+  Settings → Audio as "Loss changes the sound: gain −6.0 dB (track)" until the audio-info sheet
+  (M2-18). Settings: Volume levelling (off, like Mornye), Levelling by (Automatic), Pre-amp.
+- Peak-based clip prevention isn't needed with "only turns down"; revisit if boosting is added.
+
 ## 2026-11-25 (session 5, later): gapless MP4 and ALAC depth (M2-08, started)
 
 - **M2-08** (not ticked) `loss-audio/src/mp4gap.rs` reads encoder priming and length from

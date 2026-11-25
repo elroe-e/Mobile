@@ -47,6 +47,8 @@ struct Session {
     trim: Trim,
     /// Packet timestamps → frames: (numerator, denominator) of the track's time base × rate.
     ts_to_frames: (u64, u64),
+    /// ReplayGain as a linear factor (1 for none), applied after the graph.
+    gain: f64,
 }
 
 /// The trim for a file and how its packet timestamps convert to frames.
@@ -308,15 +310,26 @@ impl Session {
                     // The music ends in this packet; what follows is padding.
                     let mut processed = Vec::with_capacity(samples.len());
                     self.graph.process(samples, &mut processed);
-                    self.pending.extend(processed.iter().map(|&v| v as f32));
+                    self.push_pending(&processed);
                     self.finish();
                     continue;
                 }
             }
             let mut processed = Vec::with_capacity(samples.len());
             self.graph.process(samples, &mut processed);
-            // The ring and the output are f32: exact for every 16- and 24-bit sample.
+            self.push_pending(&processed);
+        }
+    }
+
+    /// Queues processed samples for the ring, levelled by the ReplayGain factor. (The ring and
+    /// the output are f32: exact for every 16- and 24-bit sample.)
+    fn push_pending(&mut self, processed: &[f64]) {
+        let g = self.gain;
+        if g == 1.0 {
             self.pending.extend(processed.iter().map(|&v| v as f32));
+        } else {
+            self.pending
+                .extend(processed.iter().map(|&v| (v * g) as f32));
         }
     }
 
@@ -324,7 +337,7 @@ impl Session {
     fn finish(&mut self) {
         let mut tail = Vec::new();
         self.graph.flush(&mut tail);
-        self.pending.extend(tail.iter().map(|&v| v as f32));
+        self.push_pending(&tail);
         self.eof = true;
     }
 
@@ -346,6 +359,7 @@ impl Session {
         out_rate: u32,
         out_channels: usize,
         quality: Quality,
+        gain: Option<(f64, bool)>,
     ) -> Session {
         let (mut format, decoder, track_id, mut info, duration) = opened;
         let (trim, ts_to_frames) = gapless_trim(&item, format.as_ref(), track_id, info.sample_rate);
@@ -366,6 +380,7 @@ impl Session {
             quality,
         );
         info.processing = graph.describe();
+        info.processing.extend(gain_note(gain));
         Session {
             item,
             format,
@@ -386,6 +401,7 @@ impl Session {
             pushed: prev.pushed,
             trim,
             ts_to_frames,
+            gain: gain_factor(gain),
         }
     }
 }
@@ -538,7 +554,9 @@ impl Engine {
             out.channels,
             quality,
         );
+        let gain = self.item_gain(&item);
         info.processing = graph.describe();
+        info.processing.extend(gain_note(gain));
         out.dither
             .store(wants_dither(&info, out), Ordering::Relaxed);
         let mut session = Session {
@@ -558,6 +576,7 @@ impl Engine {
             start_offset,
             trim,
             ts_to_frames,
+            gain: gain_factor(gain),
             duration,
             info,
             pushed: 0,
@@ -816,7 +835,11 @@ impl Engine {
             Command::SetShuffle(on) => self.set_shuffle(on),
             Command::SetAudioOptions(o) => {
                 let reopen = o.output != self.options.output;
+                let regain = o.normalize != self.options.normalize;
                 self.options = o;
+                if regain && !reopen {
+                    self.regain();
+                }
                 if reopen {
                     self.sink.set_prefs(o.output);
                     if self.output.is_some() {
@@ -996,7 +1019,9 @@ impl Engine {
                 let prev = self.session.take().unwrap();
                 let at = prev.pushed;
                 let quality = self.options.quality;
-                let next = Session::handover(prev, item, opened, out_rate, out_channels, quality);
+                let gain = self.item_gain(&item);
+                let next =
+                    Session::handover(prev, item, opened, out_rate, out_channels, quality, gain);
                 self.switch = Some(Switch {
                     at,
                     item_id: next.item.id.clone(),
@@ -1027,6 +1052,53 @@ impl Engine {
         match idx {
             Some(i) if self.session.is_some() => self.load(i, at, playing),
             _ => {}
+        }
+    }
+}
+
+/// "gain −6.5 dB (album)" for the processing list.
+fn gain_note(gain: Option<(f64, bool)>) -> Option<String> {
+    gain.map(|(db, album)| {
+        format!(
+            "gain {db:.1} dB ({})",
+            if album { "album" } else { "track" }
+        )
+    })
+}
+
+fn gain_factor(gain: Option<(f64, bool)>) -> f64 {
+    gain.map(|(db, _)| 10f64.powf(db / 20.0)).unwrap_or(1.0)
+}
+
+impl Engine {
+    /// The ReplayGain for an item, or None: off, no tags, or a bit-perfect path.
+    fn item_gain(&self, item: &QueueItem) -> Option<(f64, bool)> {
+        if self.options.output.bit_perfect {
+            return None;
+        }
+        self.options.normalize.gain_for(item)
+    }
+
+    /// Levelling settings changed: the playing track takes the new gain from here on.
+    fn regain(&mut self) {
+        let Some(item) = self.session.as_ref().map(|s| s.item.clone()) else {
+            return;
+        };
+        let gain = self.item_gain(&item);
+        let Some(s) = self.session.as_mut() else {
+            return;
+        };
+        s.gain = gain_factor(gain);
+        s.info.processing = s.graph.describe();
+        s.info.processing.extend(gain_note(gain));
+        let info = s.info.clone();
+        if let Some(out) = &self.output {
+            out.dither
+                .store(wants_dither(&info, out), Ordering::Relaxed);
+        }
+        // The track on screen is this one unless a gapless switch is still on its way.
+        if self.switch.is_none() {
+            self.st().info.processing = info.processing;
         }
     }
 }
@@ -1093,6 +1165,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::GainMode;
     use std::path::PathBuf;
 
     /// 16-bit stereo 440 Hz WAV holding samples `from..to` of a continuous sine.
@@ -1190,6 +1263,7 @@ mod tests {
             pushed: 0,
             trim,
             ts_to_frames,
+            gain: 1.0,
         };
         let mut out = Vec::new();
         let mut joins = Vec::new();
@@ -1209,6 +1283,7 @@ mod tests {
                     out_rate,
                     out_ch,
                     Quality::Best,
+                    None,
                 );
                 next += 1;
             } else if s.drained() {
@@ -1433,6 +1508,7 @@ mod tests {
             path: path.clone(),
             start,
             end,
+            ..Default::default()
         };
         e.handle(Command::SetQueue {
             items: vec![
@@ -1461,6 +1537,138 @@ mod tests {
             start: 0,
         });
         assert!(e.position().abs() < 0.01);
+    }
+
+    #[test]
+    fn replaygain_modes_only_turn_down() {
+        let n = |mode, preamp_db| crate::Normalize {
+            enabled: true,
+            mode,
+            preamp_db,
+        };
+        let item = |t: Option<f64>, a: Option<f64>, run: bool| QueueItem {
+            gain_track: t,
+            gain_album: a,
+            album_run: run,
+            ..Default::default()
+        };
+        let it = item(Some(-6.0), Some(-8.0), false);
+        assert_eq!(n(GainMode::Track, 0.0).gain_for(&it), Some((-6.0, false)));
+        assert_eq!(n(GainMode::Album, 0.0).gain_for(&it), Some((-8.0, true)));
+        // Automatic: album gain only for an album played in order.
+        assert_eq!(n(GainMode::Auto, 0.0).gain_for(&it), Some((-6.0, false)));
+        let run = item(Some(-6.0), Some(-8.0), true);
+        assert_eq!(n(GainMode::Auto, 0.0).gain_for(&run), Some((-8.0, true)));
+        // Missing values fall back to the other one.
+        assert_eq!(
+            n(GainMode::Album, 0.0).gain_for(&item(Some(-3.0), None, true)),
+            Some((-3.0, false))
+        );
+        // Never louder: a quiet track's +4 dB stays at unity (no gain); pre-amp lowers it.
+        assert_eq!(
+            n(GainMode::Track, 0.0).gain_for(&item(Some(4.0), None, false)),
+            None
+        );
+        assert_eq!(
+            n(GainMode::Track, -6.0).gain_for(&item(Some(4.0), None, false)),
+            Some((-2.0, false))
+        );
+        assert_eq!(crate::Normalize::default().gain_for(&it), None);
+    }
+
+    #[test]
+    fn replaygain_switches_on_the_exact_sample_at_a_gapless_join() {
+        let (sink, clock) = FakeSink::new(
+            Caps {
+                rates: vec![44100],
+                any_rate: false,
+                channels: 2,
+            },
+            0,
+        );
+        let state = Arc::new(Mutex::new(PlayerState {
+            volume: 1.0,
+            ..Default::default()
+        }));
+        let mut e = Engine::new(state, Box::new(sink));
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            normalize: crate::Normalize {
+                enabled: true,
+                mode: GainMode::Track,
+                preamp_db: 0.0,
+            },
+            ..AudioOptions::default()
+        }));
+        let (a, b) = (tmp("rg-a.wav"), tmp("rg-b.wav"));
+        write_wav(&a, 44100, 0.2, 0, 8820);
+        write_wav(&b, 44100, 0.2, 8820, 17640);
+        let half = -20.0 * 2f64.log10(); // −6.02 dB
+        e.handle(Command::SetQueue {
+            items: vec![
+                QueueItem {
+                    gain_track: Some(half),
+                    ..item(&a)
+                },
+                item(&b),
+            ],
+            start: 0,
+        });
+        assert_eq!(
+            e.st().info.processing,
+            vec!["gain -6.0 dB (track)".to_string()]
+        );
+        play(&mut e, &clock, 20_000, 1000);
+        let heard: Vec<f32> = clock.heard().iter().step_by(2).copied().collect();
+        for (i, h) in heard.iter().enumerate().take(17_640) {
+            let raw = ((i as f32 * 440.0 * std::f32::consts::TAU / 44100.0).sin() * 8000.0) as i16;
+            let want = raw as f32 / 32768.0 * if i < 8820 { 0.5 } else { 1.0 };
+            assert!((h - want).abs() < 1e-6, "sample {i}: {h} vs {want}");
+        }
+    }
+
+    #[test]
+    fn replaygain_is_off_bit_perfect_and_follows_setting_changes() {
+        let (mut e, clock) = hires_dac();
+        let path = tmp("rg-live.wav");
+        write_wav(&path, 44100, 1.0, 0, 44100);
+        let tagged = QueueItem {
+            gain_track: Some(-9.0),
+            ..item(&path)
+        };
+        e.handle(Command::SetQueue {
+            items: vec![tagged.clone()],
+            start: 0,
+        });
+        play(&mut e, &clock, 4410, 1000);
+        assert!(e.st().info.processing.is_empty());
+        let on = crate::Normalize {
+            enabled: true,
+            mode: GainMode::Track,
+            preamp_db: 0.0,
+        };
+        // Turned on while playing: the gain applies from here on.
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            normalize: on,
+            ..AudioOptions::default()
+        }));
+        assert_eq!(
+            e.st().info.processing,
+            vec!["gain -9.0 dB (track)".to_string()]
+        );
+        // Bit-perfect leaves the samples alone.
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            normalize: on,
+            output: crate::sink::OutputPrefs {
+                bit_perfect: true,
+                ..Default::default()
+            },
+            ..AudioOptions::default()
+        }));
+        assert!(
+            e.st().info.processing.is_empty(),
+            "{:?}",
+            e.st().info.processing
+        );
     }
 
     #[test]

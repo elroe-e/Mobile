@@ -51,6 +51,9 @@ fn track(i: usize) -> Track {
         last_played: 0,
         start: 0.0,
         end: None,
+        gain_track: None,
+        gain_album: None,
+        meta_version: 1,
     }
 }
 
