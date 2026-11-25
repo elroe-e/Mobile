@@ -122,7 +122,9 @@ Android bit-perfect mixer for them.
 - [ ] (M2-10) Settings → Audio → Equalizer: turn it on, pick Bass and Rock: the sound changes while
       playing without clicks; moving a band slider is heard within half a second; Bit-perfect
       mode shows the bypass notice. Save a preset, share it, import it back.
-- [ ] AutoEq "Beats Studio Pro" profile (M2-11): on/off sounds different.
+- [ ] (M2-11) With the Beats plugged in: Equalizer → Headphone correction → Find → "beats studio
+      pro" → pick it: "Beats Studio Pro · measured by Rtings" shows and the sound changes. Unplug:
+      the correction goes away (it's kept for the Beats); plug in again: it comes back.
 - [ ] (M2-09) Settings → Audio → Volume levelling on: songs with ReplayGain tags from loud and
       quiet albums play at similar loudness; Settings → Audio shows "gain … dB"; in Bit-perfect
       mode the card says levelling is off.

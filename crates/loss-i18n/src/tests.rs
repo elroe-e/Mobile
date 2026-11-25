@@ -19,7 +19,7 @@ fn english_file_has_no_errors() {
     }
     for k in [
         "title", "query", "folder", "speed", "length", "error", "version", "name", "rates",
-        "format", "min", "max", "mode", "reason", "list", "db", "value",
+        "format", "min", "max", "mode", "reason", "list", "db", "value", "device", "source", "rig",
     ] {
         args.set(k, FluentValue::from("x"));
     }

@@ -3,6 +3,21 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-25 (session 5, later): AutoEq and parametric bands (M2-11)
+
+- **M2-11** `loss_core::autoeq`: parser for AutoEq's ParametricEQ.txt / Equalizer APO lines
+  (PK/LSC/HSC/LP/HP, OFF skipped, values clamped); the AutoEq index (8,850 headphones, MIT,
+  `data/autoeq-index.tsv` + `data/AUTOEQ-LICENSE`, rebuilt by `scripts/update-autoeq-index.py`)
+  searched offline; the chosen profile is downloaded from raw.githubusercontent.com
+  (`loss_download::autoeq::fetch`, generic UA, ≤ 64 KB). Corrections are kept per output device
+  (`Settings::autoeq`, keyed by the route's device name, "default" without one) and switch with
+  the output (`refresh_route` sends the device's correction). Applied as parametric bands with
+  the EQ; AutoEq's pre-amp is used only without automatic headroom. Hand-made parametric bands
+  (type, Hz, Q, gain; up to 20) on the Equalizer screen. Tested on desktop: searching "beats
+  studio pro" and picking it downloads the Rtings profile and the curve shows it (input gain
+  −3.7 dB vs AutoEq's −3.8). Fixture: `crates/loss-core/fixtures/autoeq-beats-studio-pro.txt`.
+- The correction applies when "Use the equalizer" is on (it's part of the EQ chain).
+
 ## 2026-11-25 (session 5, later): equalizer (M2-10)
 
 - **M2-10** `loss_audio::eq`: RBJ biquads (f64, transposed DF-II) for graphic bands (5/10/15/31

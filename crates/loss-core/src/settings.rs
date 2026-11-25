@@ -72,6 +72,8 @@ pub struct Settings {
     pub equalizer: crate::equalizer::EqSettings,
     /// Presets the user saved or imported.
     pub eq_presets: Vec<crate::equalizer::EqPreset>,
+    /// AutoEq headphone corrections by output device (its name; "default" without one).
+    pub autoeq: std::collections::BTreeMap<String, crate::autoeq::Profile>,
 }
 
 impl Default for Settings {
@@ -109,6 +111,7 @@ impl Default for Settings {
             normalization_preamp: 0,
             equalizer: Default::default(),
             eq_presets: vec![],
+            autoeq: Default::default(),
         }
     }
 }

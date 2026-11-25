@@ -3,6 +3,7 @@
 //! the Internet Archive, Jamendo, podcasts, your own Subsonic/Navidrome
 //! server, and direct links (e.g. Bandcamp purchase downloads).
 
+pub mod autoeq;
 pub mod http;
 pub mod lyrics;
 pub mod manager;

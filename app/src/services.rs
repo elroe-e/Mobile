@@ -62,7 +62,15 @@ pub fn effective_mode(chosen: Mode, mixer: Option<&Mixer>) -> Mode {
 }
 
 /// The engine's conversion and output options from settings and the mode in use.
-fn audio_options(s: &Settings, mixer: Option<&Mixer>) -> loss_audio::AudioOptions {
+/// The key AutoEq corrections are kept under: the output device's name, or "default".
+pub fn device_key(output: Option<&loss_platform::route::Device>) -> String {
+    output
+        .map(|d| d.name.trim().to_string())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| "default".into()) // i18n: ignore (storage key)
+}
+
+fn audio_options(s: &Settings, mixer: Option<&Mixer>, device: &str) -> loss_audio::AudioOptions {
     let mode = effective_mode(Mode::parse(&s.output_mode), mixer);
     loss_audio::AudioOptions {
         quality: loss_audio::Quality::parse(&s.resample_quality),
@@ -85,16 +93,42 @@ fn audio_options(s: &Settings, mixer: Option<&Mixer>) -> loss_audio::AudioOption
             mode: loss_audio::GainMode::parse(&s.normalization_mode),
             preamp_db: s.normalization_preamp.min(0) as f64,
         },
-        eq: eq_params(&s.equalizer),
+        eq: eq_params(&s.equalizer, s.autoeq.get(device)),
     }
 }
 
 /// The engine's equalizer from the saved settings; None when it's off.
-pub fn eq_params(e: &loss_core::equalizer::EqSettings) -> Option<loss_audio::eq::EqParams> {
+pub fn eq_params(
+    e: &loss_core::equalizer::EqSettings,
+    correction: Option<&loss_core::autoeq::Profile>,
+) -> Option<loss_audio::eq::EqParams> {
+    use loss_audio::eq::{Band, Kind};
+    let band = |b: &loss_core::autoeq::ParamBand| Band {
+        kind: match b.kind.as_str() {
+            "lowshelf" => Kind::LowShelf,
+            "highshelf" => Kind::HighShelf,
+            "lowpass" => Kind::LowPass,
+            "highpass" => Kind::HighPass,
+            _ => Kind::Peak,
+        },
+        freq: b.freq,
+        gain: b.gain,
+        q: b.q,
+    };
+    // AutoEq's own pre-amp only matters without automatic headroom (which replaces it).
+    let correction_preamp = match correction {
+        Some(c) if !e.auto_headroom => c.preamp,
+        _ => 0.0,
+    };
     e.enabled.then(|| loss_audio::eq::EqParams {
         gains: e.gains.clone(),
-        parametric: vec![],
-        preamp_db: e.preamp,
+        parametric: e
+            .parametric
+            .iter()
+            .chain(correction.iter().flat_map(|c| c.bands.iter()))
+            .map(band)
+            .collect(),
+        preamp_db: e.preamp + correction_preamp,
         bass_db: e.bass,
         treble_db: e.treble,
         balance: e.balance,
@@ -209,7 +243,7 @@ impl Services {
             settings.volume
         });
         player.send(loss_audio::Command::SetAudioOptions(audio_options(
-            &settings, None,
+            &settings, None, "default",
         )));
         let downloads =
             DownloadManager::new(manager_config(&settings), paths.data.join("downloads.json"));
@@ -289,6 +323,7 @@ impl Services {
             .send(loss_audio::Command::SetAudioOptions(audio_options(
                 &s,
                 mixer.as_ref(),
+                &self.device_key(),
             )));
         // The mode may change what the output takes (bit-perfect rates).
         if cfg!(target_os = "android") {
@@ -306,7 +341,13 @@ impl Services {
             .send(loss_audio::Command::SetAudioOptions(audio_options(
                 &s,
                 mixer.as_ref(),
+                &self.device_key(),
             )));
+    }
+
+    /// Where AutoEq corrections for the output playing now are kept.
+    pub fn device_key(&self) -> String {
+        device_key(lock(&self.output).as_ref())
     }
 
     /// The output mode in use now (for notices).
@@ -329,12 +370,14 @@ impl Services {
         *lock(&self.mixer) = mixer.clone();
         let settings = lock(&self.settings).clone();
         let mode = effective_mode(Mode::parse(&settings.output_mode), mixer.as_ref());
+        let active = outputs.active().cloned();
+        // The device's own AutoEq correction comes with it.
         self.player
             .send(loss_audio::Command::SetAudioOptions(audio_options(
                 &settings,
                 mixer.as_ref(),
+                &device_key(active.as_ref()),
             )));
-        let active = outputs.active().cloned();
         // Bit-perfect: only the rates the phone passes through untouched.
         let bit_perfect = mixer
             .as_ref()
@@ -678,6 +721,36 @@ fn load_cover(
 
 #[cfg(test)]
 mod eq_tests {
+    #[test]
+    fn a_correction_adds_its_bands_and_its_preamp_only_without_headroom() {
+        use loss_core::autoeq::{ParamBand, Profile};
+        let mut e = loss_core::equalizer::EqSettings {
+            enabled: true,
+            parametric: vec![ParamBand::peak(500.0)],
+            ..Default::default()
+        };
+        let beats = Profile {
+            name: "Beats Studio Pro".into(),
+            source: "Rtings".into(),
+            preamp: -3.8,
+            bands: vec![ParamBand {
+                kind: "lowshelf".into(),
+                freq: 105.0,
+                gain: -3.1,
+                q: 0.7,
+            }],
+        };
+        let p = super::eq_params(&e, Some(&beats)).unwrap();
+        assert_eq!(p.parametric.len(), 2);
+        assert_eq!(p.parametric[1].kind, loss_audio::eq::Kind::LowShelf);
+        assert_eq!(p.preamp_db, 0.0);
+        e.auto_headroom = false;
+        assert_eq!(super::eq_params(&e, Some(&beats)).unwrap().preamp_db, -3.8);
+        e.enabled = false;
+        assert!(super::eq_params(&e, Some(&beats)).is_none());
+        assert_eq!(super::device_key(None), "default");
+    }
+
     #[test]
     fn band_tables_agree() {
         for n in loss_core::equalizer::BAND_COUNTS {

@@ -208,6 +208,11 @@ WavPack: `wavpack.rs` over `wavicle` (pure Rust, MIT/Apache), one block per pack
 CUE: `loss_core::cue` + `Track::from_cue`; tracks carry `start`/`end` (seconds in the file), and
 the engine plays them as a `Trim` window with a seek to the start (also at gapless handover).
 
+Status (M2-10/M2-11): `loss_audio::eq` (biquads, dynamics) in the session after ReplayGain;
+`loss_core::equalizer` (settings/presets) and `loss_core::autoeq` (profiles, bundled AutoEq index,
+MIT data with its licence in `crates/loss-core/data/`). Per-device AutoEq corrections in
+`Settings::autoeq`, applied by `services::eq_params` with the hand-made parametric bands.
+
 Status (M2-07): `resample.rs` uses `rubato` 5 (pure Rust): Fast = cubic polynomial, Medium/High/Best =
 synchronous FFT with longer filters. Measured (tests): Best is flat within ±0.01 dB to 20 kHz and
 keeps aliasing/imaging below −120 dB; lengths are exact (start-up delay trimmed, tail flushed at

@@ -8,6 +8,7 @@ use super::settings::{SettingsNav, SettingsPage, Toggle};
 use super::{state, Slider};
 use crate::services;
 use dioxus::prelude::*;
+use loss_core::autoeq::{self, ParamBand, Profile};
 use loss_core::equalizer::{self as eqs, EqPreset, EqSettings, ImportError, BAND_COUNTS, BUILT_IN};
 use loss_i18n::t;
 
@@ -49,10 +50,15 @@ fn hz_label(f: f64) -> String {
 
 /// The response curve as an SVG path over 20 Hz–20 kHz, ±15 dB.
 fn curve_path(e: &EqSettings) -> (String, f64) {
-    let params = services::eq_params(&EqSettings {
-        enabled: true,
-        ..e.clone()
-    })
+    let svc = services::get();
+    let correction = svc.settings().autoeq.get(&svc.device_key()).cloned();
+    let params = services::eq_params(
+        &EqSettings {
+            enabled: true,
+            ..e.clone()
+        },
+        correction.as_ref(),
+    )
     .unwrap_or_default();
     let rate = 48_000.0;
     let (w, h) = (300.0, 90.0);
@@ -89,6 +95,13 @@ pub fn EqualizerPage() -> Element {
         .any(|(_, c)| e.sounds_like(&eqs::built_in(c)))
         && !presets().iter().any(|p| e.sounds_like(&p.settings));
     let user_presets = presets();
+    let device = services::get().device_key();
+    let mut correction: Signal<Option<Profile>> = use_signal(|| {
+        let svc = services::get();
+        svc.settings().autoeq.get(&svc.device_key()).cloned()
+    });
+    let mut find_open = use_signal(|| false);
+    let mut paste_open = use_signal(|| false);
 
     rsx! {
         div { class: "page-top",
@@ -209,6 +222,41 @@ pub fn EqualizerPage() -> Element {
             }
         }
 
+        // Headphone correction (AutoEq), kept for the output playing now.
+        h2 { class: "section-title", {t!("autoeq-title")} }
+        div { class: "card",
+            div { class: "setting",
+                Icon { name: "volume_up", size: 22 }
+                div { class: "row-text",
+                    div { class: "title",
+                        match correction() {
+                            Some(p) => rsx! { "{p.name}" },
+                            None => rsx! { {t!("autoeq-none")} },
+                        }
+                    }
+                    div { class: "subtitle", {device_line(&device, correction().as_ref())} }
+                }
+            }
+            div { class: "row pad",
+                button { class: "pill", onclick: move |_| find_open.set(true), {t!("autoeq-find-short")} }
+                button { class: "pill", onclick: move |_| paste_open.set(true), {t!("autoeq-paste-short")} }
+                if correction().is_some() {
+                    button {
+                        class: "pill",
+                        onclick: move |_| {
+                            let key = services::get().device_key();
+                            services::get().update_settings(|s| {
+                                s.autoeq.remove(&key);
+                            });
+                            correction.set(None);
+                        },
+                        {t!("autoeq-remove")}
+                    }
+                }
+            }
+        }
+        ParametricBands { cur }
+
         // Bands.
         h2 { class: "section-title", {t!("eq-bands")} }
         div { class: "card",
@@ -306,6 +354,8 @@ pub fn EqualizerPage() -> Element {
             }
         }
 
+        FindHeadphones { open: find_open, correction }
+        PasteProfile { open: paste_open, correction }
         Dialog {
             open: reset_open,
             title: t!("eq-reset-title"),
@@ -511,6 +561,266 @@ fn EqSlider(cur: Signal<EqSettings>, field: Field) -> Element {
                     field.put(&mut n, x + lo);
                     save(cur, n);
                 },
+            }
+        }
+    }
+}
+
+fn device_line(device: &str, p: Option<&Profile>) -> String {
+    let device = if device == "default" {
+        t!("autoeq-this-output")
+    } else {
+        device.to_string()
+    }; // i18n: ignore (key)
+    match p {
+        Some(p) if !p.source.is_empty() => {
+            let source = p.source.clone();
+            t!("autoeq-for-device-source", device = device, source = source)
+        }
+        _ => t!("autoeq-for-device", device = device),
+    }
+}
+
+/// Saves a correction for the output playing now.
+fn use_profile(mut correction: Signal<Option<Profile>>, p: Profile) {
+    let key = services::get().device_key();
+    let keep = p.clone();
+    services::get().update_settings(|s| {
+        s.autoeq.insert(key, keep);
+    });
+    correction.set(Some(p));
+}
+
+/// Search AutoEq's index and download the chosen headphones' correction.
+#[component]
+fn FindHeadphones(open: Signal<bool>, correction: Signal<Option<Profile>>) -> Element {
+    let st = state();
+    let mut query = use_signal(String::new);
+    let mut busy = use_signal(|| false);
+    let hits = autoeq::search(&query(), 40);
+    rsx! {
+        Sheet { open, title: t!("autoeq-find"),
+            div { class: "pad",
+                input {
+                    r#type: "search",
+                    placeholder: t!("autoeq-search-hint"),
+                    initial_value: "",
+                    oninput: move |e| query.set(e.value()),
+                }
+                p { class: "muted small", {t!("autoeq-credit", count = autoeq::index_len() as i64)} }
+                if busy() {
+                    p { class: "muted small", {t!("autoeq-loading")} }
+                }
+                div { class: "autoeq-hits",
+                    for e in hits {
+                        button {
+                            key: "{e.path}",
+                            class: "setting autoeq-hit",
+                            disabled: busy(),
+                            onclick: move |_| {
+                                busy.set(true);
+                                let url = autoeq::profile_url(&e);
+                                let (name, source) = (e.name.to_string(), e.source.to_string());
+                                spawn(async move {
+                                    let client = services::get().downloads.client();
+                                    let got = services::get()
+                                        .downloads
+                                        .runtime()
+                                        .spawn(async move { loss_download::autoeq::fetch(&client, &url).await.map_err(|e| e.to_string()) })
+                                        .await;
+                                    busy.set(false);
+                                    match got.ok().and_then(|r| r.ok()).and_then(|t| autoeq::parse(&t, &name, &source)) {
+                                        Some(p) => {
+                                            use_profile(correction, p);
+                                            open.set(false);
+                                            st.toast(t!("autoeq-applied", name = name));
+                                        }
+                                        None => st.toast(t!("autoeq-failed")),
+                                    }
+                                });
+                            },
+                            div { class: "row-text",
+                                div { class: "title", "{e.name}" }
+                                div { class: "subtitle", {hit_line(e.source, e.rig)} }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn hit_line(source: &str, rig: &str) -> String {
+    if rig.is_empty() {
+        t!("autoeq-measured-by", source = source.to_string())
+    } else {
+        let (source, rig) = (source.to_string(), rig.to_string());
+        t!("autoeq-measured-by-on", source = source, rig = rig)
+    }
+}
+
+/// Paste a profile (AutoEq's ParametricEQ.txt or Equalizer APO lines).
+#[component]
+fn PasteProfile(open: Signal<bool>, correction: Signal<Option<Profile>>) -> Element {
+    let st = state();
+    let mut name = use_signal(String::new);
+    let mut text = use_signal(String::new);
+    let mut error = use_signal(|| false);
+    rsx! {
+        Sheet { open, title: t!("autoeq-paste"),
+            div { class: "pad",
+                input {
+                    r#type: "text",
+                    placeholder: t!("autoeq-name-hint"),
+                    initial_value: "",
+                    oninput: move |e| name.set(e.value()),
+                }
+                textarea {
+                    class: "links",
+                    rows: "7",
+                    placeholder: t!("autoeq-paste-hint"),
+                    initial_value: "",
+                    oninput: move |e| text.set(e.value()),
+                }
+                if error() {
+                    p { class: "small error", {t!("autoeq-paste-invalid")} }
+                }
+                button {
+                    class: "primary",
+                    onclick: move |_| {
+                        let n = name().trim().to_string();
+                        let n = if n.is_empty() { t!("autoeq-pasted-name") } else { n };
+                        match autoeq::parse(&text(), &n, "") {
+                            Some(p) => {
+                                use_profile(correction, p);
+                                error.set(false);
+                                open.set(false);
+                                st.toast(t!("autoeq-applied", name = n));
+                            }
+                            None => error.set(true),
+                        }
+                    },
+                    {t!("autoeq-use")}
+                }
+            }
+        }
+    }
+}
+
+fn kind_label(kind: &str) -> String {
+    match kind {
+        "lowshelf" => t!("param-lowshelf"),
+        "highshelf" => t!("param-highshelf"),
+        "lowpass" => t!("param-lowpass"),
+        "highpass" => t!("param-highpass"),
+        _ => t!("param-peak"),
+    }
+}
+
+/// Parametric bands set by hand: type, frequency, gain and Q.
+#[component]
+fn ParametricBands(cur: Signal<EqSettings>) -> Element {
+    let bands = cur().parametric;
+    let edit = move |i: usize, f: Box<dyn Fn(&mut ParamBand)>| {
+        let mut n = cur();
+        if let Some(b) = n.parametric.get_mut(i) {
+            f(b);
+            *b = b.clone().sanitized();
+        }
+        save(cur, n);
+    };
+    rsx! {
+        h2 { class: "section-title", {t!("param-title")} }
+        div { class: "card",
+            if bands.is_empty() {
+                p { class: "muted small pad", {t!("param-empty")} }
+            }
+            for (i , b) in bands.into_iter().enumerate() {
+                div { key: "{i}", class: "setting col param-band",
+                    div { class: "param-row",
+                        select {
+                            onchange: move |e| {
+                                let v = e.value();
+                                edit(i, Box::new(move |b: &mut ParamBand| b.kind = v.clone()));
+                            },
+                            for k in ParamBand::KINDS {
+                                option { value: k, selected: b.kind == k, {kind_label(k)} }
+                            }
+                        }
+                        label { class: "param-num",
+                            span { {t!("param-freq")} }
+                            input {
+                                r#type: "number",
+                                min: "10",
+                                max: "22000",
+                                initial_value: "{b.freq}",
+                                onchange: move |e| {
+                                    if let Ok(v) = e.value().parse::<f64>() {
+                                        edit(i, Box::new(move |b: &mut ParamBand| b.freq = v));
+                                    }
+                                },
+                            }
+                        }
+                        label { class: "param-num",
+                            span { {t!("param-q")} }
+                            input {
+                                r#type: "number",
+                                step: "0.01",
+                                min: "0.1",
+                                max: "20",
+                                initial_value: "{b.q}",
+                                onchange: move |e| {
+                                    if let Ok(v) = e.value().parse::<f64>() {
+                                        edit(i, Box::new(move |b: &mut ParamBand| b.q = v));
+                                    }
+                                },
+                            }
+                        }
+                        button {
+                            class: "icon-btn",
+                            "aria-label": t!("param-remove"),
+                            onclick: move |_| {
+                                let mut n = cur();
+                                if i < n.parametric.len() {
+                                    n.parametric.remove(i);
+                                }
+                                save(cur, n);
+                            },
+                            Icon { name: "close", size: 18 }
+                        }
+                    }
+                    if !matches!(b.kind.as_str(), "lowpass" | "highpass") {
+                        div { class: "eq-row",
+                            span { class: "subtitle", {t!("eq-value-db", value = signed(b.gain))} }
+                        }
+                        Slider {
+                            value: b.gain + 24.0,
+                            max: 48.0,
+                            step: 0.5,
+                            on_input: move |v: f64| {
+                                let mut n = cur();
+                                if let Some(b) = n.parametric.get_mut(i) {
+                                    b.gain = v - 24.0;
+                                }
+                                preview(cur, n);
+                            },
+                            on_commit: move |v: f64| edit(i, Box::new(move |b: &mut ParamBand| b.gain = v - 24.0)),
+                        }
+                    }
+                }
+            }
+            div { class: "row pad",
+                button {
+                    class: "pill",
+                    disabled: cur().parametric.len() >= 20,
+                    onclick: move |_| {
+                        let mut n = cur();
+                        n.parametric.push(ParamBand::peak(1000.0));
+                        save(cur, n);
+                    },
+                    {t!("param-add")}
+                }
             }
         }
     }

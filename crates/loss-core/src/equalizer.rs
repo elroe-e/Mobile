@@ -46,6 +46,8 @@ pub struct EqSettings {
     pub ratio: f64,
     pub attack: f64,
     pub release: f64,
+    /// Parametric bands set by hand (AutoEq corrections are kept per device, not here).
+    pub parametric: Vec<crate::autoeq::ParamBand>,
 }
 
 impl Default for EqSettings {
@@ -64,6 +66,7 @@ impl Default for EqSettings {
             ratio: 3.0,
             attack: 10.0,
             release: 150.0,
+            parametric: vec![],
         }
     }
 }
@@ -94,6 +97,12 @@ impl EqSettings {
         self.ratio = fix(self.ratio, 1.0, 20.0, 3.0);
         self.attack = fix(self.attack, 1.0, 100.0, 10.0);
         self.release = fix(self.release, 20.0, 1000.0, 150.0);
+        self.parametric = self
+            .parametric
+            .into_iter()
+            .take(20)
+            .map(|b| b.sanitized())
+            .collect();
         self
     }
 
@@ -130,6 +139,7 @@ impl EqSettings {
             preamp: preset.preamp,
             bass: preset.bass,
             treble: preset.treble,
+            parametric: preset.parametric.clone(),
             ..self.clone()
         }
     }
@@ -148,6 +158,7 @@ impl EqSettings {
             && self.preamp == other.preamp
             && self.bass == other.bass
             && self.treble == other.treble
+            && self.parametric == other.parametric
     }
 }
 

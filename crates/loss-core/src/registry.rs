@@ -375,6 +375,7 @@ pub const INTERNAL: &[&str] = &[
     // Edited on the Equalizer screen.
     "equalizer",
     "eq_presets",
+    "autoeq",
 ];
 
 pub fn find(key: &str) -> Option<&'static SettingDef> {
