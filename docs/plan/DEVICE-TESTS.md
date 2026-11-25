@@ -124,6 +124,10 @@ Android bit-perfect mixer for them.
 - [ ] ReplayGain album mode: loud and quiet albums play at similar loudness.
 - [ ] Battery: one hour of FLAC playback with the screen off, note the battery drop.
 
+- [ ] (M2-08) Copy to the music folder: an album as one FLAC + .cue, a .dsf, a .wv and an ALAC/AAC
+      album from iTunes. After a rescan the CUE album shows its tracks; each plays and seeks; the
+      iTunes album plays without gaps between tracks; DSD shows "DSD64".
+
 ## Later rounds
 
 Claude adds a section here for each milestone with phone-only behaviour (widgets, Android Auto, Cast,
