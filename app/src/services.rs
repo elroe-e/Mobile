@@ -104,6 +104,7 @@ fn audio_options(
             preamp_db: s.normalization_preamp.min(0) as f64,
         },
         eq: eq_params(&s.equalizer, s.autoeq.get(device)),
+        skip_silence: s.skip_silence,
         tempo: loss_audio::Tempo {
             speed: s.playback_speed as f64 / 100.0,
             keep_pitch: s.playback_keep_pitch,

@@ -27,7 +27,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 |---|---|---|---|---|
 | M0 | Foundations: CI, glue module, bridge, store, settings, i18n, UI kit, diagnostics | 13 | 11 | 4–5 sessions |
 | M1 | The 7 problems fixed + phone verification | 8 | 7 | 2–3 sessions |
-| M2 | Audio engine v2, hi-fi output, USB, DSP | 24 | 10 | 8–10 sessions |
+| M2 | Audio engine v2, hi-fi output, USB, DSP | 24 | 11 | 8–10 sessions |
 | M3 | Player and queue | 16 | 0 | 3–4 sessions |
 | M4 | Library v2 | 25 | 0 | 6–8 sessions |
 | M5 | Lyrics v2 | 12 | 0 | 4–5 sessions |
@@ -51,7 +51,7 @@ A "session" here means one working session of the length used so far. Numbers ar
    no bit-perfect mixer. So the order is ~~M2-01~~, ~~M2-07~~ (our own 44.1 → 48 kHz resampling, which affects most of
    the library), ~~M2-03~~ (the Beats' real rates, so M2-07 takes effect), ~~M2-02~~ (native AAudio output), **M2-06** (built; waiting for the owner's Beats report), then **M2-05**
    (Direct USB, the only bit-perfect route here; stream planning done, I/O waits for the report),
-   ~~M2-04~~ (output modes). ~~M2-09~~ (ReplayGain). M2-08 is done but APE (needs a sample file). ~~M2-10~~ (equalizer). ~~M2-11~~ (AutoEq). ~~M2-12~~ (crossfeed). ~~M2-13~~ (speed and pitch; the in-player menu is M3-07). Without the phone, continue with M2-14 (skip silence).
+   ~~M2-04~~ (output modes). ~~M2-09~~ (ReplayGain). M2-08 is done but APE (needs a sample file). ~~M2-10~~ (equalizer). ~~M2-11~~ (AutoEq). ~~M2-12~~ (crossfeed). ~~M2-13~~ (speed and pitch; the in-player menu is M3-07). ~~M2-14~~ (skip silence). Without the phone, continue with M2-15 (crossfade and AutoMix).
 
 ## Open decisions (defaults apply until the owner decides)
 
@@ -235,7 +235,7 @@ updated; this file's checkbox is ticked. Commit messages start with the task ID 
 - [x] **M2-13 Speed and pitch.** Pure-Rust time-stretch (WSOLA, with a phase vocoder for the best
   quality), keep-pitch toggle, ±12 semitones, presets. Unavailable on bit-perfect and Cast outputs,
   with explanations. *Done when:* tempo and pitch are accurate within 0.5% in tests.
-- [ ] **M2-14 Skip silence.** Detect silent runs (threshold and minimum length) and skip them, with a
+- [x] **M2-14 Skip silence.** Detect silent runs (threshold and minimum length) and skip them, with a
   smooth join. Off while AutoMix is on, as in Mornye.
 - [ ] **M2-15 Crossfade and AutoMix.** Two-deck mixer; automatic or manual length; effects (crossfade,
   muffled low-pass, echo, pitch, custom); beat and tempo detection with phase-aligned, pitch-preserving

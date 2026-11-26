@@ -58,6 +58,22 @@ struct Session {
     /// Source seconds per output second.
     speed: f64,
     tempo: crate::Tempo,
+    /// Silence skipping, at the very start of the chain (source rate).
+    skipper: Option<crate::silence::Skipper>,
+    skips: SkipLog,
+}
+
+/// Silence skipped so far: (output sample count at that point, source seconds dropped), shared
+/// between a session and the display of its track.
+type SkipLog = std::sync::Arc<Mutex<Vec<(u64, f64)>>>;
+
+/// Source seconds skipped before output sample `at`.
+fn skipped_before(log: &SkipLog, at: u64) -> f64 {
+    let log = log.lock().unwrap_or_else(|p| p.into_inner());
+    log.iter()
+        .take_while(|(when, _)| *when <= at)
+        .map(|(_, s)| s)
+        .sum()
 }
 
 /// The conversion graph for a source, with speed and pitch folded in: the time-stretch runs at
@@ -184,6 +200,8 @@ fn codec_trim(
 struct Display {
     /// Source seconds per output second for this track (speed and pitch change).
     speed: f64,
+    /// Silence skipped in this track.
+    skips: SkipLog,
     item_id: String,
     /// `played_samples` value at which this track started.
     base: u64,
@@ -195,6 +213,7 @@ struct Display {
 /// A gapless join waiting for playback to reach it.
 struct Switch {
     speed: f64,
+    skips: SkipLog,
     /// `played_samples` value where the next track starts.
     at: u64,
     item_id: String,
@@ -383,8 +402,27 @@ impl Session {
         }
     }
 
-    /// Decoded samples through the time-stretch (if any) and the conversion graph.
+    /// Decoded samples through silence skipping, the time-stretch (if any) and the conversion
+    /// graph.
     fn run_graph(&mut self, samples: &[f64], out: &mut Vec<f64>) {
+        let Some(sk) = &mut self.skipper else {
+            return self.stretch_and_convert(samples, out);
+        };
+        let mut kept = Vec::with_capacity(samples.len());
+        let dropped = sk.process(samples, &mut kept);
+        if dropped > 0 {
+            // Where in the output this happened (roughly: the conversion delays it a little).
+            let at = self.pushed + (self.pending.len() - self.pending_pos) as u64;
+            let secs = dropped as f64 / self.src_rate.max(1) as f64;
+            self.skips
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .push((at, secs));
+        }
+        self.stretch_and_convert(&kept, out);
+    }
+
+    fn stretch_and_convert(&mut self, samples: &[f64], out: &mut Vec<f64>) {
         match &mut self.stretch {
             Some(w) => {
                 let mut stretched = Vec::new();
@@ -423,6 +461,14 @@ impl Session {
     /// equalizer's look-ahead stays in its delay line: it plays on into a gapless next track.)
     fn finish(&mut self) {
         let mut tail = Vec::new();
+        if let Some(sk) = &mut self.skipper {
+            // A short silent tail plays as it was.
+            let mut held = Vec::new();
+            sk.flush(&mut held);
+            if !held.is_empty() {
+                self.stretch_and_convert(&held, &mut tail);
+            }
+        }
         if let Some(w) = &mut self.stretch {
             let mut rest = Vec::new();
             w.flush(&mut rest);
@@ -454,6 +500,7 @@ impl Session {
         quality: Quality,
         gain: Option<(f64, bool)>,
         tempo: crate::Tempo,
+        skip_silence: bool,
     ) -> Session {
         let (mut format, decoder, track_id, mut info, duration) = opened;
         let (trim, ts_to_frames) = gapless_trim(&item, format.as_ref(), track_id, info.sample_rate);
@@ -466,6 +513,7 @@ impl Session {
         info.output_rate = out_rate;
         info.output = prev.info.output.clone();
         let src_channels = info.channels.max(1) as usize;
+        let src_rate = info.sample_rate;
         let (graph, stretch, speed) = build_graph(
             info.sample_rate,
             src_channels,
@@ -510,6 +558,9 @@ impl Session {
             stretch,
             speed,
             tempo,
+            skipper: skip_silence
+                .then(|| crate::silence::Skipper::standard(src_rate, src_channels)),
+            skips: SkipLog::default(),
         }
     }
 }
@@ -569,6 +620,7 @@ impl Engine {
                 };
                 let s = self.session.as_ref().unwrap();
                 self.display = Some(Display {
+                    skips: s.skips.clone(),
                     speed: s.speed,
                     item_id: s.item.id.clone(),
                     base: 0,
@@ -700,6 +752,11 @@ impl Engine {
             stretch,
             speed,
             tempo,
+            skipper: self
+                .options
+                .skip_silence
+                .then(|| crate::silence::Skipper::standard(info.sample_rate, src_channels)),
+            skips: SkipLog::default(),
             duration,
             info,
             pushed: 0,
@@ -784,7 +841,9 @@ impl Engine {
             (Some(d), Some(o)) => {
                 let heard = self.heard_samples().saturating_sub(d.base);
                 // Output seconds heard, times the source seconds each one carries.
-                d.start_offset + heard as f64 / (o.rate as f64 * o.channels as f64) * d.speed
+                d.start_offset
+                    + heard as f64 / (o.rate as f64 * o.channels as f64) * d.speed
+                    + skipped_before(&d.skips, self.heard_samples())
             }
             _ => 0.0,
         }
@@ -959,6 +1018,7 @@ impl Engine {
             Command::SetShuffle(on) => self.set_shuffle(on),
             Command::SetAudioOptions(o) => {
                 let reopen = o.output != self.options.output;
+                let reskip = o.skip_silence != self.options.skip_silence;
                 let retempo = o.tempo != self.options.tempo;
                 let regain = o.normalize != self.options.normalize
                     || o.eq != self.options.eq
@@ -971,6 +1031,13 @@ impl Engine {
                 // where it is (like a seek).
                 if retempo && !reopen && self.session.is_some() {
                     self.reload_here(false);
+                } else if reskip {
+                    // Skipping starts or stops from here on in the track that's playing.
+                    let on = self.options.skip_silence;
+                    if let Some(s) = self.session.as_mut() {
+                        s.skipper = on
+                            .then(|| crate::silence::Skipper::standard(s.src_rate, s.src_channels));
+                    }
                 }
                 if reopen {
                     self.sink.set_prefs(self.options.output);
@@ -1070,6 +1137,7 @@ impl Engine {
             st.position = 0.0;
             drop(st);
             self.display = Some(Display {
+                skips: sw.skips,
                 speed: sw.speed,
                 item_id: sw.item_id,
                 base: sw.at,
@@ -1163,8 +1231,10 @@ impl Engine {
                     quality,
                     gain,
                     tempo,
+                    self.options.skip_silence,
                 );
                 self.switch = Some(Switch {
+                    skips: next.skips.clone(),
                     speed: next.speed,
                     at,
                     item_id: next.item.id.clone(),
@@ -1482,6 +1552,8 @@ mod tests {
             stretch: None,
             speed: 1.0,
             tempo: crate::Tempo::default(),
+            skipper: None,
+            skips: SkipLog::default(),
         };
         let mut out = Vec::new();
         let mut joins = Vec::new();
@@ -1503,6 +1575,7 @@ mod tests {
                     Quality::Best,
                     None,
                     crate::Tempo::default(),
+                    false,
                 );
                 next += 1;
             } else if s.drained() {
@@ -2238,6 +2311,81 @@ mod tests {
         assert!(
             (e.position() - (before + 0.5)).abs() < 0.06,
             "{}",
+            e.position()
+        );
+    }
+
+    /// A 16-bit stereo WAV (both channels the same) from these samples.
+    fn write_wav_pcm(path: &Path, rate: u32, samples: &[i16]) {
+        let data_len = samples.len() as u32 * 4;
+        let mut b = Vec::new();
+        b.extend_from_slice(b"RIFF");
+        b.extend_from_slice(&(36 + data_len).to_le_bytes());
+        b.extend_from_slice(b"WAVEfmt ");
+        b.extend_from_slice(&16u32.to_le_bytes());
+        b.extend_from_slice(&1u16.to_le_bytes());
+        b.extend_from_slice(&2u16.to_le_bytes());
+        b.extend_from_slice(&rate.to_le_bytes());
+        b.extend_from_slice(&(rate * 4).to_le_bytes());
+        b.extend_from_slice(&4u16.to_le_bytes());
+        b.extend_from_slice(&16u16.to_le_bytes());
+        b.extend_from_slice(b"data");
+        b.extend_from_slice(&data_len.to_le_bytes());
+        for v in samples {
+            b.extend_from_slice(&v.to_le_bytes());
+            b.extend_from_slice(&v.to_le_bytes());
+        }
+        std::fs::write(path, b).unwrap();
+    }
+
+    #[test]
+    fn skip_silence_shortens_long_gaps_and_the_position_counts_the_skipped_time() {
+        let rate = 44100usize;
+        let tone = |n: usize| (0..n).map(|i| (((i as f32 * 0.05 + 1.0).sin()) * 8000.0) as i16);
+        let quiet = |n: usize| (0..n).map(|i| ((i * 7 % 13) as i16 - 6) * 3); // about −70 dBFS
+        let mut samples: Vec<i16> = tone(rate).collect();
+        samples.extend(quiet(3 * rate));
+        samples.extend(tone(rate));
+        let path = tmp("skip.wav");
+        write_wav_pcm(&path, rate as u32, &samples);
+
+        let play_all = |skip: bool| {
+            let (mut e, clock) = hires_dac();
+            e.handle(Command::SetAudioOptions(AudioOptions {
+                skip_silence: skip,
+                ..AudioOptions::default()
+            }));
+            e.handle(Command::SetQueue {
+                items: vec![item(&path)],
+                start: 0,
+            });
+            play(&mut e, &clock, 5 * rate + 2000, 1024);
+            let l = heard_ch(&clock, 0);
+            l.iter().rposition(|v| v.abs() > 1e-4).unwrap() + 1
+        };
+        let normal = play_all(false);
+        let skipped = play_all(true);
+        // 3 s of silence cut to 0.25 s: 2.75 s shorter.
+        let cut = (normal - skipped) as f64 / rate as f64;
+        assert!((cut - 2.75).abs() < 0.05, "cut {cut} s");
+
+        // Part-way through the second tone, the position is where the song really is.
+        let (mut e, clock) = hires_dac();
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            skip_silence: true,
+            ..AudioOptions::default()
+        }));
+        e.handle(Command::SetQueue {
+            items: vec![item(&path)],
+            start: 0,
+        });
+        // Heard: 1 s tone + 0.25 s kept gap + 0.4 s of the second tone.
+        play(&mut e, &clock, (1.65 * rate as f64) as usize, 1024);
+        let heard_secs = 1.65;
+        let real = 1.0 + 3.0 + 0.4; // seconds into the file
+        assert!(
+            (e.position() - real).abs() < 0.1,
+            "position {} (heard {heard_secs} s), file time {real} s",
             e.position()
         );
     }

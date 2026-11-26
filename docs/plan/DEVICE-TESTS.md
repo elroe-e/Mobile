@@ -142,6 +142,10 @@ Android bit-perfect mixer for them.
       higher pitch too. Pitch +2: higher, same speed. The player's position keeps counting the
       song's own seconds. A podcast at 125 stays easy to follow.
 
+- [ ] (M2-14) Settings → Audio → Skip silence on: a song with a long silent gap (live album, hidden
+      track) jumps over most of it and keeps a short pause; the seek bar stays correct. Switch
+      language, dark mode or font size while the app is open: it must not restart or stop music.
+
 ## Later rounds
 
 Claude adds a section here for each milestone with phone-only behaviour (widgets, Android Auto, Cast,

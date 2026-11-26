@@ -255,6 +255,12 @@ pub static SETTINGS: &[SettingDef] = &[
         ],
     ),
     def(
+        "skip_silence",
+        Section::Audio,
+        Kind::Toggle,
+        &["silence", "gap", "quiet", "skip", "pause", "hidden track"],
+    ),
+    def(
         "playback_speed",
         Section::Audio,
         Kind::Steps(&[50, 75, 90, 100, 110, 125, 150, 200]),
@@ -456,6 +462,7 @@ pub fn get(s: &Settings, key: &str) -> Option<Value> {
         "low_latency_output" => Bool(s.low_latency_output),
         "spatial_audio" => Bool(s.spatial_audio),
         "crossfeed" => Text(s.crossfeed.clone()),
+        "skip_silence" => Bool(s.skip_silence),
         "playback_speed" => Int(s.playback_speed),
         "playback_keep_pitch" => Bool(s.playback_keep_pitch),
         "playback_pitch" => Int(s.playback_pitch),
@@ -508,6 +515,7 @@ pub fn set(s: &mut Settings, key: &str, value: Value) -> Result<(), SetError> {
         ("low_latency_output", Value::Bool(v)) => s.low_latency_output = v,
         ("spatial_audio", Value::Bool(v)) => s.spatial_audio = v,
         ("crossfeed", Value::Text(v)) => s.crossfeed = v,
+        ("skip_silence", Value::Bool(v)) => s.skip_silence = v,
         ("playback_speed", Value::Int(v)) => s.playback_speed = v.clamp(25, 400),
         ("playback_keep_pitch", Value::Bool(v)) => s.playback_keep_pitch = v,
         ("playback_pitch", Value::Int(v)) => s.playback_pitch = v.clamp(-12, 12),

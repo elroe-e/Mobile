@@ -13,6 +13,7 @@ mod engine;
 pub mod eq;
 mod mp4gap;
 mod opus;
+pub mod silence;
 pub mod sink;
 pub mod stretch;
 mod wavpack;
@@ -36,6 +37,9 @@ pub struct AudioOptions {
     pub crossfeed: Option<crossfeed::Strength>,
     /// Playback speed and pitch (M2-13); ignored on bit-perfect paths.
     pub tempo: Tempo,
+    /// Cut long silent stretches short (M2-14). Doesn't alter the samples, so it works on
+    /// bit-perfect paths too.
+    pub skip_silence: bool,
 }
 
 /// Speed and pitch: `speed` is the playback rate (1 = normal); with `keep_pitch` the pitch stays

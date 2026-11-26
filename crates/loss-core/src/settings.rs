@@ -70,6 +70,8 @@ pub struct Settings {
     pub normalization_preamp: i64,
     /// Crossfeed for headphones: "off", "light", "medium" or "strong" (M2-12).
     pub crossfeed: String,
+    /// Cut long silent stretches inside songs short (M2-14).
+    pub skip_silence: bool,
     /// Playback speed in percent (100 = normal), M2-13.
     pub playback_speed: i64,
     /// Keep the pitch when the speed changes (else it follows the speed, like a record).
@@ -118,6 +120,7 @@ impl Default for Settings {
             normalization_mode: "auto".into(),
             normalization_preamp: 0,
             crossfeed: "off".into(),
+            skip_silence: false,
             playback_speed: 100,
             playback_keep_pitch: true,
             playback_pitch: 0,

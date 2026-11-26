@@ -3,6 +3,21 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-26 (session 5, later): skip silence (M2-14), emulator crash fix
+
+- **M2-14** `loss_audio::silence::Skipper`: a frame is silent when every channel is under −55 dBFS;
+  a run of 0.8 s or more is cut to its first 0.25 s, shorter runs and a short tail play as they
+  were. Streaming, exact, chunk-size independent; the join is quiet-to-quiet so no fade. Runs
+  before the stretch in `run_graph`; the position adds the skipped time (`SkipLog`), so the
+  seek bar stays right. Setting `skip_silence` (Settings → Audio). Allowed on bit-perfect (it only
+  removes whole silent frames). The "off while AutoMix is on" rule comes with M2-15.
+- **Fix: app died on the x86_64 emulator** (2 of 3 CI runs). Logcat: the activity was destroyed
+  and recreated about 2 s after start (emulator first-boot keyboard/locale change), then Rust
+  threads hit `pthread_mutex_lock called on a destroyed mutex` while the native side tore down.
+  `configChanges` only listed orientation/screen/keyboardHidden; now it lists every change, so
+  Android never recreates the activity for a locale, dark-mode, font-scale or density change
+  (which would have hit real phones too).
+
 ## 2026-11-26 (session 5, later): speed and pitch (M2-13)
 
 - **M2-13** `loss_audio::stretch::Wsola` (waveform-similarity overlap-add: ~24 ms Hann windows, ±10 ms
