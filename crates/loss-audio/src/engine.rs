@@ -324,6 +324,48 @@ fn open_file(path: &Path) -> Result<OpenedFile, String> {
     Ok((format, decoder, track_id, info, duration))
 }
 
+/// The first `secs` of a track as the engine would decode it (mono, at the file's own rate), to
+/// find its beats before it starts playing. None when it can't be read.
+fn decode_head(item: &QueueItem, secs: f64) -> Option<(Vec<f32>, u32)> {
+    let (mut format, mut decoder, track_id, info, _) = open_file(&item.path).ok()?;
+    let (trim, (num, den)) = gapless_trim(item, format.as_ref(), track_id, info.sample_rate);
+    let rate = info.sample_rate;
+    let skip = trim.delay as f64 / rate.max(1) as f64;
+    if skip > 0.05 {
+        seek_to(format.as_mut(), track_id, skip);
+    }
+    let want = (secs * rate as f64) as usize;
+    let mut out: Vec<f32> = Vec::with_capacity(want);
+    while out.len() < want {
+        let Ok(packet) = format.next_packet() else {
+            break;
+        };
+        if packet.track_id() != track_id {
+            continue;
+        }
+        let Ok(decoded) = decoder.decode(&packet) else {
+            continue;
+        };
+        let spec = *decoded.spec();
+        let ch = spec.channels.count().max(1);
+        let frames = decoded.frames() as u64;
+        let mut buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
+        buf.copy_interleaved_ref(decoded);
+        let mut samples = buf.samples();
+        if trim != Trim::NONE {
+            let start = packet.ts() * num / den.max(1);
+            let keep = trim.keep(start, frames);
+            samples = &samples[keep.start as usize * ch..keep.end as usize * ch];
+        }
+        out.extend(
+            samples
+                .chunks(ch)
+                .map(|f| f.iter().sum::<f32>() / ch as f32),
+        );
+    }
+    (out.len() > rate as usize).then_some((out, rate))
+}
+
 impl Session {
     /// Decode more audio into the ring buffer. Returns false once the file is
     /// fully decoded.
@@ -1331,7 +1373,25 @@ impl Engine {
                 next.plan_hold(frames, out_rate, out_channels);
                 match mix {
                     Some(m) => {
-                        // The two tracks overlap: the new one starts where the tail begins.
+                        // The two tracks overlap: the new one starts where the tail begins,
+                        // or a few beats later when matching the beat.
+                        let mut tail = tail;
+                        let mut note = String::new();
+                        if m.beat {
+                            let secs = tail.len() as f64 / out_channels as f64 / out_rate as f64;
+                            let aligned = decode_head(&next.item, secs).and_then(|(head, rate)| {
+                                crate::mixer::align(&tail, out_channels, out_rate, &head, rate)
+                            });
+                            if let Some(al) = aligned {
+                                note =
+                                    format!(", beat match {:.0}→{:.0} BPM", al.from_bpm, al.to_bpm);
+                                let lead = al.lead * out_channels;
+                                tail = al.tail;
+                                // The first beats of the old track play alone.
+                                next.pending = tail.drain(..lead).collect();
+                                at += lead as u64;
+                            }
+                        }
                         let effect = m.effect.unwrap_or_else(|| {
                             crate::mixer::auto_effect(&tail, out_channels, out_rate)
                         });
@@ -1343,7 +1403,7 @@ impl Engine {
                         ));
                         next.info
                             .processing
-                            .push(format!("AutoMix ({})", effect.name()));
+                            .push(format!("AutoMix ({}{note})", effect.name()));
                     }
                     None => {
                         // No transition: the held-back end plays first, as in plain gapless.
@@ -2595,6 +2655,7 @@ mod tests {
         let mix = crate::AutoMix {
             duration: 1.0,
             effect: Some(crate::mixer::Effect::Crossfade),
+            beat: false,
         };
         let y = play_two("mix", Some(mix), false, false);
         let r = 44_100.0;
@@ -2619,10 +2680,45 @@ mod tests {
     }
 
     #[test]
+    fn automix_matches_the_beat_of_two_drum_tracks() {
+        let (mut e, clock) = hires_dac();
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            automix: Some(crate::AutoMix {
+                duration: 3.0,
+                effect: Some(crate::mixer::Effect::Crossfade),
+                beat: true,
+            }),
+            ..AudioOptions::default()
+        }));
+        let mk = |name: &str, bpm: f64, offset: f64| {
+            let x = crate::beat::tests::drums_at(44_100, bpm, offset, 6.0);
+            let pcm: Vec<i16> = x.iter().map(|v| (v * 20_000.0) as i16).collect();
+            let p = tmp(name);
+            write_wav_pcm(&p, 44_100, &pcm);
+            p
+        };
+        let (a, b) = (mk("beat-a.wav", 120.0, 0.13), mk("beat-b.wav", 124.0, 0.31));
+        e.handle(Command::SetQueue {
+            items: vec![item(&a), item(&b)],
+            start: 0,
+        });
+        play(&mut e, &clock, 44_100 * 11, 1000);
+        let left = heard_ch(&clock, 0);
+        // 3 s of the first track alone, then its beat-matched end (a few beats of it alone
+        // before the next track comes in) and the whole of the second: 9 s plus the lead.
+        let len = sound_len(&left) as f64 / 44_100.0;
+        assert!((9.0..9.6).contains(&len), "{len} s");
+        assert!(left.iter().all(|v| v.abs() <= 1.0));
+        let info = e.st().info.processing.join(", ");
+        assert!(info.contains("beat match 120→124 BPM"), "{info}");
+    }
+
+    #[test]
     fn automix_steps_aside_for_albums_bit_perfect_and_when_off() {
         let mix = crate::AutoMix {
             duration: 1.0,
             effect: None,
+            beat: true,
         };
         let full = 6 * 44_100;
         // Off: plain gapless.

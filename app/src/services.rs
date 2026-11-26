@@ -107,6 +107,7 @@ fn audio_options(
         skip_silence: s.skip_silence,
         automix: s.auto_mix.then(|| loss_audio::AutoMix {
             duration: s.auto_mix_duration as f64,
+            beat: s.auto_mix_beat,
             effect: loss_audio::mixer::Effect::parse(
                 &s.auto_mix_effect,
                 loss_audio::mixer::Custom {

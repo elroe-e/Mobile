@@ -135,7 +135,7 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 |---|---|---|---|---|---|---|
 | SND-01 | File formats | Very wide through FFmpeg and Media3, including Opus, WavPack and DSD (DSF/DFF) | MP3, FLAC, AAC/M4A, ALAC, Ogg Vorbis, WAV, AIFF. Opus files show up but don’t play | Simpler in Loss | M1-03, M2-08 | doing |
 | SND-02 | Gapless playback | Yes (setting) | A short gap between songs | Only in Mornye | M1-06 | done |
-| SND-03 | AutoMix / crossfade | Beat-matched transitions with crossfade, muffled, echo and pitch effects | No | Only in Mornye | M2-15 | todo |
+| SND-03 | AutoMix / crossfade | Beat-matched transitions with crossfade, muffled, echo and pitch effects | No | Only in Mornye | M2-15 | done |
 | SND-04 | Equalizer | 5 to 31 bands, bass, treble, balance, pre-amp, limiter, compressor, presets to save, import and share | No | Only in Mornye | M2-10, M2-11 | done |
 | SND-05 | Volume levelling (ReplayGain) | By track or album, with pre-amp | No | Only in Mornye | M2-09 | done |
 | SND-06 | Skip silence | Yes | No | Only in Mornye | M2-14 | done |

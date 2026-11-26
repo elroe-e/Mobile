@@ -352,6 +352,15 @@ fn SectionCard(
                     mode: cur.output_mode.clone(),
                     levelling: cur.normalization,
                     tempo: cur.playback_speed != 100 || cur.playback_pitch != 0,
+                    mix: cur.auto_mix,
+                }
+                if cur.auto_mix && cur.skip_silence {
+                    div { class: "setting",
+                        Icon { name: "info", size: 22 }
+                        div { class: "row-text",
+                            div { class: "subtitle", {t!("skip-off-automix")} }
+                        }
+                    }
                 }
                 OutputRow {}
                 EqualizerRow { on: cur.equalizer.enabled }
@@ -464,7 +473,7 @@ fn OutputRow() -> Element {
 
 /// Explains when the chosen output mode can't be used here (M2-04).
 #[component]
-fn ModeNotice(mode: String, levelling: bool, tempo: bool) -> Element {
+fn ModeNotice(mode: String, levelling: bool, tempo: bool, mix: bool) -> Element {
     use loss_platform::modes::{self, Mode, Unavailable};
     let chosen = Mode::parse(&mode);
     let mixer = services::get().mixer.lock().ok().and_then(|m| m.clone());
@@ -475,7 +484,7 @@ fn ModeNotice(mode: String, levelling: bool, tempo: bool) -> Element {
     };
     let Some(why) = why else {
         // Bit-perfect in use: say why levelling does nothing.
-        if chosen == Mode::BitPerfect && (levelling || tempo) {
+        if chosen == Mode::BitPerfect && (levelling || tempo || mix) {
             return rsx! {
                 if levelling {
                     div { class: "setting",
@@ -490,6 +499,14 @@ fn ModeNotice(mode: String, levelling: bool, tempo: bool) -> Element {
                         Icon { name: "info", size: 22 }
                         div { class: "row-text",
                             div { class: "subtitle", {t!("speed-off-bit-perfect")} }
+                        }
+                    }
+                }
+                if mix {
+                    div { class: "setting",
+                        Icon { name: "info", size: 22 }
+                        div { class: "row-text",
+                            div { class: "subtitle", {t!("automix-off-bit-perfect")} }
                         }
                     }
                 }

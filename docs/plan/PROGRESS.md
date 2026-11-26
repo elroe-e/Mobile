@@ -3,6 +3,34 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-26 (session 5, later): AutoMix (M2-15)
+
+- **Held-back tail.** With AutoMix on, a track keeps its last N seconds (N = the AutoMix length,
+  6 s when automatic, at most half the track) out of the ring buffer; the point where holding
+  starts comes from the track's known duration, so an inexact duration just holds a little more
+  or less. At the handover the tail is mixed into the first N seconds of the next track
+  (`mixer::Blend`): the outgoing side gets an effect and a fade-out, the new track is faded in
+  (equal power, soft clip over 0.95 so two loud masters can't clip). The Display switches to the
+  next track where the mix starts.
+- **Effects:** crossfade, muffled (a low-pass sweeping 18 kHz → 250 Hz), echo (0.3 s, 55% feedback,
+  the dry signal fades in the first half), slowing down (reads the tail at a rate sliding to 0.5),
+  custom (speed, pitch, echo, muffle), automatic (a loud ending gets the muffled exit).
+- **Beat matching** (`beat.rs`, `mixer::align`): onset envelope (5 ms hop) → autocorrelation (70–180
+  BPM, weighted towards 120) → a comb search over period (±2%) and phase on the smoothed envelope.
+  The new track's first seconds are decoded separately (`decode_head`, same trim as playback).
+  If the tempos are within 8% (after allowing for double/half time) the tail is stretched with WSOLA
+  to the new tempo, and the new track comes in on a beat (the first few beats of the old track
+  play alone). Tests: tempo within 0.5%, beats on the grid within 10 ms, and after the stretch
+  both tracks' beats within 20 ms (120→126, 100→96, 128→128, 90→178 double time).
+- **Never mixes:** same-album neighbours played in order (`QueueItem.album` + `album_run`),
+  Bit-perfect, tracks of unknown length. Skip silence is off while AutoMix is on. Settings → Audio
+  says so.
+- **Not done:** the in-player badge (M3 player UI; for now the Audio card lists "AutoMix (effect,
+  beat match 120→126 BPM)"), bar/downbeat alignment, smooth tempo ramps (the stretch is constant),
+  and previewing a transition. A user skip cuts the held tail (a manual skip doesn't mix).
+- **Lesson:** a hop of `(rate × 5 ms) as usize` samples isn't 5 ms; at 22.05 kHz it was 0.23%
+  short, which looked like a tempo bias until the envelope peaks were printed.
+
 ## 2026-11-26 (session 5, later): skip silence (M2-14), emulator crash fix
 
 - **M2-14** `loss_audio::silence::Skipper`: a frame is silent when every channel is under −55 dBFS;

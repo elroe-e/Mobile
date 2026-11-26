@@ -146,6 +146,12 @@ Android bit-perfect mixer for them.
       track) jumps over most of it and keeps a short pause; the seek bar stays correct. Switch
       language, dark mode or font size while the app is open: it must not restart or stop music.
 
+- [ ] (M2-15) Settings → Audio → AutoMix on, length 8: the end of a song mixes into the next one
+      (Automatic: muffled when it ends loud). Try each effect. Two dance tracks at similar tempos:
+      the new one comes in on the beat and the old one doesn't sound pitched. An album played in
+      order still joins without overlap. Tapping Next cuts straight to the next song. Switching to
+      Bit-perfect: no overlap, and Settings says so.
+
 ## Later rounds
 
 Claude adds a section here for each milestone with phone-only behaviour (widgets, Android Auto, Cast,

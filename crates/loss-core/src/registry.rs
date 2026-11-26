@@ -286,6 +286,12 @@ pub static SETTINGS: &[SettingDef] = &[
         &["automix", "crossfade", "echo", "muffled", "transition"],
     ),
     def(
+        "auto_mix_beat",
+        Section::Audio,
+        Kind::Toggle,
+        &["automix", "beat", "tempo", "bpm", "sync", "dj"],
+    ),
+    def(
         "auto_mix_speed",
         Section::Audio,
         Kind::Steps(&[50, 75, 90, 100, 110, 125, 150]),
@@ -515,6 +521,7 @@ pub fn get(s: &Settings, key: &str) -> Option<Value> {
         "auto_mix" => Bool(s.auto_mix),
         "auto_mix_duration" => Int(s.auto_mix_duration),
         "auto_mix_effect" => Text(s.auto_mix_effect.clone()),
+        "auto_mix_beat" => Bool(s.auto_mix_beat),
         "auto_mix_speed" => Int(s.auto_mix_speed),
         "auto_mix_pitch" => Int(s.auto_mix_pitch),
         "auto_mix_echo" => Bool(s.auto_mix_echo),
@@ -575,6 +582,7 @@ pub fn set(s: &mut Settings, key: &str, value: Value) -> Result<(), SetError> {
         ("auto_mix", Value::Bool(v)) => s.auto_mix = v,
         ("auto_mix_duration", Value::Int(v)) => s.auto_mix_duration = v.clamp(0, 20),
         ("auto_mix_effect", Value::Text(v)) => s.auto_mix_effect = v,
+        ("auto_mix_beat", Value::Bool(v)) => s.auto_mix_beat = v,
         ("auto_mix_speed", Value::Int(v)) => s.auto_mix_speed = v.clamp(25, 200),
         ("auto_mix_pitch", Value::Int(v)) => s.auto_mix_pitch = v.clamp(-12, 12),
         ("auto_mix_echo", Value::Bool(v)) => s.auto_mix_echo = v,

@@ -105,6 +105,75 @@ pub fn auto_effect(tail: &[f32], ch: usize, rate: u32) -> Effect {
     }
 }
 
+/// How the two tracks' beats line up.
+pub struct Alignment {
+    /// The outgoing end, time-stretched (pitch kept) to the new track's tempo.
+    pub tail: Vec<f32>,
+    /// Frames of the stretched tail that play alone before the new track comes in, so that its
+    /// beats fall on the outgoing ones.
+    pub lead: usize,
+    pub from_bpm: f64,
+    pub to_bpm: f64,
+}
+
+/// Beat-matches the outgoing `tail` (interleaved, `ch` channels, `rate`) to the start of the
+/// next track (`head`, mono at `head_rate`). Returns None when either has no clear beat or
+/// the tempos are more than 8% apart (after allowing for double and half time): then a plain
+/// blend is better than a stretch that would be heard.
+pub fn align(
+    tail: &[f32],
+    ch: usize,
+    rate: u32,
+    head: &[f32],
+    head_rate: u32,
+) -> Option<Alignment> {
+    let ch = ch.max(1);
+    let mono: Vec<f32> = tail
+        .chunks(ch)
+        .map(|f| f.iter().sum::<f32>() / ch as f32)
+        .collect();
+    let a = crate::beat::analyze(&mono, rate)?;
+    let b = crate::beat::analyze(head, head_rate)?;
+    // The factor that brings the outgoing tempo to the new one, folded into one octave.
+    let mut tempo = b.bpm() / a.bpm();
+    while tempo > 1.41 {
+        tempo /= 2.0;
+    }
+    while tempo < 0.71 {
+        tempo *= 2.0;
+    }
+    if (tempo - 1.0).abs() > 0.08 {
+        return None;
+    }
+    let stretched: Vec<f32> = if (tempo - 1.0).abs() < 0.0005 {
+        tail.to_vec()
+    } else {
+        let mut w = crate::stretch::Wsola::new(tempo, rate, ch);
+        let input: Vec<f64> = tail.iter().map(|&v| v as f64).collect();
+        let mut out = Vec::with_capacity(input.len());
+        w.process(&input, &mut out);
+        w.flush(&mut out);
+        out.iter().map(|&v| v as f32).collect()
+    };
+    // Where the stretched tail's beats fall, and the common period to line the phases up on.
+    let tail_period = a.period / tempo;
+    let tail_first = a.first / tempo;
+    // With double or half time one track's beat is a multiple of the other's: line up on the
+    // longer period.
+    let common = tail_period.max(b.period);
+    let lead = (tail_first - b.first).rem_euclid(common);
+    let lead_frames = (lead * rate as f64).round() as usize;
+    if lead_frames > stretched.len() / ch / 2 {
+        return None;
+    }
+    Some(Alignment {
+        tail: stretched,
+        lead: lead_frames,
+        from_bpm: a.bpm(),
+        to_bpm: b.bpm(),
+    })
+}
+
 /// A transition in progress.
 pub struct Blend {
     ch: usize,
@@ -361,6 +430,79 @@ mod tests {
         let rest = b.rest();
         assert_eq!(rest.len(), tail.len() - 2000);
         assert!(b.done());
+    }
+
+    fn drums_stereo(bpm: f64, offset: f64, secs: f64) -> Vec<f32> {
+        crate::beat::tests::drums_at(RATE, bpm, offset, secs)
+            .iter()
+            .flat_map(|&v| [v, v])
+            .collect()
+    }
+
+    #[test]
+    fn beats_line_up_within_20_ms_after_the_tempo_match() {
+        for (bpm_out, off_out, bpm_in, off_in) in [
+            (120.0, 0.13, 126.0, 0.31),
+            (100.0, 0.05, 96.0, 0.2),
+            (128.0, 0.4, 128.0, 0.0),
+            (90.0, 0.2, 178.0, 0.1), // double time: 90 against 178
+        ] {
+            let tail = drums_stereo(bpm_out, off_out, 6.0);
+            let head: Vec<f32> = crate::beat::tests::drums_at(RATE, bpm_in, off_in, 6.0);
+            let al = align(&tail, 2, RATE, &head, RATE)
+                .unwrap_or_else(|| panic!("{bpm_out} to {bpm_in}: no alignment"));
+            // The stretched tail is as long as the tempo change says.
+            let tempo = {
+                let mut t = bpm_in / bpm_out;
+                while t > 1.41 {
+                    t /= 2.0;
+                }
+                while t < 0.71 {
+                    t *= 2.0;
+                }
+                t
+            };
+            let want = tail.len() as f64 / 2.0 / tempo;
+            // (The detected tempos stand in for the nominal ones: within 0.3%.)
+            assert!(
+                (al.tail.len() as f64 / 2.0 / want - 1.0).abs() < 0.003,
+                "{} vs {want}",
+                al.tail.len() / 2
+            );
+            // Where the outgoing beats really fall in the stretched audio (measured, not
+            // calculated) against where the new track's beats fall once it starts `lead` in.
+            let mono: Vec<f32> = al.tail.chunks(2).map(|f| f[0]).collect();
+            let grid = crate::beat::analyze(&mono, RATE).expect("beats survive the stretch");
+            let period_in = 60.0 / bpm_in;
+            let period = grid.period.max(period_in);
+            let lead = al.lead as f64 / RATE as f64;
+            // At double time only every other beat of the faster track has a partner (which
+            // of the two is a coin toss in the music itself: the half-time grid can sit on
+            // either).
+            let step = (period / period_in).round().max(1.0) as usize;
+            let miss = |j: usize| {
+                let t = lead + off_in + j as f64 * period_in;
+                let k = ((t - grid.first) / grid.period).round();
+                (t - (grid.first + k * grid.period)).abs()
+            };
+            let ok = (0..step).any(|r| (r..8).step_by(step).all(|j| miss(j) < 0.020));
+            assert!(
+                ok,
+                "{bpm_out}→{bpm_in}: misses {:?} ms (period {period:.3})",
+                (0..8)
+                    .map(|j| (miss(j) * 1000.0).round())
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn no_beat_match_when_tempos_are_far_apart_or_there_is_no_pulse() {
+        let tail = drums_stereo(120.0, 0.0, 6.0);
+        let slow = crate::beat::tests::drums_at(RATE, 84.0, 0.0, 6.0); // 1.43× apart
+        assert!(align(&tail, 2, RATE, &slow, RATE).is_none());
+        let flat = vec![0f32; RATE as usize * 6];
+        assert!(align(&tail, 2, RATE, &flat, RATE).is_none());
     }
 
     #[test]

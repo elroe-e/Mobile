@@ -6,6 +6,7 @@
 
 #[cfg(target_os = "android")]
 mod aaudio;
+pub mod beat;
 pub mod crossfeed;
 mod dsd;
 mod dsp;
@@ -52,6 +53,8 @@ pub struct AutoMix {
     pub duration: f64,
     /// None lets Loss choose per transition.
     pub effect: Option<mixer::Effect>,
+    /// Match the two songs' tempos and line up their beats, when both have a clear pulse.
+    pub beat: bool,
 }
 
 impl AutoMix {

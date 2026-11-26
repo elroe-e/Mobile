@@ -83,6 +83,8 @@ pub struct Settings {
     pub auto_mix_speed: i64,
     pub auto_mix_pitch: i64,
     pub auto_mix_echo: bool,
+    /// Match the beat of the two songs when both have a clear pulse.
+    pub auto_mix_beat: bool,
     pub auto_mix_low_pass: bool,
     /// Playback speed in percent (100 = normal), M2-13.
     pub playback_speed: i64,
@@ -139,6 +141,7 @@ impl Default for Settings {
             auto_mix_speed: 100,
             auto_mix_pitch: 0,
             auto_mix_echo: false,
+            auto_mix_beat: true,
             auto_mix_low_pass: false,
             playback_speed: 100,
             playback_keep_pitch: true,
