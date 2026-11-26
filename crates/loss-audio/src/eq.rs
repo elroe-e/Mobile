@@ -290,6 +290,8 @@ pub struct Equalizer {
     comp_env: f64,
     comp: Option<(f64, f64, f64, f64)>, // threshold dB, ratio, attack coef, release coef
     limiter: Option<Limiter>,
+    /// Frames of the limiter's start-up silence still to drop (see `process_vec`).
+    skip: usize,
 }
 
 impl Equalizer {
@@ -305,6 +307,7 @@ impl Equalizer {
             comp_env: 0.0,
             comp: None,
             limiter: None,
+            skip: 0,
         };
         eq.set(params);
         eq
@@ -334,7 +337,11 @@ impl Equalizer {
             )
         });
         match (params.limiter, self.limiter.is_some()) {
-            (true, false) => self.limiter = Some(Limiter::new(self.rate, self.channels)),
+            (true, false) => {
+                let l = Limiter::new(self.rate, self.channels);
+                self.skip = l.lookahead;
+                self.limiter = Some(l);
+            }
             (false, _) => self.limiter = None,
             _ => {}
         }
@@ -382,6 +389,19 @@ impl Equalizer {
         }
         if let Some(l) = &mut self.limiter {
             l.process(samples);
+        }
+    }
+
+    /// Like `process`, but drops the limiter's start-up silence from the front of `samples`, so a
+    /// stream's length and timing stay as they were: its look-ahead holds the last few
+    /// milliseconds back, and they come out with the next stream's first ones (a gapless join)
+    /// or not at all (the end of the queue).
+    pub fn process_vec(&mut self, samples: &mut Vec<f64>) {
+        self.process(samples);
+        if self.skip > 0 {
+            let drop = (self.skip * self.channels).min(samples.len());
+            samples.drain(..drop);
+            self.skip -= drop / self.channels;
         }
     }
 

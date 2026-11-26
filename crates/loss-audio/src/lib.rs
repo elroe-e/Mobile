@@ -14,6 +14,7 @@ pub mod eq;
 mod mp4gap;
 mod opus;
 pub mod sink;
+pub mod stretch;
 mod wavpack;
 pub use opus::codecs;
 mod resample;

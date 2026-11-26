@@ -329,15 +329,28 @@ impl Session {
     /// the output are f32: exact for every 16- and 24-bit sample.)
     fn push_pending(&mut self, processed: &[f64]) {
         let g = self.gain;
-        if g == 1.0 {
-            self.pending.extend(processed.iter().map(|&v| v as f32));
-        } else {
-            self.pending
-                .extend(processed.iter().map(|&v| (v * g) as f32));
+        if self.eq.is_none() && self.crossfeed.is_none() {
+            if g == 1.0 {
+                self.pending.extend(processed.iter().map(|&v| v as f32));
+            } else {
+                self.pending
+                    .extend(processed.iter().map(|&v| (v * g) as f32));
+            }
+            return;
         }
+        // Gain, then crossfeed, then the equalizer (whose limiter comes last).
+        let mut v: Vec<f64> = processed.iter().map(|&x| x * g).collect();
+        if let Some(c) = &mut self.crossfeed {
+            c.process(&mut v);
+        }
+        if let Some(eq) = &mut self.eq {
+            eq.process_vec(&mut v);
+        }
+        self.pending.extend(v.iter().map(|&x| x as f32));
     }
 
-    /// End of the file: the graph hands over what it held back (resampler tail).
+    /// End of the file: the graph hands over what it held back (resampler tail). (The
+    /// equalizer's look-ahead stays in its delay line: it plays on into a gapless next track.)
     fn finish(&mut self) {
         let mut tail = Vec::new();
         self.graph.flush(&mut tail);
@@ -1833,6 +1846,164 @@ mod tests {
             ..AudioOptions::default()
         }));
         assert!(e.st().info.processing.is_empty());
+    }
+
+    /// Heard samples of `ch` (0 left, 1 right) from the fake output.
+    fn heard_ch(clock: &FakeClock, ch: usize) -> Vec<f32> {
+        clock.heard().chunks(2).map(|f| f[ch]).collect()
+    }
+
+    fn rms32(v: &[f32]) -> f64 {
+        (v.iter().map(|x| (*x as f64).powi(2)).sum::<f64>() / v.len() as f64).sqrt()
+    }
+
+    #[test]
+    fn the_equalizer_really_changes_the_samples() {
+        let (mut e, clock) = hires_dac();
+        let path = tmp("eq-real.wav");
+        write_wav(&path, 44100, 1.0, 0, 44100);
+        let dry = {
+            e.handle(Command::SetQueue {
+                items: vec![item(&path)],
+                start: 0,
+            });
+            play(&mut e, &clock, 44100 + 2000, 1000);
+            heard_ch(&clock, 0)
+        };
+        let (mut e, clock) = hires_dac();
+        // −6.02 dB of pre-amp, nothing else: every sample is exactly halved.
+        let mut p = crate::eq::EqParams {
+            preamp_db: -20.0 * 2f64.log10(),
+            auto_headroom: false,
+            limiter: false,
+            ..Default::default()
+        };
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            eq: Some(p.clone()),
+            ..AudioOptions::default()
+        }));
+        e.handle(Command::SetQueue {
+            items: vec![item(&path)],
+            start: 0,
+        });
+        play(&mut e, &clock, 44100 + 2000, 1000);
+        let wet = heard_ch(&clock, 0);
+        assert_eq!(wet.len(), dry.len());
+        assert!(dry
+            .iter()
+            .zip(&wet)
+            .all(|(d, w)| (d * 0.5 - w).abs() < 1e-6));
+        // A +9 dB band at the tone's pitch: the measured gain matches the designed one.
+        let (mut e, clock) = hires_dac();
+        p.preamp_db = 0.0;
+        p.gains = vec![0.0, 0.0, 0.0, 0.0, 9.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let designed = p.response_db(440.0, 44100.0);
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            eq: Some(p),
+            ..AudioOptions::default()
+        }));
+        e.handle(Command::SetQueue {
+            items: vec![item(&path)],
+            start: 0,
+        });
+        play(&mut e, &clock, 44100 + 2000, 1000);
+        let wet = heard_ch(&clock, 0);
+        let gain = 20.0 * (rms32(&wet[20_000..40_000]) / rms32(&dry[20_000..40_000])).log10();
+        assert!(
+            (gain - designed).abs() < 0.2,
+            "measured {gain:.2} dB, designed {designed:.2}"
+        );
+        assert!(gain > 3.0, "the equalizer did nothing audible: {gain}");
+    }
+
+    #[test]
+    fn the_limiter_costs_no_time_and_joins_tracks_gaplessly() {
+        let (mut e, clock) = hires_dac();
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            eq: Some(crate::eq::EqParams {
+                preamp_db: 0.1, // not flat, so the stage (and its limiter) is in
+                auto_headroom: false,
+                ..Default::default()
+            }),
+            ..AudioOptions::default()
+        }));
+        let (a, b) = (tmp("lim-a.wav"), tmp("lim-b.wav"));
+        write_wav(&a, 44100, 0.2, 0, 8820);
+        write_wav(&b, 44100, 0.2, 8820, 17640);
+        e.handle(Command::SetQueue {
+            items: vec![item(&a), item(&b)],
+            start: 0,
+        });
+        play(&mut e, &clock, 20_000, 1000);
+        let left = heard_ch(&clock, 0);
+        // The first sound arrives at once (no look-ahead silence)...
+        assert!(left[..200].iter().any(|v| v.abs() > 0.01));
+        // ...and the join is one continuous tone: no gap, no jump.
+        let jump = left[8_000..10_000]
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0f32, f32::max);
+        assert!(jump < 0.05, "discontinuity {jump}");
+        // All but the last 5 ms of the queue plays.
+        let sound = left.iter().rposition(|v| v.abs() > 1e-4).unwrap() + 1;
+        assert!((17_640 - 300..=17_640).contains(&sound), "{sound}");
+    }
+
+    #[test]
+    fn crossfeed_really_moves_sound_to_the_other_ear() {
+        let (mut e, clock) = hires_dac();
+        // A tone on the left only.
+        let path = tmp("cf-real.wav");
+        let frames = 44100u32;
+        let mut b = Vec::new();
+        b.extend_from_slice(b"RIFF");
+        b.extend_from_slice(&(36 + frames * 4).to_le_bytes());
+        b.extend_from_slice(b"WAVEfmt ");
+        b.extend_from_slice(&16u32.to_le_bytes());
+        b.extend_from_slice(&1u16.to_le_bytes());
+        b.extend_from_slice(&2u16.to_le_bytes());
+        b.extend_from_slice(&44100u32.to_le_bytes());
+        b.extend_from_slice(&(44100u32 * 4).to_le_bytes());
+        b.extend_from_slice(&4u16.to_le_bytes());
+        b.extend_from_slice(&16u16.to_le_bytes());
+        b.extend_from_slice(b"data");
+        b.extend_from_slice(&(frames * 4).to_le_bytes());
+        let tone: Vec<i16> = (0..frames)
+            .map(|i| ((i as f32 * 150.0 * std::f32::consts::TAU / 44100.0).sin() * 8000.0) as i16)
+            .collect();
+        for v in &tone {
+            b.extend_from_slice(&v.to_le_bytes());
+            b.extend_from_slice(&0i16.to_le_bytes());
+        }
+        std::fs::write(&path, b).unwrap();
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            crossfeed: Some(crate::crossfeed::Strength::Strong),
+            ..AudioOptions::default()
+        }));
+        e.handle(Command::SetQueue {
+            items: vec![item(&path)],
+            start: 0,
+        });
+        play(&mut e, &clock, 44100 + 1000, 1000);
+        let (l, r) = (heard_ch(&clock, 0), heard_ch(&clock, 1));
+        // The same filter applied by hand gives the same samples.
+        let mut want: Vec<f64> = tone
+            .iter()
+            .flat_map(|&v| [v as f64 / 32768.0, 0.0])
+            .collect();
+        crate::crossfeed::Crossfeed::new(crate::crossfeed::Strength::Strong, 44100)
+            .process(&mut want);
+        assert!(l
+            .iter()
+            .zip(want.chunks(2))
+            .all(|(h, w)| (*h as f64 - w[0]).abs() < 1e-6));
+        assert!(r
+            .iter()
+            .zip(want.chunks(2))
+            .all(|(h, w)| (*h as f64 - w[1]).abs() < 1e-6));
+        // And it is audible: the right ear now hears a good share of the left's bass.
+        let share = rms32(&r[10_000..30_000]) / rms32(&l[10_000..30_000]);
+        assert!(share > 0.3, "right/left {share}");
     }
 
     #[test]

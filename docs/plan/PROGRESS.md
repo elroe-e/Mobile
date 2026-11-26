@@ -3,6 +3,22 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-26 (session 5, later): fix, the equalizer and crossfeed weren't connected
+
+- **Bug (M2-10 and M2-12 builds before this commit):** `Session::push_pending` never ran the
+  equalizer or the crossfeed, so turning them on changed the "processing" label but not the
+  sound. A scripted text replace for that function silently didn't match after rustfmt had
+  reshaped it, and the engine tests only checked the label. The DSP itself (`eq.rs`,
+  `crossfeed.rs`) was right and tested on its own; the engine just never called it.
+- Fixed: gain → crossfeed → equalizer (limiter last) in `push_pending`. New engine tests check
+  real samples: a pre-amp halves every sample exactly; a +9 dB band measures within 0.2 dB of its
+  design; crossfeed output equals the filter applied by hand and puts left-only bass in the right
+  ear. The limiter's look-ahead used to add 5 ms of silence at the start; it's dropped now
+  (`Equalizer::process_vec`), so timing is exact and a gapless join carries the last 5 ms into
+  the next track (only the last 5 ms of the whole queue is cut).
+- **Lesson:** after a scripted edit, check that it applied (`grep`), and test behaviour (the
+  samples), not labels.
+
 ## 2026-11-26 (session 5, later): crossfeed (M2-12)
 
 - CI on the AutoEq commit: the x86_64 emulator smoke test failed once (the app process aborted
