@@ -81,7 +81,8 @@ impl Crossfeed {
 
     /// Filters interleaved stereo in place.
     pub fn process(&mut self, samples: &mut [f64]) {
-        for frame in samples.chunks_exact_mut(2) {
+        let (frames, _) = samples.as_chunks_mut::<2>();
+        for frame in frames {
             let (l, r) = (frame[0], frame[1]);
             // lp(L − R) is the negative of lp(R − L), so one filter serves both sides.
             self.lp += self.a * ((r - l) - self.lp);
