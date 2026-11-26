@@ -61,6 +61,16 @@ struct Session {
     /// Silence skipping, at the very start of the chain (source rate).
     skipper: Option<crate::silence::Skipper>,
     skips: SkipLog,
+    /// AutoMix: samples (all channels) of the end held back for the next track's transition.
+    hold: usize,
+    /// Output samples emitted before the holding starts (the track's end minus `hold`), and how
+    /// many have been emitted so far. The duration decides, so a track whose length is only an
+    /// estimate holds a little more or less than asked.
+    hold_start: usize,
+    emitted: usize,
+    tail: std::collections::VecDeque<f32>,
+    /// The previous track's end being mixed into this one's start.
+    blend: Option<crate::mixer::Blend>,
 }
 
 /// Silence skipped so far: (output sample count at that point, source seconds dropped), shared
@@ -437,24 +447,68 @@ impl Session {
     /// the output are f32: exact for every 16- and 24-bit sample.)
     fn push_pending(&mut self, processed: &[f64]) {
         let g = self.gain;
+        let mut out: Vec<f32>;
         if self.eq.is_none() && self.crossfeed.is_none() {
-            if g == 1.0 {
-                self.pending.extend(processed.iter().map(|&v| v as f32));
+            out = if g == 1.0 {
+                processed.iter().map(|&v| v as f32).collect()
             } else {
-                self.pending
-                    .extend(processed.iter().map(|&v| (v * g) as f32));
+                processed.iter().map(|&v| (v * g) as f32).collect()
+            };
+        } else {
+            // Gain, then crossfeed, then the equalizer (whose limiter comes last).
+            let mut v: Vec<f64> = processed.iter().map(|&x| x * g).collect();
+            if let Some(c) = &mut self.crossfeed {
+                c.process(&mut v);
             }
+            if let Some(eq) = &mut self.eq {
+                eq.process_vec(&mut v);
+            }
+            out = v.iter().map(|&x| x as f32).collect();
+        }
+        if let Some(b) = &mut self.blend {
+            b.apply(&mut out);
+            if b.done() {
+                self.blend = None;
+            }
+        }
+        self.hold_back(&out);
+    }
+
+    /// Samples bound for the ring, minus the end of the track (kept for the transition).
+    fn hold_back(&mut self, out: &[f32]) {
+        if self.hold == 0 && self.tail.is_empty() {
+            self.pending.extend_from_slice(out);
+            self.emitted += out.len();
             return;
         }
-        // Gain, then crossfeed, then the equalizer (whose limiter comes last).
-        let mut v: Vec<f64> = processed.iter().map(|&x| x * g).collect();
-        if let Some(c) = &mut self.crossfeed {
-            c.process(&mut v);
+        let direct = self.hold_start.saturating_sub(self.emitted).min(out.len());
+        self.pending.extend_from_slice(&out[..direct]);
+        self.tail.extend(out[direct..].iter().copied());
+        self.emitted += out.len();
+        while self.tail.len() > self.hold {
+            let x = self.tail.pop_front().unwrap_or(0.0);
+            self.pending.push(x);
         }
-        if let Some(eq) = &mut self.eq {
-            eq.process_vec(&mut v);
+    }
+
+    /// Decides how much of the end to hold for a transition of `frames` (0 for none): at most
+    /// half the track, and only when its length is known.
+    fn plan_hold(&mut self, frames: usize, rate: u32, channels: usize) {
+        if frames == 0 || self.duration <= 0.0 {
+            self.hold = 0;
+            self.hold_start = usize::MAX;
+            return;
         }
-        self.pending.extend(v.iter().map(|&x| x as f32));
+        let total = ((self.duration - self.start_offset).max(0.0) / self.speed.max(0.01)
+            * rate as f64) as usize;
+        let n = frames.min(total / 2);
+        self.hold = n * channels;
+        self.hold_start = (total - n) * channels;
+    }
+
+    /// The held-back end goes to the ring after all (no transition follows).
+    fn release_tail(&mut self) {
+        self.pending.extend(self.tail.drain(..));
     }
 
     /// End of the file: the graph hands over what it held back (resampler tail). (The
@@ -476,6 +530,11 @@ impl Session {
         }
         self.graph.flush(&mut tail);
         self.push_pending(&tail);
+        if let Some(mut b) = self.blend.take() {
+            // The new track was shorter than the transition: the rest of the old one plays out.
+            let rest = b.rest();
+            self.hold_back(&rest);
+        }
         self.eof = true;
     }
 
@@ -485,7 +544,7 @@ impl Session {
     }
 
     fn drained(&self) -> bool {
-        self.decoded_all() && self.producer.slots() == self.capacity
+        self.decoded_all() && self.tail.is_empty() && self.producer.slots() == self.capacity
     }
 
     /// Starts decoding the next track into the same ring buffer, so playback
@@ -561,6 +620,11 @@ impl Session {
             skipper: skip_silence
                 .then(|| crate::silence::Skipper::standard(src_rate, src_channels)),
             skips: SkipLog::default(),
+            hold: 0,
+            hold_start: usize::MAX,
+            emitted: 0,
+            tail: Default::default(),
+            blend: None,
         }
     }
 }
@@ -753,14 +817,19 @@ impl Engine {
             speed,
             tempo,
             skipper: self
-                .options
-                .skip_silence
+                .skip_on()
                 .then(|| crate::silence::Skipper::standard(info.sample_rate, src_channels)),
             skips: SkipLog::default(),
+            hold: 0,
+            hold_start: usize::MAX,
+            emitted: 0,
+            tail: Default::default(),
+            blend: None,
             duration,
             info,
             pushed: 0,
         };
+        session.plan_hold(self.mix_frames(out.rate), out.rate, out.channels);
         session
             .pump(out.channels, out.rate)
             .map_err(|detail| PlayError {
@@ -1018,12 +1087,21 @@ impl Engine {
             Command::SetShuffle(on) => self.set_shuffle(on),
             Command::SetAudioOptions(o) => {
                 let reopen = o.output != self.options.output;
-                let reskip = o.skip_silence != self.options.skip_silence;
+                let reskip = (o.skip_silence && o.automix.is_none()) != self.skip_on();
+                let remix = o.automix != self.options.automix || o.output != self.options.output;
                 let retempo = o.tempo != self.options.tempo;
                 let regain = o.normalize != self.options.normalize
                     || o.eq != self.options.eq
                     || o.crossfeed != self.options.crossfeed;
                 self.options = o;
+                if remix && !reopen {
+                    if let Some(out) = &self.output {
+                        let frames = self.mix_frames(out.rate);
+                        if let Some(s) = self.session.as_mut() {
+                            s.plan_hold(frames, out.rate, out.channels);
+                        }
+                    }
+                }
                 if regain && !reopen {
                     self.regain();
                 }
@@ -1033,7 +1111,7 @@ impl Engine {
                     self.reload_here(false);
                 } else if reskip {
                     // Skipping starts or stops from here on in the track that's playing.
-                    let on = self.options.skip_silence;
+                    let on = self.skip_on();
                     if let Some(s) = self.session.as_mut() {
                         s.skipper = on
                             .then(|| crate::silence::Skipper::standard(s.src_rate, s.src_channels));
@@ -1186,6 +1264,13 @@ impl Engine {
             self.preload_next(rate, ch);
         }
 
+        // Nothing follows: the held-back end plays as it is.
+        if self.no_preload {
+            if let Some(s) = self.session.as_mut().filter(|s| s.decoded_all()) {
+                s.release_tail();
+            }
+        }
+
         let finished = self.session.as_ref().is_some_and(|s| s.drained()) && self.switch.is_none();
         if finished {
             match self.next_index(false) {
@@ -1217,12 +1302,22 @@ impl Engine {
             // The output stays as it is (same rate after conversion), so join seamlessly, even
             // between a 44.1 kHz and a 48 kHz file when both play at 48 kHz.
             Ok(opened) if same_output(&opened.3) => {
-                let prev = self.session.take().unwrap();
-                let at = prev.pushed;
+                let mut prev = self.session.take().unwrap();
+                let tail: Vec<f32> = prev.tail.drain(..).collect();
+                let mut at = prev.pushed;
                 let quality = self.options.quality;
                 let gain = self.item_gain(&item);
                 let tempo = self.item_tempo();
-                let next = Session::handover(
+                let same_album = prev.item.album_run
+                    && item.album_run
+                    && !item.album.is_empty()
+                    && prev.item.album == item.album;
+                let mix = self
+                    .options
+                    .automix
+                    .filter(|_| !bit_perfect && !same_album && !tail.is_empty());
+                let frames = self.mix_frames(out_rate);
+                let mut next = Session::handover(
                     prev,
                     item,
                     opened,
@@ -1231,8 +1326,31 @@ impl Engine {
                     quality,
                     gain,
                     tempo,
-                    self.options.skip_silence,
+                    self.skip_on(),
                 );
+                next.plan_hold(frames, out_rate, out_channels);
+                match mix {
+                    Some(m) => {
+                        // The two tracks overlap: the new one starts where the tail begins.
+                        let effect = m.effect.unwrap_or_else(|| {
+                            crate::mixer::auto_effect(&tail, out_channels, out_rate)
+                        });
+                        next.blend = Some(crate::mixer::Blend::new(
+                            effect,
+                            &tail,
+                            out_channels,
+                            out_rate,
+                        ));
+                        next.info
+                            .processing
+                            .push(format!("AutoMix ({})", effect.name()));
+                    }
+                    None => {
+                        // No transition: the held-back end plays first, as in plain gapless.
+                        at += tail.len() as u64;
+                        next.pending = tail;
+                    }
+                }
                 self.switch = Some(Switch {
                     skips: next.skips.clone(),
                     speed: next.speed,
@@ -1251,6 +1369,19 @@ impl Engine {
 }
 
 impl Engine {
+    /// Silence skipping is off while AutoMix is on (the transitions need the track's real end).
+    fn skip_on(&self) -> bool {
+        self.options.skip_silence && self.options.automix.is_none()
+    }
+
+    /// Frames of a track's end to hold back for a transition (0 when there are none).
+    fn mix_frames(&self, rate: u32) -> usize {
+        match self.options.automix {
+            Some(m) if !self.options.output.bit_perfect => m.frames(rate),
+            _ => 0,
+        }
+    }
+
     /// Loads the current track again where it is (same play/pause state), on a fresh output
     /// stream when `reopen` is set.
     fn reload_here(&mut self, reopen: bool) {
@@ -1554,6 +1685,11 @@ mod tests {
             tempo: crate::Tempo::default(),
             skipper: None,
             skips: SkipLog::default(),
+            hold: 0,
+            hold_start: usize::MAX,
+            emitted: 0,
+            tail: Default::default(),
+            blend: None,
         };
         let mut out = Vec::new();
         let mut joins = Vec::new();
@@ -2388,6 +2524,117 @@ mod tests {
             "position {} (heard {heard_secs} s), file time {real} s",
             e.position()
         );
+    }
+
+    /// Level of one frequency in `x` (a Goertzel filter), as an amplitude.
+    fn tone_level(x: &[f32], f: f64, rate: f64) -> f64 {
+        let w = std::f64::consts::TAU * f / rate;
+        let (mut re, mut im) = (0.0, 0.0);
+        for (i, &v) in x.iter().enumerate() {
+            re += v as f64 * (w * i as f64).cos();
+            im += v as f64 * (w * i as f64).sin();
+        }
+        2.0 * (re * re + im * im).sqrt() / x.len() as f64
+    }
+
+    fn two_tones(name: &str) -> (PathBuf, PathBuf) {
+        let mk = |f: f64| -> Vec<i16> {
+            (0..44_100 * 3)
+                .map(|i| {
+                    ((i as f64 * f * std::f64::consts::TAU / 44_100.0).sin() * 13_000.0) as i16
+                })
+                .collect()
+        };
+        let (a, b) = (tmp(&format!("{name}-a.wav")), tmp(&format!("{name}-b.wav")));
+        write_wav_pcm(&a, 44_100, &mk(440.0));
+        write_wav_pcm(&b, 44_100, &mk(880.0));
+        (a, b)
+    }
+
+    /// Plays two three-second tones and returns the left channel heard.
+    fn play_two(
+        name: &str,
+        automix: Option<crate::AutoMix>,
+        bit_perfect: bool,
+        same_album: bool,
+    ) -> Vec<f32> {
+        let (mut e, clock) = hires_dac();
+        let output = crate::sink::OutputPrefs {
+            bit_perfect,
+            ..Default::default()
+        };
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            automix,
+            output,
+            ..AudioOptions::default()
+        }));
+        let (a, b) = two_tones(name);
+        let album = |p: &Path| QueueItem {
+            album_run: same_album,
+            album: if same_album {
+                "Album".into()
+            } else {
+                String::new()
+            },
+            ..item(p)
+        };
+        e.handle(Command::SetQueue {
+            items: vec![album(&a), album(&b)],
+            start: 0,
+        });
+        play(&mut e, &clock, 44_100 * 7, 1000);
+        heard_ch(&clock, 0)
+    }
+
+    fn sound_len(x: &[f32]) -> usize {
+        x.iter().rposition(|v| v.abs() > 1e-4).unwrap() + 1
+    }
+
+    #[test]
+    fn automix_overlaps_the_end_with_the_start_of_the_next_track() {
+        let mix = crate::AutoMix {
+            duration: 1.0,
+            effect: Some(crate::mixer::Effect::Crossfade),
+        };
+        let y = play_two("mix", Some(mix), false, false);
+        let r = 44_100.0;
+        // 3 s + 3 s with a 1 s overlap: five seconds of sound.
+        let len = sound_len(&y);
+        assert!(len.abs_diff(5 * 44_100) < 600, "{len}");
+        let at = |a: f64, b: f64| &y[(a * r) as usize..(b * r) as usize];
+        // Before the overlap only the first tone; after it only the second.
+        assert!(tone_level(at(0.5, 1.5), 440.0, r) > 0.35);
+        assert!(tone_level(at(0.5, 1.5), 880.0, r) < 0.01);
+        assert!(tone_level(at(3.1, 4.5), 880.0, r) > 0.35);
+        assert!(tone_level(at(3.1, 4.5), 440.0, r) < 0.01);
+        // In the middle of the overlap both are there, each about 0.707 of full.
+        let (lo, hi) = (
+            tone_level(at(2.4, 2.6), 440.0, r),
+            tone_level(at(2.4, 2.6), 880.0, r),
+        );
+        assert!(lo > 0.2 && hi > 0.2, "{lo} {hi}");
+        // The status reports the transition.
+        // No clipping anywhere.
+        assert!(y.iter().all(|v| v.abs() <= 1.0));
+    }
+
+    #[test]
+    fn automix_steps_aside_for_albums_bit_perfect_and_when_off() {
+        let mix = crate::AutoMix {
+            duration: 1.0,
+            effect: None,
+        };
+        let full = 6 * 44_100;
+        // Off: plain gapless.
+        assert!(sound_len(&play_two("off", None, false, false)).abs_diff(full) < 600);
+        // Neighbours of one album play in order without mixing.
+        let l = sound_len(&play_two("alb", Some(mix), false, true));
+        assert!(l.abs_diff(full) < 600, "album {l} vs {full}");
+        // Bit-perfect never mixes.
+        assert!(sound_len(&play_two("bp", Some(mix), true, false)).abs_diff(full) < 600);
+        // The last track of a queue isn't cut short by the held-back end.
+        let y = play_two("last", Some(mix), false, false);
+        assert!(sound_len(&y) > 4 * 44_100);
     }
 
     #[test]

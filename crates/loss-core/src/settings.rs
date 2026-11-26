@@ -72,6 +72,18 @@ pub struct Settings {
     pub crossfeed: String,
     /// Cut long silent stretches inside songs short (M2-14).
     pub skip_silence: bool,
+    /// AutoMix (M2-15): the end of a song mixes into the start of the next.
+    pub auto_mix: bool,
+    /// Seconds; 0 lets Loss choose.
+    pub auto_mix_duration: i64,
+    /// "auto", "crossfade", "muffled", "echo", "pitch" or "custom".
+    pub auto_mix_effect: String,
+    /// Custom effect: the ending song's speed (percent) and pitch (semitones) by the end,
+    /// and whether it echoes or gets duller.
+    pub auto_mix_speed: i64,
+    pub auto_mix_pitch: i64,
+    pub auto_mix_echo: bool,
+    pub auto_mix_low_pass: bool,
     /// Playback speed in percent (100 = normal), M2-13.
     pub playback_speed: i64,
     /// Keep the pitch when the speed changes (else it follows the speed, like a record).
@@ -121,6 +133,13 @@ impl Default for Settings {
             normalization_preamp: 0,
             crossfeed: "off".into(),
             skip_silence: false,
+            auto_mix: false,
+            auto_mix_duration: 0,
+            auto_mix_effect: "auto".into(),
+            auto_mix_speed: 100,
+            auto_mix_pitch: 0,
+            auto_mix_echo: false,
+            auto_mix_low_pass: false,
             playback_speed: 100,
             playback_keep_pitch: true,
             playback_pitch: 0,

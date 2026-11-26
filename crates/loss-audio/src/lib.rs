@@ -11,6 +11,7 @@ mod dsd;
 mod dsp;
 mod engine;
 pub mod eq;
+pub mod mixer;
 mod mp4gap;
 mod opus;
 pub mod silence;
@@ -40,6 +41,31 @@ pub struct AudioOptions {
     /// Cut long silent stretches short (M2-14). Doesn't alter the samples, so it works on
     /// bit-perfect paths too.
     pub skip_silence: bool,
+    /// Transitions between tracks (M2-15); off on bit-perfect paths.
+    pub automix: Option<AutoMix>,
+}
+
+/// AutoMix: the end of a track is mixed into the start of the next.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AutoMix {
+    /// Length in seconds; 0 lets Loss choose.
+    pub duration: f64,
+    /// None lets Loss choose per transition.
+    pub effect: Option<mixer::Effect>,
+}
+
+impl AutoMix {
+    /// What "automatic" length means.
+    pub const AUTO_SECONDS: f64 = 6.0;
+
+    pub fn frames(&self, rate: u32) -> usize {
+        let secs = if self.duration > 0.0 {
+            self.duration
+        } else {
+            Self::AUTO_SECONDS
+        };
+        (secs.clamp(1.0, 20.0) * rate as f64) as usize
+    }
 }
 
 /// Speed and pitch: `speed` is the playback rate (1 = normal); with `keep_pitch` the pitch stays
@@ -99,6 +125,8 @@ pub struct QueueItem {
     pub gain_album: Option<f64>,
     /// Part of an album played in order (automatic gain mode uses the album gain).
     pub album_run: bool,
+    /// The album's name, to tell whether two neighbours belong together.
+    pub album: String,
 }
 
 /// Which ReplayGain value levels a track.

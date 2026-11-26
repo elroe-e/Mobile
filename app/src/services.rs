@@ -105,6 +105,18 @@ fn audio_options(
         },
         eq: eq_params(&s.equalizer, s.autoeq.get(device)),
         skip_silence: s.skip_silence,
+        automix: s.auto_mix.then(|| loss_audio::AutoMix {
+            duration: s.auto_mix_duration as f64,
+            effect: loss_audio::mixer::Effect::parse(
+                &s.auto_mix_effect,
+                loss_audio::mixer::Custom {
+                    speed: s.auto_mix_speed as f64 / 100.0,
+                    semitones: s.auto_mix_pitch as f64,
+                    echo: s.auto_mix_echo,
+                    low_pass: s.auto_mix_low_pass,
+                },
+            ),
+        }),
         tempo: loss_audio::Tempo {
             speed: s.playback_speed as f64 / 100.0,
             keep_pitch: s.playback_keep_pitch,

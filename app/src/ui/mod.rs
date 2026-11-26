@@ -171,6 +171,7 @@ pub fn queue_items(ids: &[String]) -> Vec<QueueItem> {
             gain_track: t.gain_track,
             gain_album: t.gain_album,
             album_run,
+            album: t.album.clone(),
         })
         .collect()
 }
