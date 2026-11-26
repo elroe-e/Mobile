@@ -26,12 +26,31 @@ mod imp {
         matches!(svc.player.state().status, Status::Playing | Status::Loading)
     }
 
+    /// When the app started: Android lists the outputs already connected as "added" at the
+    /// start, which isn't somebody plugging in headphones.
+    static STARTED: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+
     fn handle(svc: &Services, event: Event) {
         let playing = is_playing(svc);
-        let reaction = POLICY
+        let settings = svc.settings();
+        let mut reaction = POLICY
             .lock()
-            .map(|mut p| p.on_event(&event, playing))
+            .map(|mut p| {
+                p.set_prefs(loss_platform::policy::Prefs {
+                    pause_on_mute: settings.pause_on_mute,
+                    resume_on_connect: loss_platform::policy::ResumeOnConnect::parse(
+                        &settings.resume_on_connect,
+                    ),
+                });
+                p.on_event(&event, playing)
+            })
             .unwrap_or_default();
+        let early = STARTED
+            .get()
+            .is_some_and(|t| t.elapsed() < Duration::from_secs(4));
+        if early && matches!(event, Event::OutputsAdded(_)) && reaction == Reaction::Resume {
+            reaction = Reaction::Nothing;
+        }
         match &event {
             Event::Media(cmd) => super::apply(svc, *cmd),
             Event::Volume { level, max } => {
@@ -62,6 +81,7 @@ mod imp {
     /// Registers the natives and starts the event thread. Events that arrived
     /// before this are delivered by the glue right after registration.
     pub fn start_events(svc: &'static Services) {
+        let _ = STARTED.set(Instant::now());
         let (tx, rx) = mpsc::channel::<Event>();
         std::thread::Builder::new()
             .name("loss-events".into())

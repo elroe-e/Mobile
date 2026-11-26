@@ -27,7 +27,7 @@ tasks in order, and update this file before the session ends (see [CLAUDE.md](..
 |---|---|---|---|---|
 | M0 | Foundations: CI, glue module, bridge, store, settings, i18n, UI kit, diagnostics | 13 | 11 | 4–5 sessions |
 | M1 | The 7 problems fixed + phone verification | 8 | 7 | 2–3 sessions |
-| M2 | Audio engine v2, hi-fi output, USB, DSP | 24 | 13 | 8–10 sessions |
+| M2 | Audio engine v2, hi-fi output, USB, DSP | 24 | 14 | 8–10 sessions |
 | M3 | Player and queue | 16 | 0 | 3–4 sessions |
 | M4 | Library v2 | 25 | 0 | 6–8 sessions |
 | M5 | Lyrics v2 | 12 | 0 | 4–5 sessions |
@@ -51,7 +51,7 @@ A "session" here means one working session of the length used so far. Numbers ar
    no bit-perfect mixer. So the order is ~~M2-01~~, ~~M2-07~~ (our own 44.1 → 48 kHz resampling, which affects most of
    the library), ~~M2-03~~ (the Beats' real rates, so M2-07 takes effect), ~~M2-02~~ (native AAudio output), **M2-06** (built; waiting for the owner's Beats report), then **M2-05**
    (Direct USB, the only bit-perfect route here; stream planning done, I/O waits for the report),
-   ~~M2-04~~ (output modes). ~~M2-09~~ (ReplayGain). M2-08 is done but APE (needs a sample file). ~~M2-10~~ (equalizer). ~~M2-11~~ (AutoEq). ~~M2-12~~ (crossfeed). ~~M2-13~~ (speed and pitch; the in-player menu is M3-07). ~~M2-14~~ (skip silence). ~~M2-15~~ (AutoMix). ~~M2-16~~ (spatial audio). Without the phone, continue with M2-17 (volume behaviours).
+   ~~M2-04~~ (output modes). ~~M2-09~~ (ReplayGain). M2-08 is done but APE (needs a sample file). ~~M2-10~~ (equalizer). ~~M2-11~~ (AutoEq). ~~M2-12~~ (crossfeed). ~~M2-13~~ (speed and pitch; the in-player menu is M3-07). ~~M2-14~~ (skip silence). ~~M2-15~~ (AutoMix). ~~M2-16~~ (spatial audio). ~~M2-17~~ (volume behaviours). Without the phone, continue with M2-18 (audio-info sheet).
 
 ## Open decisions (defaults apply until the owner decides)
 
@@ -243,7 +243,7 @@ updated; this file's checkbox is ticked. Commit messages start with the task ID 
   transitions follow the selected effect and beat alignment is within 20 ms on test material.
 - [x] **M2-16 Spatial audio.** Read Spatializer availability and head-tracking support; set the AAudio
   spatialization behaviour; show state per output; never used with Direct USB or exclusive modes.
-- [ ] **M2-17 Volume behaviours.** Loud-volume confirmation above a chosen level; hide-volume option;
+- [x] **M2-17 Volume behaviours.** Loud-volume confirmation above a chosen level; hide-volume option;
   pause on mute and resume when the volume comes back; resume when headphones or a car connect (off,
   after a disconnect, always); fixed-volume USB warning.
 - [ ] **M2-18 Audio-info sheet.** Source file (codec, container, rate, depth, channels, bitrate,

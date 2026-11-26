@@ -3,6 +3,24 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-26 (session 5, later): volume behaviours (M2-17)
+
+- `FocusPolicy` (loss-platform, pure and tested) now also decides: pause when the volume reaches
+  zero and resume when it comes back (only if the mute caused the pause; a manual play/pause
+  cancels it); resume when headphones/DAC/Bluetooth connect (Never / After a disconnect, i.e. only
+  when unplugging paused it / Always, never over music that already plays). Outputs Android lists
+  at app start look like "added": a resume decided in the first 4 s is dropped.
+- Loud-volume confirmation (`needs_loud_confirmation`: only when raising across the limit,
+  default 80%, 0 = off) in the player's volume slider, with a dialog. Hide-volume setting removes
+  the slider from the player. The glue reports `AudioManager.isVolumeFixed`; with a USB output the
+  Audio card warns that the phone's volume won't change it.
+- Not covered: the phone's own volume buttons (Android's safe-volume prompt handles those), and
+  the volume control in the notification or lock screen.
+- Local Android lint: `CC_aarch64_linux_android=$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
+  AR_aarch64_linux_android=…/llvm-ar cargo clippy -p loss --target aarch64-linux-android
+  --no-default-features -- -D warnings`. Don't `export $(scripts/setup-env.sh)`: it prints the whole
+  environment.
+
 ## 2026-11-26 (session 5, later): spatial audio (M2-16)
 
 - The glue reads the system `Spatializer` (Android 12+) into the mixer JSON: immersive level,

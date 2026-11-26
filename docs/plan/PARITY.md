@@ -117,7 +117,7 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 | PLY-03 | Quality label | Plus a full audio-info sheet: signal path, bit-perfect or not, output device, Bluetooth codec | Codec, bit depth and sample rate | Simpler in Loss | M2-18 | todo |
 | PLY-04 | Play, pause, next, previous, shuffle, repeat | Yes | Yes | Same | — | keep |
 | PLY-05 | Seek bar | Wavy expressive bar | Thick flat bar that holds still while you drag | Different | M3-02 | todo |
-| PLY-06 | Volume slider | Phone volume; can be hidden; warns above a level you choose | Phone volume with a percentage (not tested on a phone) | Simpler in Loss | M2-17, M3-12 | todo |
+| PLY-06 | Volume slider | Phone volume; can be hidden; warns above a level you choose | Phone volume with a percentage (not tested on a phone) | Simpler in Loss | M2-17, M3-12 | doing |
 | PLY-07 | Swipe to change song | On the artwork and the mini player | No | Only in Mornye | M3-03 | todo |
 | PLY-08 | Love button | Yes | No | Only in Mornye | M3-04, M4-10 | todo |
 | PLY-09 | Sleep timer | Set minutes or stop at the end of the song | No | Only in Mornye | M3-06 | todo |
@@ -144,9 +144,9 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 | SND-09 | Choice of playback engine | Old or new (Media3) engine | One engine written in Rust | Different | M2-04 | done |
 | SND-10 | Pause for calls and other apps | Yes | No, keeps playing | Only in Mornye | M1-01 | done |
 | SND-11 | Pause when headphones are unplugged | Yes | No, switches to the speaker | Only in Mornye | M1-02 | done |
-| SND-12 | Resume when headphones or car connect | Off, after a disconnect, or always | No | Only in Mornye | M2-17 | todo |
-| SND-13 | Pause when muted | Yes | No | Only in Mornye | M2-17 | todo |
-| SND-14 | Loud-volume warning | Yes | No | Only in Mornye | M2-17, M3-12 | todo |
+| SND-12 | Resume when headphones or car connect | Off, after a disconnect, or always | No | Only in Mornye | M2-17 | done |
+| SND-13 | Pause when muted | Yes | No | Only in Mornye | M2-17 | done |
+| SND-14 | Loud-volume warning | Yes | No | Only in Mornye | M2-17, M3-12 | doing |
 | SND-15 | Lock screen and notification controls | Yes | Yes (not tested on a phone) | Same | M1-08 | todo |
 | SND-16 | Lyrics on the lock screen | Yes | No | Only in Mornye | M3-14 | todo |
 | SND-17 | Autoplay when the queue ends | Related songs from your library; learns from your plays and skips on the phone | Stops at the end | Only in Mornye | M3-15 | todo |

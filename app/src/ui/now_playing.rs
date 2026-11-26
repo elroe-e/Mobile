@@ -1,6 +1,7 @@
 //! Full-screen player with seek bar, synced lyrics and the queue.
 
 use super::icons::Icon;
+use super::kit::Dialog;
 use super::{state, Cover, Slider};
 use crate::services;
 use dioxus::prelude::*;
@@ -24,6 +25,9 @@ pub fn NowPlaying() -> Element {
     // After a seek, keep showing the target time until the player gets there.
     let mut seek_hold: Signal<Option<(f64, std::time::Instant)>> = use_signal(|| None);
     let mut closing = use_signal(|| false);
+    // A volume above the loud limit waiting for the user's OK.
+    let loud = use_signal(|| false);
+    let loud_target = use_signal(|| 0.0f32);
     let Some(cur) = p.current().cloned() else {
         return rsx! {};
     };
@@ -165,32 +169,50 @@ pub fn NowPlaying() -> Element {
                     Icon { name: repeat_icon }
                 }
             }
-            div { class: "np-volume",
-                button {
-                    class: "icon-btn small",
-                    onclick: move |_| services::get().set_volume((vol_now - 0.1).max(0.0)),
-                    Icon { name: "volume_down", size: 20 }
+            if !svc.settings().hide_volume {
+                div { class: "np-volume",
+                    button {
+                        class: "icon-btn small",
+                        onclick: move |_| services::get().set_volume((vol_now - 0.1).max(0.0)),
+                        Icon { name: "volume_down", size: 20 }
+                    }
+                    Slider {
+                        value: vol_now as f64,
+                        max: 1.0,
+                        on_input: move |v: f64| {
+                            if loud() || !try_set_volume(v as f32, vol_now, loud, loud_target) {
+                                return;
+                            }
+                            // Update the % label instantly, not on the next tick.
+                            let mut vol = st.volume;
+                            vol.set(v as f32);
+                        },
+                        on_commit: move |v: f64| {
+                            if loud() || !try_set_volume(v as f32, vol_now, loud, loud_target) {
+                                return;
+                            }
+                            let mut vol = st.volume;
+                            vol.set(v as f32);
+                            let svc = services::get();
+                            if svc.system_volume().is_none() {
+                                svc.update_settings(move |s| s.volume = v as f32);
+                            }
+                        },
+                    }
+                    span { class: "vol-pct", "{(vol_now * 100.0).round()}%" }
                 }
-                Slider {
-                    value: vol_now as f64,
-                    max: 1.0,
-                    on_input: move |v: f64| {
-                        // Update the % label instantly, not on the next tick.
-                        let mut vol = st.volume;
-                        vol.set(v as f32);
-                        services::get().set_volume(v as f32);
-                    },
-                    on_commit: move |v: f64| {
-                        let mut vol = st.volume;
-                        vol.set(v as f32);
-                        let svc = services::get();
-                        svc.set_volume(v as f32);
-                        if svc.system_volume().is_none() {
-                            svc.update_settings(move |s| s.volume = v as f32);
-                        }
-                    },
-                }
-                span { class: "vol-pct", "{(vol_now * 100.0).round()}%" }
+            }
+            Dialog {
+                open: loud,
+                title: t!("loud-volume-title"),
+                text: t!("loud-volume-text", percent = (loud_target() * 100.0).round() as i64),
+                confirm: t!("loud-volume-confirm"),
+                on_confirm: move |_| {
+                    let v = loud_target();
+                    let mut vol = st.volume;
+                    vol.set(v);
+                    services::get().set_volume(v);
+                },
             }
             div { class: "np-bottom",
                 button { class: if pn == Pane::Lyrics { "np-chip on" } else { "np-chip" }, onclick: move |_| toggle(Pane::Lyrics),
@@ -206,6 +228,20 @@ pub fn NowPlaying() -> Element {
             }
         }
     }
+}
+
+/// Sets the volume unless it crosses the loud limit going up: then it keeps the target for the
+/// confirmation dialog and returns false.
+fn try_set_volume(v: f32, current: f32, mut loud: Signal<bool>, mut target: Signal<f32>) -> bool {
+    let svc = services::get();
+    let limit = svc.settings().loud_volume_limit;
+    if loss_platform::policy::needs_loud_confirmation(current, v, limit) {
+        target.set(v);
+        loud.set(true);
+        return false;
+    }
+    svc.set_volume(v);
+    true
 }
 
 #[component]

@@ -417,6 +417,7 @@ object LossBridge {
                 JSONObject().put("id", usb.id).put("name", usb.productName?.toString() ?: "").put("bit_perfect", formats)
             )
         }
+        out.put("volume_fixed", am.isVolumeFixed)
         spatializer(am)?.let { out.put("spatial", it) }
         return out.toString()
     }

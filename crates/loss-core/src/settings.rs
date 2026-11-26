@@ -72,6 +72,15 @@ pub struct Settings {
     pub crossfeed: String,
     /// Cut long silent stretches inside songs short (M2-14).
     pub skip_silence: bool,
+    /// Pause when the phone is muted and resume when the volume comes back (M2-17).
+    pub pause_on_mute: bool,
+    /// Resume playback when headphones, a DAC or a car connect: "off", "after_disconnect" or
+    /// "always".
+    pub resume_on_connect: String,
+    /// Ask before raising the volume above this percentage; 0 never asks.
+    pub loud_volume_limit: i64,
+    /// Leave the volume slider off the player.
+    pub hide_volume: bool,
     /// AutoMix (M2-15): the end of a song mixes into the start of the next.
     pub auto_mix: bool,
     /// Seconds; 0 lets Loss choose.
@@ -135,6 +144,10 @@ impl Default for Settings {
             normalization_preamp: 0,
             crossfeed: "off".into(),
             skip_silence: false,
+            pause_on_mute: true,
+            resume_on_connect: "off".into(),
+            loud_volume_limit: 80,
+            hide_volume: false,
             auto_mix: false,
             auto_mix_duration: 0,
             auto_mix_effect: "auto".into(),

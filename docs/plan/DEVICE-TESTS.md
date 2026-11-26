@@ -158,6 +158,13 @@ Android bit-perfect mixer for them.
       there it says so. Output mode Exclusive: the card says spatial audio is off in this mode.
       Please send the card's wording if it looks wrong.
 
+- [ ] (M2-17) Settings → Audio: with "Pause when muted" on, turn the phone's volume to 0 while
+      playing: it pauses; turn it up: it plays again. Set "Play when headphones or a car connect"
+      to "After a disconnect": pull the Beats' cable (music pauses), plug it in: it plays. In the
+      player, drag the volume above 80%: a question appears; Cancel leaves it where it was.
+      "Hide the volume control" removes the slider. With the Beats connected, does the Audio card
+      show the fixed-volume warning (it shouldn't if the phone's volume works)?
+
 ## Later rounds
 
 Claude adds a section here for each milestone with phone-only behaviour (widgets, Android Auto, Cast,

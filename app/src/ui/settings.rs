@@ -363,6 +363,7 @@ fn SectionCard(
                     }
                 }
                 OutputRow {}
+                FixedVolumeRow {}
                 SpatialRow { mode: cur.output_mode.clone(), on: cur.spatial_audio }
                 EqualizerRow { on: cur.equalizer.enabled }
                 DacProbeRow {}
@@ -467,6 +468,24 @@ fn OutputRow() -> Element {
                 if !processing.is_empty() {
                     div { class: "subtitle", {t!("output-processing", list = processing)} }
                 }
+            }
+        }
+    }
+}
+
+/// Warns when the USB output ignores the phone's volume (M2-17).
+#[component]
+fn FixedVolumeRow() -> Element {
+    let mixer = services::get().mixer.lock().ok().and_then(|m| m.clone());
+    let fixed = mixer.is_some_and(|m| m.volume_fixed && m.usb.is_some());
+    if !fixed {
+        return rsx! {};
+    }
+    rsx! {
+        div { class: "setting",
+            Icon { name: "info", size: 22 }
+            div { class: "row-text",
+                div { class: "subtitle", {t!("volume-fixed-usb")} }
             }
         }
     }

@@ -164,6 +164,9 @@ pub struct Mixer {
     pub usb: Option<UsbMixer>,
     #[serde(default)]
     pub spatial: Option<Spatializer>,
+    /// `AudioManager.isVolumeFixed()`: the phone's volume doesn't change the output.
+    #[serde(default)]
+    pub volume_fixed: bool,
 }
 
 /// Android `AudioFormat` encodings for integer and float PCM.
@@ -331,6 +334,13 @@ mod tests {
             spatial_state(m.spatial.as_ref(), Mode::HiRes, true),
             SpatialState::NotThisOutput
         );
+    }
+
+    #[test]
+    fn a_fixed_volume_is_reported() {
+        let m = Mixer::parse(r#"{"sdk":36,"volume_fixed":true,"usb":{"id":1}}"#).unwrap();
+        assert!(m.volume_fixed && m.usb.is_some());
+        assert!(!Mixer::parse(XIAOMI).unwrap().volume_fixed);
     }
 
     #[test]
