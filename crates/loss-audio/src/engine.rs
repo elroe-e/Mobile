@@ -51,6 +51,8 @@ struct Session {
     gain: f64,
     /// The equalizer after the gain; handed over across gapless joins with its filter memory.
     eq: Option<crate::eq::Equalizer>,
+    /// Crossfeed before the equalizer; handed over like it.
+    crossfeed: Option<crate::crossfeed::Crossfeed>,
 }
 
 /// The trim for a file and how its packet timestamps convert to frames.
@@ -383,6 +385,11 @@ impl Session {
         );
         info.processing = graph.describe();
         info.processing.extend(gain_note(gain));
+        info.processing.extend(
+            prev.crossfeed
+                .as_ref()
+                .map(|c| crossfeed_note(c.strength())),
+        );
         info.processing
             .extend(prev.eq.as_ref().map(|e| e.params().describe()));
         Session {
@@ -407,6 +414,7 @@ impl Session {
             ts_to_frames,
             gain: gain_factor(gain),
             eq: prev.eq,
+            crossfeed: prev.crossfeed,
         }
     }
 }
@@ -561,8 +569,11 @@ impl Engine {
         );
         let gain = self.item_gain(&item);
         let eq = self.make_eq(out.rate, out.channels);
+        let crossfeed = self.make_crossfeed(out.rate, out.channels);
         info.processing = graph.describe();
         info.processing.extend(gain_note(gain));
+        info.processing
+            .extend(crossfeed.as_ref().map(|c| crossfeed_note(c.strength())));
         info.processing
             .extend(eq.as_ref().map(|e| e.params().describe()));
         out.dither
@@ -586,6 +597,7 @@ impl Engine {
             ts_to_frames,
             gain: gain_factor(gain),
             eq,
+            crossfeed,
             duration,
             info,
             pushed: 0,
@@ -844,7 +856,9 @@ impl Engine {
             Command::SetShuffle(on) => self.set_shuffle(on),
             Command::SetAudioOptions(o) => {
                 let reopen = o.output != self.options.output;
-                let regain = o.normalize != self.options.normalize || o.eq != self.options.eq;
+                let regain = o.normalize != self.options.normalize
+                    || o.eq != self.options.eq
+                    || o.crossfeed != self.options.crossfeed;
                 self.options = o;
                 if regain && !reopen {
                     self.regain();
@@ -1075,6 +1089,10 @@ fn gain_note(gain: Option<(f64, bool)>) -> Option<String> {
     })
 }
 
+fn crossfeed_note(s: crate::crossfeed::Strength) -> String {
+    format!("crossfeed ({})", s.name())
+}
+
 fn gain_factor(gain: Option<(f64, bool)>) -> f64 {
     gain.map(|(db, _)| 10f64.powf(db / 20.0)).unwrap_or(1.0)
 }
@@ -1097,6 +1115,15 @@ impl Engine {
         Some(crate::eq::Equalizer::new(params, rate, channels))
     }
 
+    /// Crossfeed for a stereo output, or None when it's off or bypassed (bit-perfect).
+    fn make_crossfeed(&self, rate: u32, channels: usize) -> Option<crate::crossfeed::Crossfeed> {
+        let strength = self.options.crossfeed?;
+        if self.options.output.bit_perfect || channels != 2 {
+            return None;
+        }
+        Some(crate::crossfeed::Crossfeed::new(strength, rate))
+    }
+
     /// Levelling or equalizer settings changed: the playing track takes them from here on
     /// (the equalizer keeps its filter memory, so there's no click).
     fn regain(&mut self) {
@@ -1109,10 +1136,16 @@ impl Engine {
             None => return,
         };
         let want = self.make_eq(rate, channels).map(|e| e.params().clone());
+        let want_cf = self.make_crossfeed(rate, channels).map(|c| c.strength());
         let Some(s) = self.session.as_mut() else {
             return;
         };
         s.gain = gain_factor(gain);
+        match (want_cf, s.crossfeed.as_ref().map(|c| c.strength())) {
+            (Some(w), Some(h)) if w == h => {}
+            (Some(w), _) => s.crossfeed = Some(crate::crossfeed::Crossfeed::new(w, rate)),
+            (None, _) => s.crossfeed = None,
+        }
         match (want, s.eq.as_mut()) {
             (Some(p), Some(eq)) => eq.set(p),
             (Some(p), None) => s.eq = Some(crate::eq::Equalizer::new(p, rate, channels)),
@@ -1120,6 +1153,8 @@ impl Engine {
         }
         s.info.processing = s.graph.describe();
         s.info.processing.extend(gain_note(gain));
+        let cf_note = s.crossfeed.as_ref().map(|c| crossfeed_note(c.strength()));
+        s.info.processing.extend(cf_note);
         s.info
             .processing
             .extend(s.eq.as_ref().map(|e| e.params().describe()));
@@ -1135,14 +1170,17 @@ impl Engine {
             None => self.st().info.processing = info.processing,
             Some(sw) => {
                 sw.info.processing = info.processing.clone();
-                let eq_note = info
+                let notes: Vec<String> = info
                     .processing
                     .iter()
-                    .find(|p| p.starts_with("equalizer"))
-                    .cloned();
+                    .filter(|p| p.starts_with("equalizer") || p.starts_with("crossfeed"))
+                    .cloned()
+                    .collect();
                 let mut st = self.st();
-                st.info.processing.retain(|p| !p.starts_with("equalizer"));
-                st.info.processing.extend(eq_note);
+                st.info
+                    .processing
+                    .retain(|p| !p.starts_with("equalizer") && !p.starts_with("crossfeed"));
+                st.info.processing.extend(notes);
             }
         }
     }
@@ -1310,6 +1348,7 @@ mod tests {
             ts_to_frames,
             gain: 1.0,
             eq: None,
+            crossfeed: None,
         };
         let mut out = Vec::new();
         let mut joins = Vec::new();
@@ -1750,6 +1789,43 @@ mod tests {
         // Bit-perfect leaves the samples alone.
         e.handle(Command::SetAudioOptions(AudioOptions {
             eq: Some(eq),
+            output: crate::sink::OutputPrefs {
+                bit_perfect: true,
+                ..Default::default()
+            },
+            ..AudioOptions::default()
+        }));
+        assert!(e.st().info.processing.is_empty());
+    }
+
+    #[test]
+    fn crossfeed_mixes_the_sides_live_and_steps_aside_for_bit_perfect() {
+        let (mut e, clock) = hires_dac();
+        // A left-only 440 Hz tone.
+        let path = tmp("cf-left.wav");
+        write_wav(&path, 44100, 1.0, 0, 44100);
+        e.handle(Command::SetQueue {
+            items: vec![item(&path)],
+            start: 0,
+        });
+        play(&mut e, &clock, 2000, 1000);
+        assert!(e.st().info.processing.is_empty());
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            crossfeed: Some(crate::crossfeed::Strength::Medium),
+            ..AudioOptions::default()
+        }));
+        assert_eq!(
+            e.st().info.processing,
+            vec!["crossfeed (medium)".to_string()]
+        );
+        // write_wav makes both channels equal (mono): crossfeed leaves mono alone.
+        let before = clock.heard().len();
+        play(&mut e, &clock, 6000, 1000);
+        let heard = clock.heard();
+        let (l, r): (Vec<f32>, Vec<f32>) = heard[before..].chunks(2).map(|f| (f[0], f[1])).unzip();
+        assert!(!l.is_empty() && l.iter().zip(&r).all(|(a, b)| (a - b).abs() < 1e-6));
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            crossfeed: Some(crate::crossfeed::Strength::Medium),
             output: crate::sink::OutputPrefs {
                 bit_perfect: true,
                 ..Default::default()

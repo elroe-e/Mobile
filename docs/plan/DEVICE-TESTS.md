@@ -134,6 +134,10 @@ Android bit-perfect mixer for them.
       album from iTunes. After a rescan the CUE album shows its tracks; each plays and seeks; the
       iTunes album plays without gaps between tracks; DSD shows "DSD64".
 
+- [ ] (M2-12) Settings → Audio → Crossfeed → Medium with the Beats: a hard-panned old stereo
+      recording sounds more natural; Settings → Audio lists "crossfeed (medium)". With the phone's
+      speaker it does nothing. Mono recordings sound identical.
+
 ## Later rounds
 
 Claude adds a section here for each milestone with phone-only behaviour (widgets, Android Auto, Cast,

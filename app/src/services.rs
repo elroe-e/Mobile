@@ -70,7 +70,17 @@ pub fn device_key(output: Option<&loss_platform::route::Device>) -> String {
         .unwrap_or_else(|| "default".into()) // i18n: ignore (storage key)
 }
 
-fn audio_options(s: &Settings, mixer: Option<&Mixer>, device: &str) -> loss_audio::AudioOptions {
+/// Crossfeed is for headphones: on when the output is something you wear, or isn't known.
+fn wearing(output: Option<&loss_platform::route::Device>) -> bool {
+    output.is_none_or(|d| loss_platform::event::is_personal_output(d.type_code))
+}
+
+fn audio_options(
+    s: &Settings,
+    mixer: Option<&Mixer>,
+    device: &str,
+    headphones: bool,
+) -> loss_audio::AudioOptions {
     let mode = effective_mode(Mode::parse(&s.output_mode), mixer);
     loss_audio::AudioOptions {
         quality: loss_audio::Quality::parse(&s.resample_quality),
@@ -94,6 +104,9 @@ fn audio_options(s: &Settings, mixer: Option<&Mixer>, device: &str) -> loss_audi
             preamp_db: s.normalization_preamp.min(0) as f64,
         },
         eq: eq_params(&s.equalizer, s.autoeq.get(device)),
+        crossfeed: headphones
+            .then(|| loss_audio::crossfeed::Strength::parse(&s.crossfeed))
+            .flatten(),
     }
 }
 
@@ -243,7 +256,7 @@ impl Services {
             settings.volume
         });
         player.send(loss_audio::Command::SetAudioOptions(audio_options(
-            &settings, None, "default",
+            &settings, None, "default", true,
         )));
         let downloads =
             DownloadManager::new(manager_config(&settings), paths.data.join("downloads.json"));
@@ -324,6 +337,7 @@ impl Services {
                 &s,
                 mixer.as_ref(),
                 &self.device_key(),
+                wearing(lock(&self.output).as_ref()),
             )));
         // The mode may change what the output takes (bit-perfect rates).
         if cfg!(target_os = "android") {
@@ -342,6 +356,7 @@ impl Services {
                 &s,
                 mixer.as_ref(),
                 &self.device_key(),
+                wearing(lock(&self.output).as_ref()),
             )));
     }
 
@@ -377,6 +392,7 @@ impl Services {
                 &settings,
                 mixer.as_ref(),
                 &device_key(active.as_ref()),
+                wearing(active.as_ref()),
             )));
         // Bit-perfect: only the rates the phone passes through untouched.
         let bit_perfect = mixer
@@ -749,6 +765,23 @@ mod eq_tests {
         e.enabled = false;
         assert!(super::eq_params(&e, Some(&beats)).is_none());
         assert_eq!(super::device_key(None), "default");
+    }
+
+    #[test]
+    fn crossfeed_is_only_for_headphones() {
+        let dev = |t: i32| loss_platform::route::Device {
+            id: 1,
+            type_code: t,
+            name: "x".into(),
+            rates: vec![],
+            channels: vec![],
+            encodings: vec![],
+        };
+        assert!(super::wearing(None));
+        assert!(super::wearing(Some(&dev(22)))); // the Beats over USB-C
+        assert!(super::wearing(Some(&dev(8)))); // Bluetooth
+        assert!(!super::wearing(Some(&dev(2)))); // the phone's speaker
+        assert!(!super::wearing(Some(&dev(9)))); // HDMI
     }
 
     #[test]

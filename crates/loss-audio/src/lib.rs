@@ -6,6 +6,7 @@
 
 #[cfg(target_os = "android")]
 mod aaudio;
+pub mod crossfeed;
 mod dsd;
 mod dsp;
 mod engine;
@@ -30,6 +31,8 @@ pub struct AudioOptions {
     pub normalize: Normalize,
     /// The equalizer (M2-10) when on; bypassed on bit-perfect paths.
     pub eq: Option<eq::EqParams>,
+    /// Crossfeed for headphones (M2-12); bypassed on bit-perfect paths.
+    pub crossfeed: Option<crossfeed::Strength>,
 }
 
 use std::path::PathBuf;

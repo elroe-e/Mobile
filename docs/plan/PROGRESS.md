@@ -3,6 +3,21 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-26 (session 5, later): crossfeed (M2-12)
+
+- CI on the AutoEq commit: the x86_64 emulator smoke test failed once (the app process aborted
+  2.5 s after start with "FORTIFY: pthread_mutex_lock called on a destroyed mutex", right after
+  Android relaunched and destroyed the activity) and passed on re-run with no change: a flake.
+  If it comes back, look at shutdown order when the activity is destroyed early.
+- **M2-12** `loss_audio::crossfeed`: `out_L = L + g·lp(R−L)`, `out_R = R − g·lp(R−L)` with BS2B's
+  presets (Light 9.5 dB/650 Hz, Medium 6 dB/700 Hz, Strong 4.5 dB/700 Hz; g = r/(1+r)): low
+  frequencies leak across at the preset's level, high ones stay; mono is bit-identical and a peak
+  never grows (tests: measured levels, mono, full-scale opposite phase). Engine: before the
+  equalizer, carried across gapless joins, live updates, bypassed on bit-perfect paths (test).
+  Setting Audio → Crossfeed (Off/Light/Medium/Strong); used only when the output is something you
+  wear (`is_personal_output`: wired, Bluetooth, USB headset) or unknown (desktop); shows in the
+  processing list as "crossfeed (medium)".
+
 ## 2026-11-25 (session 5, later): AutoEq and parametric bands (M2-11)
 
 - **M2-11** `loss_core::autoeq`: parser for AutoEq's ParametricEQ.txt / Equalizer APO lines

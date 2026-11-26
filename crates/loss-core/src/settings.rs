@@ -68,6 +68,8 @@ pub struct Settings {
     pub normalization_mode: String,
     /// Pre-amp in dB (≤ 0; shifts the −18 LUFS reference).
     pub normalization_preamp: i64,
+    /// Crossfeed for headphones: "off", "light", "medium" or "strong" (M2-12).
+    pub crossfeed: String,
     /// The equalizer (M2-10).
     pub equalizer: crate::equalizer::EqSettings,
     /// Presets the user saved or imported.
@@ -109,6 +111,7 @@ impl Default for Settings {
             normalization: false,
             normalization_mode: "auto".into(),
             normalization_preamp: 0,
+            crossfeed: "off".into(),
             equalizer: Default::default(),
             eq_presets: vec![],
             autoeq: Default::default(),
