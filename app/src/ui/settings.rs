@@ -363,6 +363,7 @@ fn SectionCard(
                     }
                 }
                 OutputRow {}
+                SpatialRow { mode: cur.output_mode.clone(), on: cur.spatial_audio }
                 EqualizerRow { on: cur.equalizer.enabled }
                 DacProbeRow {}
             }
@@ -466,6 +467,39 @@ fn OutputRow() -> Element {
                 if !processing.is_empty() {
                     div { class: "subtitle", {t!("output-processing", list = processing)} }
                 }
+            }
+        }
+    }
+}
+
+/// Says what spatial audio does with the current output (M2-16).
+#[component]
+fn SpatialRow(mode: String, on: bool) -> Element {
+    use loss_platform::modes::{self, Mode, SpatialState};
+    let svc = services::get();
+    let mixer = svc.mixer.lock().ok().and_then(|m| m.clone());
+    let mode = svc.effective_mode_of(Mode::parse(&mode));
+    let state = modes::spatial_state(mixer.as_ref().and_then(|m| m.spatial.as_ref()), mode, on);
+    let text = match state {
+        // Nothing to say when it's off, or on a computer.
+        SpatialState::Off => return rsx! {},
+        SpatialState::Unsupported if !cfg!(target_os = "android") => return rsx! {},
+        SpatialState::Unsupported => t!("spatial-unsupported"),
+        SpatialState::Blocked => t!("spatial-blocked"),
+        SpatialState::SystemOff => t!("spatial-system-off"),
+        SpatialState::NotThisOutput => t!("spatial-not-this-output"),
+        SpatialState::On {
+            head_tracking: true,
+        } => t!("spatial-on-tracking"),
+        SpatialState::On {
+            head_tracking: false,
+        } => t!("spatial-on"),
+    };
+    rsx! {
+        div { class: "setting",
+            Icon { name: "info", size: 22 }
+            div { class: "row-text",
+                div { class: "subtitle", {text} }
             }
         }
     }

@@ -139,7 +139,7 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 | SND-04 | Equalizer | 5 to 31 bands, bass, treble, balance, pre-amp, limiter, compressor, presets to save, import and share | No | Only in Mornye | M2-10, M2-11 | done |
 | SND-05 | Volume levelling (ReplayGain) | By track or album, with pre-amp | No | Only in Mornye | M2-09 | done |
 | SND-06 | Skip silence | Yes | No | Only in Mornye | M2-14 | done |
-| SND-07 | Spatial audio | On/off, shows head-tracking support | No | Only in Mornye | M2-16 | todo |
+| SND-07 | Spatial audio | On/off, shows head-tracking support | No | Only in Mornye | M2-16 | done |
 | SND-08 | Hi-res and bit-perfect output | USB bit-perfect (Android 14+), direct USB driver, DSD over USB, exclusive mode for music players, sample-rate limit | Opens the output at the song’s rate when the phone allows; Android may still resample | Simpler in Loss | M2-02, M2-04, M2-05, M2-06, M2-07 | doing |
 | SND-09 | Choice of playback engine | Old or new (Media3) engine | One engine written in Rust | Different | M2-04 | done |
 | SND-10 | Pause for calls and other apps | Yes | No, keeps playing | Only in Mornye | M1-01 | done |

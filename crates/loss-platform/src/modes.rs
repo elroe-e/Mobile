@@ -90,6 +90,69 @@ pub struct UsbMixer {
     pub bit_perfect: Vec<BitPerfectFormat>,
 }
 
+/// The system Spatializer (Android 12+), as the glue reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+pub struct Spatializer {
+    /// `Spatializer.getImmersiveAudioLevel()`: 0 none, 1 multichannel, 2 with objects.
+    #[serde(default)]
+    pub level: i32,
+    /// Turned on in the system's sound settings.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Usable with the current output.
+    #[serde(default)]
+    pub available: bool,
+    #[serde(default)]
+    pub head_tracking: bool,
+    /// The current media route can be spatialized (stereo PCM).
+    #[serde(default)]
+    pub output: bool,
+}
+
+/// Why spatial audio is or isn't applied to the music, for the Audio card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpatialState {
+    /// The phone has no spatializer (or Android is older than 12).
+    Unsupported,
+    /// Loss' setting is off: the stream tells Android never to spatialize.
+    Off,
+    /// The output mode (exclusive, bit-perfect, Direct USB) keeps the music untouched.
+    Blocked,
+    /// Switched off in the phone's sound settings.
+    SystemOff,
+    /// This output (speaker, a DAC without support…) can't be spatialized.
+    NotThisOutput,
+    /// Android may spatialize the music; `head_tracking` when the headphones track the head.
+    On { head_tracking: bool },
+}
+
+/// Modes in which nothing may process the music, spatializer included.
+pub fn mode_allows_spatial(mode: Mode) -> bool {
+    matches!(mode, Mode::Standard | Mode::HiRes)
+}
+
+/// What mixer state and settings add up to.
+pub fn spatial_state(sp: Option<&Spatializer>, mode: Mode, setting_on: bool) -> SpatialState {
+    let Some(sp) = sp.filter(|s| s.level > 0) else {
+        return SpatialState::Unsupported;
+    };
+    if !setting_on {
+        return SpatialState::Off;
+    }
+    if !mode_allows_spatial(mode) {
+        return SpatialState::Blocked;
+    }
+    if !sp.enabled {
+        return SpatialState::SystemOff;
+    }
+    if !sp.available || !sp.output {
+        return SpatialState::NotThisOutput;
+    }
+    SpatialState::On {
+        head_tracking: sp.head_tracking,
+    }
+}
+
 /// What the phone's mixer offers.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Mixer {
@@ -99,6 +162,8 @@ pub struct Mixer {
     pub mixer_rate: u32,
     #[serde(default)]
     pub usb: Option<UsbMixer>,
+    #[serde(default)]
+    pub spatial: Option<Spatializer>,
 }
 
 /// Android `AudioFormat` encodings for integer and float PCM.
@@ -205,6 +270,67 @@ mod tests {
         assert_eq!(m.effective(Mode::BitPerfect), Mode::HiRes);
         assert_eq!(m.effective(Mode::Standard), Mode::Standard);
         assert_eq!(m.rate(), 48000);
+    }
+
+    #[test]
+    fn spatial_audio_depends_on_the_phone_the_output_and_the_mode() {
+        let on = Spatializer {
+            level: 1,
+            enabled: true,
+            available: true,
+            head_tracking: true,
+            output: true,
+        };
+        let state =
+            |sp: Option<Spatializer>, mode, setting| spatial_state(sp.as_ref(), mode, setting);
+        assert_eq!(
+            state(Some(on), Mode::HiRes, true),
+            SpatialState::On {
+                head_tracking: true
+            }
+        );
+        assert_eq!(state(None, Mode::HiRes, true), SpatialState::Unsupported);
+        assert_eq!(
+            state(Some(Spatializer { level: 0, ..on }), Mode::HiRes, true),
+            SpatialState::Unsupported
+        );
+        assert_eq!(state(Some(on), Mode::Standard, false), SpatialState::Off);
+        // Never next to the modes that keep the music untouched.
+        for mode in [Mode::Exclusive, Mode::BitPerfect, Mode::DirectUsb] {
+            assert_eq!(state(Some(on), mode, true), SpatialState::Blocked);
+        }
+        assert_eq!(
+            state(
+                Some(Spatializer {
+                    enabled: false,
+                    ..on
+                }),
+                Mode::HiRes,
+                true
+            ),
+            SpatialState::SystemOff
+        );
+        assert_eq!(
+            state(
+                Some(Spatializer {
+                    output: false,
+                    ..on
+                }),
+                Mode::HiRes,
+                true
+            ),
+            SpatialState::NotThisOutput
+        );
+        // The JSON the glue sends.
+        let m = Mixer::parse(
+            r#"{"sdk":36,"spatial":{"level":2,"enabled":true,"available":false,"head_tracking":false,"output":false}}"#,
+        )
+        .unwrap();
+        assert_eq!(m.spatial.unwrap().level, 2);
+        assert_eq!(
+            spatial_state(m.spatial.as_ref(), Mode::HiRes, true),
+            SpatialState::NotThisOutput
+        );
     }
 
     #[test]

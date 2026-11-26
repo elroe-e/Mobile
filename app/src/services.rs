@@ -89,7 +89,7 @@ fn audio_options(
             format: loss_audio::sink::SampleFormat::parse_setting(&s.output_format),
             exclusive: mode == Mode::Exclusive,
             low_latency: s.low_latency_output,
-            spatial: s.spatial_audio,
+            spatial: s.spatial_audio && loss_platform::modes::mode_allows_spatial(mode),
             device_id: 0,
             fixed_rate: if mode == Mode::Standard {
                 mixer.map(Mixer::rate).unwrap_or(48000)
@@ -387,6 +387,10 @@ impl Services {
     /// The output mode in use now (for notices).
     pub fn effective_mode(&self) -> Mode {
         let chosen = Mode::parse(&lock(&self.settings).output_mode);
+        self.effective_mode_of(chosen)
+    }
+
+    pub fn effective_mode_of(&self, chosen: Mode) -> Mode {
         effective_mode(chosen, lock(&self.mixer).as_ref())
     }
 

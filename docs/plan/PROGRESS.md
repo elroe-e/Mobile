@@ -3,6 +3,19 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-26 (session 5, later): spatial audio (M2-16)
+
+- The glue reads the system `Spatializer` (Android 12+) into the mixer JSON: immersive level,
+  enabled in the system settings, available, head tracker, and whether the current media route
+  (stereo float PCM) can be spatialized. `loss_platform::modes::spatial_state` turns that plus the
+  setting and the output mode into one of: no spatializer, off, blocked by the mode, off in the
+  phone's settings, not this output, on (with or without head tracking). Settings → Audio shows it
+  under the output row.
+- The AAudio stream already carried the spatialization behaviour (AUTO or NEVER); now it is NEVER
+  in Exclusive, Bit-perfect and Direct USB modes whatever the setting says.
+- Nothing here can be checked without the phone: see DEVICE-TESTS. The Kotlin is compiled by the
+  CI APK build only.
+
 ## 2026-11-26 (session 5, later): AutoMix (M2-15)
 
 - **Held-back tail.** With AutoMix on, a track keeps its last N seconds (N = the AutoMix length,

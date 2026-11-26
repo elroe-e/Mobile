@@ -417,7 +417,33 @@ object LossBridge {
                 JSONObject().put("id", usb.id).put("name", usb.productName?.toString() ?: "").put("bit_perfect", formats)
             )
         }
+        spatializer(am)?.let { out.put("spatial", it) }
         return out.toString()
+    }
+
+    /**
+     * The system Spatializer (Android 12+): {level, enabled, available, head_tracking, output}.
+     * `output` says whether the current media route can be spatialized (stereo PCM) right now.
+     */
+    private fun spatializer(am: AudioManager): JSONObject? {
+        if (Build.VERSION.SDK_INT < 32) return null
+        return try {
+            val sp = am.spatializer
+            val format = android.media.AudioFormat.Builder()
+                .setEncoding(android.media.AudioFormat.ENCODING_PCM_FLOAT)
+                .setSampleRate(48000)
+                .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_STEREO)
+                .build()
+            JSONObject()
+                .put("level", sp.immersiveAudioLevel)
+                .put("enabled", sp.isEnabled)
+                .put("available", sp.isAvailable)
+                .put("head_tracking", sp.isHeadTrackerAvailable)
+                .put("output", sp.canBeSpatialized(mediaAttributes, format))
+        } catch (e: Exception) {
+            android.util.Log.w("Loss", "spatializer unknown: $e")
+            null
+        }
     }
 
     /**

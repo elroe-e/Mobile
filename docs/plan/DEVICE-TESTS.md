@@ -152,6 +152,12 @@ Android bit-perfect mixer for them.
       order still joins without overlap. Tapping Next cuts straight to the next song. Switching to
       Bit-perfect: no overlap, and Settings says so.
 
+- [ ] (M2-16) With the Beats connected, Settings → Audio → Spatial audio on: the Audio card says
+      whether Android can spatialize this output (with the phone's own Spatial audio switched on
+      under Sound, it should say "on", with head tracking if the Beats report it); switched off
+      there it says so. Output mode Exclusive: the card says spatial audio is off in this mode.
+      Please send the card's wording if it looks wrong.
+
 ## Later rounds
 
 Claude adds a section here for each milestone with phone-only behaviour (widgets, Android Auto, Cast,
