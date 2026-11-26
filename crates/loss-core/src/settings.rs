@@ -70,6 +70,12 @@ pub struct Settings {
     pub normalization_preamp: i64,
     /// Crossfeed for headphones: "off", "light", "medium" or "strong" (M2-12).
     pub crossfeed: String,
+    /// Playback speed in percent (100 = normal), M2-13.
+    pub playback_speed: i64,
+    /// Keep the pitch when the speed changes (else it follows the speed, like a record).
+    pub playback_keep_pitch: bool,
+    /// Pitch shift in semitones.
+    pub playback_pitch: i64,
     /// The equalizer (M2-10).
     pub equalizer: crate::equalizer::EqSettings,
     /// Presets the user saved or imported.
@@ -112,6 +118,9 @@ impl Default for Settings {
             normalization_mode: "auto".into(),
             normalization_preamp: 0,
             crossfeed: "off".into(),
+            playback_speed: 100,
+            playback_keep_pitch: true,
+            playback_pitch: 0,
             equalizer: Default::default(),
             eq_presets: vec![],
             autoeq: Default::default(),

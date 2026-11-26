@@ -138,6 +138,10 @@ Android bit-perfect mixer for them.
       recording sounds more natural; Settings → Audio lists "crossfeed (medium)". With the phone's
       speaker it does nothing. Mono recordings sound identical.
 
+- [ ] (M2-13) Settings → Audio → Speed 150: music plays faster at the same pitch; Keep the pitch off:
+      higher pitch too. Pitch +2: higher, same speed. The player's position keeps counting the
+      song's own seconds. A podcast at 125 stays easy to follow.
+
 ## Later rounds
 
 Claude adds a section here for each milestone with phone-only behaviour (widgets, Android Auto, Cast,

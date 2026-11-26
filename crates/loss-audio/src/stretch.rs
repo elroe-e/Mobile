@@ -249,6 +249,28 @@ mod tests {
         }
     }
 
+    /// Speed on this machine (run with --release --nocapture): 60 s of stereo at tempo 1.5.
+    #[test]
+    #[ignore]
+    fn how_fast_is_it() {
+        let x: Vec<f64> = sine(300.0, 60.0)
+            .iter()
+            .flat_map(|&v| [v, v * 0.7])
+            .collect();
+        let started = std::time::Instant::now();
+        let mut w = Wsola::new(1.5, RATE, 2);
+        let mut out = Vec::new();
+        for c in x.chunks(8192) {
+            w.process(c, &mut out);
+        }
+        w.flush(&mut out);
+        let took = started.elapsed();
+        eprintln!(
+            "60 s of stereo stretched in {took:?} ({:.1}% of real time)",
+            took.as_secs_f64() / 60.0 * 100.0
+        );
+    }
+
     #[test]
     fn level_and_stereo_survive() {
         let x = sine(330.0, 2.0);

@@ -34,6 +34,48 @@ pub struct AudioOptions {
     pub eq: Option<eq::EqParams>,
     /// Crossfeed for headphones (M2-12); bypassed on bit-perfect paths.
     pub crossfeed: Option<crossfeed::Strength>,
+    /// Playback speed and pitch (M2-13); ignored on bit-perfect paths.
+    pub tempo: Tempo,
+}
+
+/// Speed and pitch: `speed` is the playback rate (1 = normal); with `keep_pitch` the pitch stays
+/// where it was (time-stretching), without it the pitch follows the speed like a record; and
+/// `semitones` shifts the pitch on top.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Tempo {
+    pub speed: f64,
+    pub keep_pitch: bool,
+    pub semitones: f64,
+}
+
+impl Default for Tempo {
+    fn default() -> Tempo {
+        Tempo {
+            speed: 1.0,
+            keep_pitch: true,
+            semitones: 0.0,
+        }
+    }
+}
+
+impl Tempo {
+    /// Nothing to do: normal speed and pitch.
+    pub fn is_normal(&self) -> bool {
+        (self.speed - 1.0).abs() < 1e-3 && self.semitones.abs() < 1e-3
+    }
+
+    /// How the change is made: (`resample`, `stretch`). The audio is time-stretched by `stretch`
+    /// (the speed-up, pitch unchanged) and then played `resample` times faster (pitch and speed
+    /// both change). The pitch ends up `resample` times higher, the speed `resample * stretch`.
+    pub fn plan(&self) -> (f64, f64) {
+        let speed = self.speed.clamp(0.25, 4.0);
+        let shift = 2f64.powf(self.semitones.clamp(-12.0, 12.0) / 12.0);
+        if self.keep_pitch {
+            (shift, speed / shift)
+        } else {
+            (speed * shift, 1.0 / shift)
+        }
+    }
 }
 
 use std::path::PathBuf;

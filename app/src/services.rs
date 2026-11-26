@@ -104,6 +104,11 @@ fn audio_options(
             preamp_db: s.normalization_preamp.min(0) as f64,
         },
         eq: eq_params(&s.equalizer, s.autoeq.get(device)),
+        tempo: loss_audio::Tempo {
+            speed: s.playback_speed as f64 / 100.0,
+            keep_pitch: s.playback_keep_pitch,
+            semitones: s.playback_pitch as f64,
+        },
         crossfeed: headphones
             .then(|| loss_audio::crossfeed::Strength::parse(&s.crossfeed))
             .flatten(),

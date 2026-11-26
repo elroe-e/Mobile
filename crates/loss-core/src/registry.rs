@@ -254,6 +254,32 @@ pub static SETTINGS: &[SettingDef] = &[
             "fatigue",
         ],
     ),
+    def(
+        "playback_speed",
+        Section::Audio,
+        Kind::Steps(&[50, 75, 90, 100, 110, 125, 150, 200]),
+        &[
+            "speed",
+            "tempo",
+            "faster",
+            "slower",
+            "podcast",
+            "audiobook",
+            "rate",
+        ],
+    ),
+    def(
+        "playback_keep_pitch",
+        Section::Audio,
+        Kind::Toggle,
+        &["pitch", "speed", "tempo", "chipmunk", "time stretch"],
+    ),
+    def(
+        "playback_pitch",
+        Section::Audio,
+        Kind::Steps(&[-12, -7, -5, -2, -1, 0, 1, 2, 5, 7, 12]),
+        &["pitch", "semitone", "key", "transpose", "karaoke"],
+    ),
     android(def(
         "output_format",
         Section::Audio,
@@ -430,6 +456,9 @@ pub fn get(s: &Settings, key: &str) -> Option<Value> {
         "low_latency_output" => Bool(s.low_latency_output),
         "spatial_audio" => Bool(s.spatial_audio),
         "crossfeed" => Text(s.crossfeed.clone()),
+        "playback_speed" => Int(s.playback_speed),
+        "playback_keep_pitch" => Bool(s.playback_keep_pitch),
+        "playback_pitch" => Int(s.playback_pitch),
         "normalization" => Bool(s.normalization),
         "normalization_mode" => Text(s.normalization_mode.clone()),
         "normalization_preamp" => Int(s.normalization_preamp),
@@ -479,6 +508,9 @@ pub fn set(s: &mut Settings, key: &str, value: Value) -> Result<(), SetError> {
         ("low_latency_output", Value::Bool(v)) => s.low_latency_output = v,
         ("spatial_audio", Value::Bool(v)) => s.spatial_audio = v,
         ("crossfeed", Value::Text(v)) => s.crossfeed = v,
+        ("playback_speed", Value::Int(v)) => s.playback_speed = v.clamp(25, 400),
+        ("playback_keep_pitch", Value::Bool(v)) => s.playback_keep_pitch = v,
+        ("playback_pitch", Value::Int(v)) => s.playback_pitch = v.clamp(-12, 12),
         ("normalization", Value::Bool(v)) => s.normalization = v,
         ("normalization_mode", Value::Text(v)) => s.normalization_mode = v,
         ("normalization_preamp", Value::Int(v)) => s.normalization_preamp = v.clamp(-24, 0),
@@ -636,8 +668,12 @@ mod tests {
         // All words must match.
         assert!(keys("lyrics zip").is_empty());
         assert!(keys("   ").is_empty());
-        // Choice labels are searchable.
-        assert_eq!(keys("light"), vec!["theme"]);
+        // Choice labels are searchable (the theme's Light, and Crossfeed's).
+        let light = keys("light");
+        assert!(
+            light.contains(&"theme") && light.contains(&"crossfeed"),
+            "{light:?}"
+        );
     }
 
     #[test]

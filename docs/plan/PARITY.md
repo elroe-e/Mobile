@@ -121,7 +121,7 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 | PLY-07 | Swipe to change song | On the artwork and the mini player | No | Only in Mornye | M3-03 | todo |
 | PLY-08 | Love button | Yes | No | Only in Mornye | M3-04, M4-10 | todo |
 | PLY-09 | Sleep timer | Set minutes or stop at the end of the song | No | Only in Mornye | M3-06 | todo |
-| PLY-10 | Speed and pitch | Yes | No | Only in Mornye | M2-13, M3-07 | todo |
+| PLY-10 | Speed and pitch | Yes | No | Only in Mornye | M2-13, M3-07 | doing |
 | PLY-11 | Output picker and casting | Choose output, Google Cast, AirPlay on iPhone | No | Only in Mornye | M3-08, M9-03 | todo |
 | PLY-12 | Lyric line under the title | Yes | No | Only in Mornye | M3-09 | todo |
 | PLY-13 | Up next | In the queue tab | “Up next” button | Same | — | keep |

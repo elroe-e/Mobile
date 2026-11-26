@@ -53,6 +53,60 @@ struct Session {
     eq: Option<crate::eq::Equalizer>,
     /// Crossfeed before the equalizer; handed over like it.
     crossfeed: Option<crate::crossfeed::Crossfeed>,
+    /// Time-stretching before the graph (at the source rate), when speed or pitch changed.
+    stretch: Option<crate::stretch::Wsola>,
+    /// Source seconds per output second.
+    speed: f64,
+    tempo: crate::Tempo,
+}
+
+/// The conversion graph for a source, with speed and pitch folded in: the time-stretch runs at
+/// the source rate before it (`stretch`), and the pitch change plays the stretched audio faster
+/// by treating it as a higher source rate. The polynomial resampler takes any ratio (the FFT
+/// ones need whole-number ones). Returns the graph, the stretcher and the speed (source
+/// seconds per output second).
+fn build_graph(
+    src_rate: u32,
+    src_channels: usize,
+    out_rate: u32,
+    out_channels: usize,
+    quality: Quality,
+    tempo: &crate::Tempo,
+) -> (Graph, Option<crate::stretch::Wsola>, f64) {
+    let (resample, stretch) = tempo.plan();
+    let from = if (resample - 1.0).abs() < 1e-6 {
+        src_rate
+    } else {
+        ((src_rate as f64 * resample).round() as u32).max(1)
+    };
+    let quality = if from != src_rate {
+        Quality::Fast
+    } else {
+        quality
+    };
+    let wsola = ((stretch - 1.0).abs() > 1e-3)
+        .then(|| crate::stretch::Wsola::new(stretch, src_rate, src_channels));
+    let speed = from as f64 / src_rate as f64 * if wsola.is_some() { stretch } else { 1.0 };
+    (
+        Graph::new(from, src_channels, out_rate, out_channels, quality),
+        wsola,
+        speed,
+    )
+}
+
+/// "speed 1.25×, pitch +2 st" for the processing list.
+fn tempo_note(t: &crate::Tempo) -> Option<String> {
+    if t.is_normal() {
+        return None;
+    }
+    let mut parts = vec![format!("speed {:.2}×", t.speed)];
+    if t.semitones.abs() >= 1e-3 {
+        parts.push(format!("pitch {:+.0} st", t.semitones));
+    }
+    if !t.keep_pitch && (t.speed - 1.0).abs() >= 1e-3 {
+        parts.push("pitch follows speed".into());
+    }
+    Some(parts.join(", "))
 }
 
 /// The trim for a file and how its packet timestamps convert to frames.
@@ -128,6 +182,8 @@ fn codec_trim(
 
 /// The track the listener hears (it lags behind the decoder by the buffer).
 struct Display {
+    /// Source seconds per output second for this track (speed and pitch change).
+    speed: f64,
     item_id: String,
     /// `played_samples` value at which this track started.
     base: u64,
@@ -138,6 +194,7 @@ struct Display {
 
 /// A gapless join waiting for playback to reach it.
 struct Switch {
+    speed: f64,
     /// `played_samples` value where the next track starts.
     at: u64,
     item_id: String,
@@ -287,12 +344,13 @@ impl Session {
             if spec.rate != self.src_rate || spec.channels.count() != self.src_channels {
                 self.src_rate = spec.rate;
                 self.src_channels = spec.channels.count();
-                self.graph = Graph::new(
+                (self.graph, self.stretch, self.speed) = build_graph(
                     self.src_rate,
                     self.src_channels,
                     out_rate,
                     out_channels,
                     self.quality,
+                    &self.tempo,
                 );
             }
             let frames = decoded.frames() as u64;
@@ -313,15 +371,27 @@ impl Session {
                 if past_end && keep.end < frames {
                     // The music ends in this packet; what follows is padding.
                     let mut processed = Vec::with_capacity(samples.len());
-                    self.graph.process(samples, &mut processed);
+                    self.run_graph(samples, &mut processed);
                     self.push_pending(&processed);
                     self.finish();
                     continue;
                 }
             }
             let mut processed = Vec::with_capacity(samples.len());
-            self.graph.process(samples, &mut processed);
+            self.run_graph(samples, &mut processed);
             self.push_pending(&processed);
+        }
+    }
+
+    /// Decoded samples through the time-stretch (if any) and the conversion graph.
+    fn run_graph(&mut self, samples: &[f64], out: &mut Vec<f64>) {
+        match &mut self.stretch {
+            Some(w) => {
+                let mut stretched = Vec::new();
+                w.process(samples, &mut stretched);
+                self.graph.process(&stretched, out);
+            }
+            None => self.graph.process(samples, out),
         }
     }
 
@@ -353,6 +423,11 @@ impl Session {
     /// equalizer's look-ahead stays in its delay line: it plays on into a gapless next track.)
     fn finish(&mut self) {
         let mut tail = Vec::new();
+        if let Some(w) = &mut self.stretch {
+            let mut rest = Vec::new();
+            w.flush(&mut rest);
+            self.graph.process(&rest, &mut tail);
+        }
         self.graph.flush(&mut tail);
         self.push_pending(&tail);
         self.eof = true;
@@ -369,6 +444,7 @@ impl Session {
 
     /// Starts decoding the next track into the same ring buffer, so playback
     /// continues without a gap.
+    #[allow(clippy::too_many_arguments)]
     fn handover(
         prev: Session,
         item: QueueItem,
@@ -377,6 +453,7 @@ impl Session {
         out_channels: usize,
         quality: Quality,
         gain: Option<(f64, bool)>,
+        tempo: crate::Tempo,
     ) -> Session {
         let (mut format, decoder, track_id, mut info, duration) = opened;
         let (trim, ts_to_frames) = gapless_trim(&item, format.as_ref(), track_id, info.sample_rate);
@@ -389,14 +466,16 @@ impl Session {
         info.output_rate = out_rate;
         info.output = prev.info.output.clone();
         let src_channels = info.channels.max(1) as usize;
-        let graph = Graph::new(
+        let (graph, stretch, speed) = build_graph(
             info.sample_rate,
             src_channels,
             out_rate,
             out_channels,
             quality,
+            &tempo,
         );
         info.processing = graph.describe();
+        info.processing.extend(tempo_note(&tempo));
         info.processing.extend(gain_note(gain));
         info.processing.extend(
             prev.crossfeed
@@ -428,6 +507,9 @@ impl Session {
             gain: gain_factor(gain),
             eq: prev.eq,
             crossfeed: prev.crossfeed,
+            stretch,
+            speed,
+            tempo,
         }
     }
 }
@@ -487,6 +569,7 @@ impl Engine {
                 };
                 let s = self.session.as_ref().unwrap();
                 self.display = Some(Display {
+                    speed: s.speed,
                     item_id: s.item.id.clone(),
                     base: 0,
                     start_offset: s.start_offset,
@@ -573,17 +656,20 @@ impl Engine {
         out.played.store(0, Ordering::Relaxed);
         let src_channels = info.channels.max(1) as usize;
         let quality = self.options.quality;
-        let graph = Graph::new(
+        let tempo = self.item_tempo();
+        let (graph, stretch, speed) = build_graph(
             info.sample_rate,
             src_channels,
             out.rate,
             out.channels,
             quality,
+            &tempo,
         );
         let gain = self.item_gain(&item);
         let eq = self.make_eq(out.rate, out.channels);
         let crossfeed = self.make_crossfeed(out.rate, out.channels);
         info.processing = graph.describe();
+        info.processing.extend(tempo_note(&tempo));
         info.processing.extend(gain_note(gain));
         info.processing
             .extend(crossfeed.as_ref().map(|c| crossfeed_note(c.strength())));
@@ -611,6 +697,9 @@ impl Engine {
             gain: gain_factor(gain),
             eq,
             crossfeed,
+            stretch,
+            speed,
+            tempo,
             duration,
             info,
             pushed: 0,
@@ -694,7 +783,8 @@ impl Engine {
         match (&self.display, &self.output) {
             (Some(d), Some(o)) => {
                 let heard = self.heard_samples().saturating_sub(d.base);
-                d.start_offset + heard as f64 / (o.rate as f64 * o.channels as f64)
+                // Output seconds heard, times the source seconds each one carries.
+                d.start_offset + heard as f64 / (o.rate as f64 * o.channels as f64) * d.speed
             }
             _ => 0.0,
         }
@@ -869,12 +959,18 @@ impl Engine {
             Command::SetShuffle(on) => self.set_shuffle(on),
             Command::SetAudioOptions(o) => {
                 let reopen = o.output != self.options.output;
+                let retempo = o.tempo != self.options.tempo;
                 let regain = o.normalize != self.options.normalize
                     || o.eq != self.options.eq
                     || o.crossfeed != self.options.crossfeed;
                 self.options = o;
                 if regain && !reopen {
                     self.regain();
+                }
+                // Speed and pitch change how the whole chain is built: start the track again
+                // where it is (like a seek).
+                if retempo && !reopen && self.session.is_some() {
+                    self.reload_here(false);
                 }
                 if reopen {
                     self.sink.set_prefs(self.options.output);
@@ -974,6 +1070,7 @@ impl Engine {
             st.position = 0.0;
             drop(st);
             self.display = Some(Display {
+                speed: sw.speed,
                 item_id: sw.item_id,
                 base: sw.at,
                 start_offset: 0.0,
@@ -1056,9 +1153,19 @@ impl Engine {
                 let at = prev.pushed;
                 let quality = self.options.quality;
                 let gain = self.item_gain(&item);
-                let next =
-                    Session::handover(prev, item, opened, out_rate, out_channels, quality, gain);
+                let tempo = self.item_tempo();
+                let next = Session::handover(
+                    prev,
+                    item,
+                    opened,
+                    out_rate,
+                    out_channels,
+                    quality,
+                    gain,
+                    tempo,
+                );
                 self.switch = Some(Switch {
+                    speed: next.speed,
                     at,
                     item_id: next.item.id.clone(),
                     duration: next.duration,
@@ -1111,6 +1218,16 @@ fn gain_factor(gain: Option<(f64, bool)>) -> f64 {
 }
 
 impl Engine {
+    /// Speed and pitch for the next session: normal on bit-perfect paths (the audio doesn't pass
+    /// through Loss' processing there).
+    fn item_tempo(&self) -> crate::Tempo {
+        if self.options.output.bit_perfect {
+            crate::Tempo::default()
+        } else {
+            self.options.tempo
+        }
+    }
+
     /// The ReplayGain for an item, or None: off, no tags, or a bit-perfect path.
     fn item_gain(&self, item: &QueueItem) -> Option<(f64, bool)> {
         if self.options.output.bit_perfect {
@@ -1362,6 +1479,9 @@ mod tests {
             gain: 1.0,
             eq: None,
             crossfeed: None,
+            stretch: None,
+            speed: 1.0,
+            tempo: crate::Tempo::default(),
         };
         let mut out = Vec::new();
         let mut joins = Vec::new();
@@ -1382,6 +1502,7 @@ mod tests {
                     out_ch,
                     Quality::Best,
                     None,
+                    crate::Tempo::default(),
                 );
                 next += 1;
             } else if s.drained() {
@@ -2004,6 +2125,121 @@ mod tests {
         // And it is audible: the right ear now hears a good share of the left's bass.
         let share = rms32(&r[10_000..30_000]) / rms32(&l[10_000..30_000]);
         assert!(share > 0.3, "right/left {share}");
+    }
+
+    /// Frequency (Hz) of a clean tone from its zero crossings.
+    fn freq_of(x: &[f32], rate: f64) -> f64 {
+        let mut crossings = Vec::new();
+        for i in 1..x.len() {
+            if x[i - 1] < 0.0 && x[i] >= 0.0 {
+                let frac = (-x[i - 1] / (x[i] - x[i - 1])) as f64;
+                crossings.push(i as f64 - 1.0 + frac);
+            }
+        }
+        let n = crossings.len() - 1;
+        n as f64 * rate / (crossings[n] - crossings[0])
+    }
+
+    /// Plays a 2 s, 440 Hz file with `tempo`; returns the heard left channel and the engine.
+    fn play_tempo(tempo: crate::Tempo, bit_perfect: bool) -> (Vec<f32>, Engine) {
+        let (mut e, clock) = hires_dac();
+        let path = tmp("tempo.wav");
+        write_wav(&path, 44100, 2.0, 0, 88200);
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            tempo,
+            output: crate::sink::OutputPrefs {
+                bit_perfect,
+                ..Default::default()
+            },
+            ..AudioOptions::default()
+        }));
+        e.handle(Command::SetQueue {
+            items: vec![item(&path)],
+            start: 0,
+        });
+        play(&mut e, &clock, 200_000, 1024);
+        let left = heard_ch(&clock, 0);
+        let end = left.iter().rposition(|v| v.abs() > 1e-4).unwrap() + 1;
+        (left[..end].to_vec(), e)
+    }
+
+    #[test]
+    fn speed_and_pitch_are_accurate_to_half_a_percent() {
+        let rate = 44100.0;
+        let normal = crate::Tempo::default();
+        let (base, _) = play_tempo(normal, false);
+        assert!((base.len() as i64 - 88_200).abs() < 200);
+        // (speed, keep pitch, semitones) → (length factor, frequency factor)
+        let cases = [
+            (1.5, true, 0.0, 1.0 / 1.5, 1.0),
+            (0.75, true, 0.0, 1.0 / 0.75, 1.0),
+            (1.0, true, 12.0, 1.0, 2.0),
+            (1.0, true, -5.0, 1.0, 2f64.powf(-5.0 / 12.0)),
+            (1.25, true, 7.0, 1.0 / 1.25, 2f64.powf(7.0 / 12.0)),
+            (2.0, false, 0.0, 0.5, 2.0), // pitch follows speed
+        ];
+        for (speed, keep_pitch, semitones, length, pitch) in cases {
+            let (heard, _) = play_tempo(
+                crate::Tempo {
+                    speed,
+                    keep_pitch,
+                    semitones,
+                },
+                false,
+            );
+            let got_len = heard.len() as f64 / base.len() as f64;
+            assert!(
+                (got_len / length - 1.0).abs() < 0.01,
+                "speed {speed} pitch {semitones}: length ×{got_len:.3}, wanted ×{length:.3}"
+            );
+            let mid = &heard[heard.len() / 5..heard.len() * 4 / 5];
+            let got_f = freq_of(mid, rate) / 440.0;
+            assert!(
+                (got_f / pitch - 1.0).abs() < 0.005,
+                "speed {speed} pitch {semitones}: frequency ×{got_f:.4}, wanted ×{pitch:.4}"
+            );
+        }
+    }
+
+    #[test]
+    fn speed_is_ignored_on_bit_perfect_and_position_counts_source_seconds() {
+        let fast = crate::Tempo {
+            speed: 2.0,
+            ..Default::default()
+        };
+        let (heard, _) = play_tempo(fast, true);
+        assert!((heard.len() as i64 - 88_200).abs() < 200, "{}", heard.len());
+        // At double speed, one heard second is two seconds of the song.
+        let (mut e, clock) = hires_dac();
+        let path = tmp("tempo-pos.wav");
+        write_wav(&path, 44100, 2.0, 0, 88200);
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            tempo: fast,
+            ..AudioOptions::default()
+        }));
+        e.handle(Command::SetQueue {
+            items: vec![item(&path)],
+            start: 0,
+        });
+        play(&mut e, &clock, 22_050, 1000);
+        assert!((e.position() - 1.0).abs() < 0.05, "{}", e.position());
+        // Changing the speed while playing carries on from the same place.
+        let before = e.position();
+        e.handle(Command::SetAudioOptions(AudioOptions {
+            tempo: crate::Tempo::default(),
+            ..AudioOptions::default()
+        }));
+        assert!(
+            (e.position() - before).abs() < 0.05,
+            "{} vs {before}",
+            e.position()
+        );
+        play(&mut e, &clock, 22_050, 1000);
+        assert!(
+            (e.position() - (before + 0.5)).abs() < 0.06,
+            "{}",
+            e.position()
+        );
     }
 
     #[test]

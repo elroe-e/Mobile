@@ -3,6 +3,25 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-26 (session 5, later): speed and pitch (M2-13)
+
+- **M2-13** `loss_audio::stretch::Wsola` (waveform-similarity overlap-add: ~24 ms Hann windows, ±10 ms
+  search by normalised cross-correlation, exact output length, no fade-in) + `Tempo { speed,
+  keep_pitch, semitones }`. `Tempo::plan` gives (resample, stretch): keep-pitch → stretch
+  `speed/shift`, pitch shift by resampling `shift`; pitch-follows-speed → resample `speed·shift`,
+  stretch `1/shift`. Engine: the stretch runs at the source rate before the graph; the resample is
+  folded into the graph's source rate (`build_graph`, polynomial resampler since the FFT ones need
+  whole-number ratios); `Session::speed` / `Display::speed` make the position count source
+  seconds; a live change reloads the track at the current position; off on bit-perfect (the
+  Audio card says so). Settings → Audio: Speed (%), Keep the pitch, Pitch (semitones). In-player
+  menu and presets come with M3-07.
+- **Checked at sample level** (lesson from the EQ bug): heard length and frequency within 0.5%
+  for speeds 0.75–2× and pitch −5…+12 semitones, with and without keep-pitch; position counts
+  source seconds and carries over a live speed change. WSOLA costs 3% of real time (release).
+- Not done: the phase vocoder for "best" quality (WSOLA is fine for music with strong
+  periodicity, softer for dense mixes); smooth (click-free) speed changes: a live change
+  restarts the track from the same place.
+
 ## 2026-11-26 (session 5, later): fix, the equalizer and crossfeed weren't connected
 
 - **Bug (M2-10 and M2-12 builds before this commit):** `Session::push_pending` never ran the
