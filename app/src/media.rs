@@ -251,6 +251,7 @@ pub fn start(svc: &'static Services) {
         static STARTED: std::sync::Once = std::sync::Once::new();
         STARTED.call_once(|| {
             imp::start_events(svc);
+            crate::haptics::start(svc);
             std::thread::Builder::new()
                 .name("loss-media".into())
                 .spawn(move || imp::run(svc))

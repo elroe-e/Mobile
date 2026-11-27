@@ -5,6 +5,7 @@ mod dac;
 mod diag;
 #[cfg(target_os = "android")]
 mod glue;
+mod haptics;
 mod media;
 mod nav;
 mod notify;

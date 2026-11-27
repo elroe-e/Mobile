@@ -15,6 +15,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Preferred mixer attributes (bit-perfect USB output, M2-04). -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Music haptics (M2-19). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Ask once for "No restrictions" so playback isn't stopped with the screen off (M0-13) -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 

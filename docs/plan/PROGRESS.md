@@ -3,6 +3,27 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-27 (session 5, later): music haptics (M2-19)
+
+- `loss_audio::haptics::analyze`: bass (one-pole low-pass ~150 Hz) and sharp-edge onsets (first
+  difference), both as rises of log energy per 10 ms, mixed 60/40, normalised against the song's
+  recent level (3 s decay, floor so silence isn't amplified), gated by the sensitivity, and
+  turned into a pulse that decays over ~60 ms. One amplitude (0-255) per 20 ms; under 12 is
+  dropped (below what a motor does). Sustained sound gives nothing, so it follows rhythm, not
+  loudness. Tests: a pulse within 30 ms of each beat and silence between, silence/steady tone give
+  none, sensitivity gates weak hits, strength scales, and a drum WAV through the real decoder.
+- `loss_audio::haptic_timeline(item, sens, strength)` decodes the whole song once (decimated to
+  ~11 kHz, mono; memory stays small for hi-res) and analyses it; the app runs it on a background
+  thread per song (one at a time), local files only. A 150 ms driver thread sends the part about
+  to be heard (position + 30 ms, 400 ms long) to the glue's `vibrateWave` (VibrationEffect
+  waveform, USAGE_MEDIA attributes); pausing, a setting change or a song change cancels it.
+  VIBRATE permission added to the glue manifest. Settings → Audio: Vibrate to the music,
+  sensitivity, strength.
+- Unknown until it's on the phone: how tight the vibration is to the sound on the Xiaomi's motor
+  (`LEAD_SECS` in `app/src/haptics.rs`), and whether HyperOS lets a background app vibrate with
+  the screen off. Handy to know: it deliberately doesn't try to follow a Bluetooth output's
+  extra delay.
+
 ## 2026-11-27 (session 5, later): audio-info sheet (M2-18)
 
 - Tap the quality label in the player: a sheet with three groups. **The file:** codec, container

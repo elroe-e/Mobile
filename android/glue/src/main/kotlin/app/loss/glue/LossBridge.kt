@@ -178,6 +178,39 @@ object LossBridge {
         }
     }
 
+    // ---- Music haptics (M2-19): Rust plans, the vibrator only plays. ----
+
+    private fun vibrator(ctx: Context): android.os.Vibrator? =
+        if (Build.VERSION.SDK_INT >= 31) {
+            (ctx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? android.os.VibratorManager)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            ctx.getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+        }
+
+    /** Rust: play this waveform now (replaces the one playing). Durations in ms, amplitudes 0-255. */
+    @JvmStatic
+    fun vibrateWave(ctx: Context, timings: LongArray, amplitudes: IntArray) {
+        val v = vibrator(ctx) ?: return
+        if (!v.hasVibrator() || timings.isEmpty() || timings.size != amplitudes.size) return
+        try {
+            val effect = android.os.VibrationEffect.createWaveform(timings, amplitudes, -1)
+            if (Build.VERSION.SDK_INT >= 33) {
+                v.vibrate(effect, android.os.VibrationAttributes.createForUsage(android.os.VibrationAttributes.USAGE_MEDIA))
+            } else {
+                @Suppress("DEPRECATION")
+                v.vibrate(effect)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("Loss", "vibration failed: $e")
+        }
+    }
+
+    @JvmStatic
+    fun vibrateCancel(ctx: Context) {
+        vibrator(ctx)?.cancel()
+    }
+
     // ---- Haptics (M0-10) ----
 
     /** Rust: vibration feedback (an Android HapticFeedbackConstants value). */

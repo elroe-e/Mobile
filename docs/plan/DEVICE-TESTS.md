@@ -170,6 +170,11 @@ Android bit-perfect mixer for them.
       verdict, the Beats with its rates and formats, the burst size and low-latency/pro-audio
       flags. Copy report pastes English text. Please send me the sheet's text for the Beats.
 
+- [ ] (M2-19) Settings → Audio → Vibrate to the music on, play a song with a clear beat: the phone
+      pulses with the drums, not continuously, and stops on pause. Is it in time with the sound
+      (wired/USB; tell me if it's early or late)? Try sensitivity and strength. With the screen
+      off, does it keep going? A song with no clear beat (ambient) stays almost still.
+
 ## Later rounds
 
 Claude adds a section here for each milestone with phone-only behaviour (widgets, Android Auto, Cast,

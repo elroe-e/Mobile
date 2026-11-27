@@ -72,6 +72,10 @@ pub struct Settings {
     pub crossfeed: String,
     /// Cut long silent stretches inside songs short (M2-14).
     pub skip_silence: bool,
+    /// The phone vibrates to the beat of local songs (M2-19), and how sensitive and strong (%).
+    pub music_haptics: bool,
+    pub music_haptics_sensitivity: i64,
+    pub music_haptics_strength: i64,
     /// Pause when the phone is muted and resume when the volume comes back (M2-17).
     pub pause_on_mute: bool,
     /// Resume playback when headphones, a DAC or a car connect: "off", "after_disconnect" or
@@ -144,6 +148,9 @@ impl Default for Settings {
             normalization_preamp: 0,
             crossfeed: "off".into(),
             skip_silence: false,
+            music_haptics: false,
+            music_haptics_sensitivity: 50,
+            music_haptics_strength: 50,
             pause_on_mute: true,
             resume_on_connect: "off".into(),
             loud_volume_limit: 80,

@@ -150,7 +150,7 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 | SND-15 | Lock screen and notification controls | Yes | Yes (not tested on a phone) | Same | M1-08 | todo |
 | SND-16 | Lyrics on the lock screen | Yes | No | Only in Mornye | M3-14 | todo |
 | SND-17 | Autoplay when the queue ends | Related songs from your library; learns from your plays and skips on the phone | Stops at the end | Only in Mornye | M3-15 | todo |
-| SND-18 | Music haptics | The phone vibrates to the beat | No | Only in Mornye | M2-19 | todo |
+| SND-18 | Music haptics | The phone vibrates to the beat | No | Only in Mornye | M2-19 | done |
 | SND-19 | Resume after a restart | Restores the whole queue | “Continue listening” restarts the last album at the last position | Simpler in Loss | M2-23 | todo |
 | SND-20 | Counting plays | Plays and listening time | Plays (after 30 seconds or half the song) | Simpler in Loss | M2-24 | todo |
 

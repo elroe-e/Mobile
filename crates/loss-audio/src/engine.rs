@@ -327,15 +327,29 @@ fn open_file(path: &Path) -> Result<OpenedFile, String> {
 /// The first `secs` of a track as the engine would decode it (mono, at the file's own rate), to
 /// find its beats before it starts playing. None when it can't be read.
 fn decode_head(item: &QueueItem, secs: f64) -> Option<(Vec<f32>, u32)> {
+    decode_mono(item, secs, 1)
+}
+
+/// Decodes up to `secs` of a track into one mono channel, keeping one sample in `decimate`
+/// (their average; 0 picks it for about 11 kHz), so a long hi-res track doesn't fill memory. Returns the samples and their
+/// rate. None when the file can't be read or has under a second of sound.
+fn decode_mono(item: &QueueItem, secs: f64, decimate: usize) -> Option<(Vec<f32>, u32)> {
     let (mut format, mut decoder, track_id, info, _) = open_file(&item.path).ok()?;
     let (trim, (num, den)) = gapless_trim(item, format.as_ref(), track_id, info.sample_rate);
     let rate = info.sample_rate;
+    // 0: down to about 11 kHz, whatever the file's rate.
+    let step = if decimate == 0 {
+        ((rate + 5000) / 11_025).max(1) as usize
+    } else {
+        decimate
+    };
     let skip = trim.delay as f64 / rate.max(1) as f64;
     if skip > 0.05 {
         seek_to(format.as_mut(), track_id, skip);
     }
-    let want = (secs * rate as f64) as usize;
-    let mut out: Vec<f32> = Vec::with_capacity(want);
+    let want = (secs * rate as f64) as usize / step;
+    let mut out: Vec<f32> = Vec::with_capacity(want.min(1 << 20));
+    let (mut acc, mut n) = (0.0f32, 0usize);
     while out.len() < want {
         let Ok(packet) = format.next_packet() else {
             break;
@@ -357,13 +371,28 @@ fn decode_head(item: &QueueItem, secs: f64) -> Option<(Vec<f32>, u32)> {
             let keep = trim.keep(start, frames);
             samples = &samples[keep.start as usize * ch..keep.end as usize * ch];
         }
-        out.extend(
-            samples
-                .chunks(ch)
-                .map(|f| f.iter().sum::<f32>() / ch as f32),
-        );
+        for f in samples.chunks(ch) {
+            acc += f.iter().sum::<f32>() / ch as f32;
+            n += 1;
+            if n == step {
+                out.push(acc / step as f32);
+                (acc, n) = (0.0, 0);
+            }
+        }
     }
-    (out.len() > rate as usize).then_some((out, rate))
+    let out_rate = rate / step as u32;
+    (out.len() > out_rate as usize).then_some((out, out_rate))
+}
+
+/// The vibration plan for a track (M2-19): decodes it once at about 11 kHz and analyses it.
+/// Slow for a long file (a second or two): run it on a background thread.
+pub fn haptic_timeline(
+    item: &QueueItem,
+    sensitivity: f64,
+    strength: f64,
+) -> Option<crate::haptics::Timeline> {
+    let (x, rate) = decode_mono(item, 20.0 * 60.0, 0)?;
+    Some(crate::haptics::analyze(&x, rate, sensitivity, strength))
 }
 
 impl Session {
@@ -2711,6 +2740,23 @@ mod tests {
         assert!(left.iter().all(|v| v.abs() <= 1.0));
         let info = e.st().info.processing.join(", ");
         assert!(info.contains("beat match 120→124 BPM"), "{info}");
+    }
+
+    #[test]
+    fn haptic_timeline_follows_the_beats_of_a_file() {
+        let x = crate::beat::tests::drums_at(44_100, 120.0, 0.25, 8.0);
+        let pcm: Vec<i16> = x.iter().map(|v| (v * 20_000.0) as i16).collect();
+        let p = tmp("haptic.wav");
+        write_wav_pcm(&p, 44_100, &pcm);
+        let t = crate::haptic_timeline(&item(&p), 0.5, 0.5).expect("a timeline");
+        // A pulse at each beat (0.25 + k/2 s), quiet in between.
+        for k in 2..12 {
+            let at = 0.25 + k as f64 * 0.5;
+            let a = (at * 1000.0 / crate::haptics::FRAME_MS as f64) as usize;
+            let on = t.amps[a..a + 3].iter().copied().max().unwrap();
+            let off = t.amps[a + 13..a + 22].iter().copied().max().unwrap();
+            assert!(on > 80 && off == 0, "beat {k}: on {on}, between {off}");
+        }
     }
 
     #[test]

@@ -261,6 +261,24 @@ pub static SETTINGS: &[SettingDef] = &[
         &["silence", "gap", "quiet", "skip", "pause", "hidden track"],
     ),
     def(
+        "music_haptics",
+        Section::Audio,
+        Kind::Toggle,
+        &["vibrate", "vibration", "haptic", "beat", "rumble", "bass"],
+    ),
+    def(
+        "music_haptics_sensitivity",
+        Section::Audio,
+        Kind::Steps(&[25, 50, 75, 100]),
+        &["vibrate", "haptic", "sensitivity", "beat"],
+    ),
+    def(
+        "music_haptics_strength",
+        Section::Audio,
+        Kind::Steps(&[25, 50, 75, 100]),
+        &["vibrate", "haptic", "strength", "intensity"],
+    ),
+    def(
         "pause_on_mute",
         Section::Audio,
         Kind::Toggle,
@@ -550,6 +568,9 @@ pub fn get(s: &Settings, key: &str) -> Option<Value> {
         "spatial_audio" => Bool(s.spatial_audio),
         "crossfeed" => Text(s.crossfeed.clone()),
         "skip_silence" => Bool(s.skip_silence),
+        "music_haptics" => Bool(s.music_haptics),
+        "music_haptics_sensitivity" => Int(s.music_haptics_sensitivity),
+        "music_haptics_strength" => Int(s.music_haptics_strength),
         "pause_on_mute" => Bool(s.pause_on_mute),
         "resume_on_connect" => Text(s.resume_on_connect.clone()),
         "loud_volume_limit" => Int(s.loud_volume_limit),
@@ -615,6 +636,11 @@ pub fn set(s: &mut Settings, key: &str, value: Value) -> Result<(), SetError> {
         ("spatial_audio", Value::Bool(v)) => s.spatial_audio = v,
         ("crossfeed", Value::Text(v)) => s.crossfeed = v,
         ("skip_silence", Value::Bool(v)) => s.skip_silence = v,
+        ("music_haptics", Value::Bool(v)) => s.music_haptics = v,
+        ("music_haptics_sensitivity", Value::Int(v)) => {
+            s.music_haptics_sensitivity = v.clamp(0, 100)
+        }
+        ("music_haptics_strength", Value::Int(v)) => s.music_haptics_strength = v.clamp(0, 100),
         ("pause_on_mute", Value::Bool(v)) => s.pause_on_mute = v,
         ("resume_on_connect", Value::Text(v)) => s.resume_on_connect = v,
         ("loud_volume_limit", Value::Int(v)) => s.loud_volume_limit = v.clamp(0, 100),

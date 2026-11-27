@@ -359,6 +359,42 @@ pub fn haptic(kind: i32) {
     });
 }
 
+/// Plays a vibration waveform now: (duration ms, amplitude 0-255) steps. Replaces the one that
+/// is playing; an empty plan stops it. Does nothing elsewhere.
+#[cfg_attr(not(target_os = "android"), allow(unused_variables, dead_code))]
+pub fn vibrate(steps: &[(u32, u8)]) {
+    #[cfg(target_os = "android")]
+    android::with_env(|env, act| {
+        let cls = android::bridge_class(env, act)?;
+        if steps.is_empty() {
+            env.call_static_method(
+                &cls,
+                "vibrateCancel",
+                "(Landroid/content/Context;)V",
+                &[jni::objects::JValue::Object(act)],
+            )?;
+            return Ok(());
+        }
+        let timings: Vec<i64> = steps.iter().map(|s| s.0 as i64).collect();
+        let amps: Vec<i32> = steps.iter().map(|s| s.1 as i32).collect();
+        let t = env.new_long_array(timings.len() as i32)?;
+        env.set_long_array_region(&t, 0, &timings)?;
+        let a = env.new_int_array(amps.len() as i32)?;
+        env.set_int_array_region(&a, 0, &amps)?;
+        env.call_static_method(
+            &cls,
+            "vibrateWave",
+            "(Landroid/content/Context;[J[I)V",
+            &[
+                jni::objects::JValue::Object(act),
+                jni::objects::JValue::Object(&t),
+                jni::objects::JValue::Object(&a),
+            ],
+        )?;
+        Ok(())
+    });
+}
+
 /// Opens the settings screen that fixes a reliability check.
 #[cfg_attr(not(target_os = "android"), allow(unused_variables))]
 pub fn open_reliability(screen: &str) {
