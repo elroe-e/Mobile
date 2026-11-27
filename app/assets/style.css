@@ -353,6 +353,14 @@ textarea { resize: vertical; font-family: ui-monospace, monospace; font-size: 13
 .np-seek { position: relative; z-index: 1; margin-top: 18px; }
 .times { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12.5px; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; margin-top: 6px; }
 .quality { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 650; letter-spacing: .03em; padding: 4px 10px; border-radius: var(--r-full); background: var(--surface-container-high); color: var(--on-surface-variant); }
+.quality { border: 0; cursor: pointer; font-family: inherit; }
+.info-sheet { padding: 4px 16px 16px; overflow-y: auto; max-height: 70vh; }
+.info-group { margin-top: 12px; }
+.info-group-title { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--primary); padding: 6px 0; }
+.info-row { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; border-bottom: 1px solid var(--outline-variant); }
+.info-label { color: var(--on-surface-variant); flex: none; }
+.info-value { text-align: right; overflow-wrap: anywhere; }
+.info-copy { margin-top: 12px; display: inline-flex; gap: 6px; align-items: center; }
 .quality.lossless { background: var(--tertiary-container); color: var(--on-tertiary-container); }
 .np-controls { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; margin: 14px 0 10px; }
 .skip-btn { width: 64px; height: 56px; border-radius: var(--r-m); display: grid; place-items: center; background: var(--secondary-container); color: var(--on-secondary-container); transition: transform .25s var(--ease-spring), border-radius .3s var(--ease); }

@@ -418,6 +418,10 @@ object LossBridge {
             )
         }
         out.put("volume_fixed", am.isVolumeFixed)
+        val pm = ctx.packageManager
+        out.put("low_latency", pm.hasSystemFeature(android.content.pm.PackageManager.FEATURE_AUDIO_LOW_LATENCY))
+        out.put("pro_audio", pm.hasSystemFeature(android.content.pm.PackageManager.FEATURE_AUDIO_PRO))
+        am.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER)?.toIntOrNull()?.let { out.put("frames_per_buffer", it) }
         spatializer(am)?.let { out.put("spatial", it) }
         return out.toString()
     }

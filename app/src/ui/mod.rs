@@ -1,5 +1,6 @@
 //! The Loss user interface (Dioxus).
 
+mod audio_info;
 mod dac_probe;
 mod discover;
 mod downloads;

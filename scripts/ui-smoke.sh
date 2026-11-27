@@ -121,6 +121,9 @@ for loc in "${LOCALES[@]}"; do
   xdotool key ctrl+a BackSpace
   # Open the player from the mini player, then Escape (Back) closes it.
   xdotool mousemove 206 765 click 1; shot now-playing 1.5
+  # The quality label opens the audio-info sheet; Back closes it first, the player next.
+  xdotool mousemove 206 664 click 1; shot audio-info 1
+  xdotool key Escape; sleep 0.5
   xdotool key Escape; shot back
 
   if grep -q "cannot play" "$dir"/data/logs/loss.log; then

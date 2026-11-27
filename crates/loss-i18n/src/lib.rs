@@ -219,6 +219,20 @@ pub fn tr_args(id: &str, args: &[(&str, Arg)]) -> String {
         })
 }
 
+/// The English text of message `id` with these arguments, whatever language is set (for
+/// reports people send us).
+pub fn tr_en_args(id: &str, args: &[(&str, Arg)]) -> String {
+    let mut fargs = FluentArgs::new();
+    for (k, v) in args {
+        match v {
+            Arg::Text(t) => fargs.set(*k, FluentValue::from(t.clone())),
+            Arg::Number(n) => fargs.set(*k, FluentValue::from(*n)),
+        }
+    }
+    format(&bundle("en"), id, (!args.is_empty()).then_some(&fargs))
+        .unwrap_or_else(|| id.to_string())
+}
+
 /// The text of message `id`, or None if no language has it (no warning: for optional text).
 pub fn tr_opt(id: &str) -> Option<String> {
     let s = state();

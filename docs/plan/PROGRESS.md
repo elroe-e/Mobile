@@ -3,6 +3,25 @@
 Newest first. Each session adds an entry: date, tasks touched, what changed, what's left, anything the
 next session must know.
 
+## 2026-11-27 (session 5, later): audio-info sheet (M2-18)
+
+- Tap the quality label in the player: a sheet with three groups. **The file:** codec, container
+  (from the extension), rate, depth, channels, average bitrate and size (file size / length) and
+  the size against uncompressed PCM. **What Loss does:** each processing step, and a bit-perfect
+  verdict with its reason (yes in Bit-perfect/Direct USB when Loss changes nothing; no when Loss
+  resamples/levels/EQs, or in Standard mode; "not guaranteed" when the rate is the file's and
+  Loss changes nothing, since Android's mixer may still touch it). **Where it plays:** device,
+  its rates and formats, the stream as opened, the mixer burst (frames and ms), low-latency and
+  pro-audio features, spatial state. Copy report gives the same rows in English.
+- Code: `app/src/audio_info.rs` (pure `build(facts, tr)`, tested; kept out of `ui/` so the i18n
+  check doesn't flag units), `ui/audio_info.rs` (the sheet). Labels are `info-*` ids (a dynamic
+  prefix for check-i18n); `loss_i18n::tr_en_args` gives English whatever the language. The glue
+  adds `low_latency`, `pro_audio`, `frames_per_buffer` to the mixer JSON.
+- **Bluetooth codec:** Android doesn't tell apps which A2DP codec is active (the status class is
+  hidden API), so the sheet says where to see it (Developer options) instead of guessing. Say if
+  you'd rather have a reflection-based attempt.
+- ui-smoke now also screenshots the sheet (`12-audio-info.png`).
+
 ## 2026-11-26 (session 5, later): volume behaviours (M2-17)
 
 - `FocusPolicy` (loss-platform, pure and tested) now also decides: pause when the volume reaches

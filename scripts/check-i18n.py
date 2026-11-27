@@ -82,7 +82,7 @@ def scan(path: Path):
 FTL = ROOT / "crates/loss-i18n/locales/en/loss.ftl"
 USE = re.compile(r'\b(?:t!|tr|tr_args|tr_opt)\(\s*"([a-zA-Z][a-zA-Z0-9_-]*)"')
 # Ids built at run time by the settings registry.
-DYNAMIC = re.compile(r"^(setting|section|choice)-")
+DYNAMIC = re.compile(r"^(setting|section|choice|info)-")
 
 
 def missing_ids():

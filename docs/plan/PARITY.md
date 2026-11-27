@@ -114,7 +114,7 @@ Problems found during the audit are tracked as PRB-1…PRB-8 in [PLAN.md](PLAN.m
 |---|---|---|---|---|---|---|
 | PLY-01 | Artwork layout | Default, card or full screen (setting) | Full screen, fading into the background | Simpler in Loss | M3-01 | todo |
 | PLY-02 | Compact and landscape player | Compact bar, landscape layout, art beside lyrics | No | Only in Mornye | M3-01 | todo |
-| PLY-03 | Quality label | Plus a full audio-info sheet: signal path, bit-perfect or not, output device, Bluetooth codec | Codec, bit depth and sample rate | Simpler in Loss | M2-18 | todo |
+| PLY-03 | Quality label | Plus a full audio-info sheet: signal path, bit-perfect or not, output device, Bluetooth codec | Codec, bit depth and sample rate | Simpler in Loss | M2-18 | done |
 | PLY-04 | Play, pause, next, previous, shuffle, repeat | Yes | Yes | Same | — | keep |
 | PLY-05 | Seek bar | Wavy expressive bar | Thick flat bar that holds still while you drag | Different | M3-02 | todo |
 | PLY-06 | Volume slider | Phone volume; can be hidden; warns above a level you choose | Phone volume with a percentage (not tested on a phone) | Simpler in Loss | M2-17, M3-12 | doing |

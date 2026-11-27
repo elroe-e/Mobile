@@ -165,6 +165,11 @@ Android bit-perfect mixer for them.
       "Hide the volume control" removes the slider. With the Beats connected, does the Audio card
       show the fixed-volume warning (it shouldn't if the phone's volume works)?
 
+- [ ] (M2-18) Play a FLAC with the Beats connected, tap the quality label in the player: the
+      Audio info sheet lists the file (bitrate looks right), the steps Loss applies, the bit-perfect
+      verdict, the Beats with its rates and formats, the burst size and low-latency/pro-audio
+      flags. Copy report pastes English text. Please send me the sheet's text for the Beats.
+
 ## Later rounds
 
 Claude adds a section here for each milestone with phone-only behaviour (widgets, Android Auto, Cast,

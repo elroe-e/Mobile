@@ -167,6 +167,14 @@ pub struct Mixer {
     /// `AudioManager.isVolumeFixed()`: the phone's volume doesn't change the output.
     #[serde(default)]
     pub volume_fixed: bool,
+    /// `FEATURE_AUDIO_LOW_LATENCY` and `FEATURE_AUDIO_PRO`.
+    #[serde(default)]
+    pub low_latency: bool,
+    #[serde(default)]
+    pub pro_audio: bool,
+    /// `PROPERTY_OUTPUT_FRAMES_PER_BUFFER`: the mixer's burst size, 0 if unknown.
+    #[serde(default)]
+    pub frames_per_buffer: u32,
 }
 
 /// Android `AudioFormat` encodings for integer and float PCM.

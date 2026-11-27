@@ -1,5 +1,6 @@
 //! Full-screen player with seek bar, synced lyrics and the queue.
 
+use super::audio_info::AudioInfoSheet;
 use super::icons::Icon;
 use super::kit::Dialog;
 use super::{state, Cover, Slider};
@@ -26,6 +27,7 @@ pub fn NowPlaying() -> Element {
     let mut seek_hold: Signal<Option<(f64, std::time::Instant)>> = use_signal(|| None);
     let mut closing = use_signal(|| false);
     // A volume above the loud limit waiting for the user's OK.
+    let mut info_open = use_signal(|| false);
     let loud = use_signal(|| false);
     let loud_target = use_signal(|| 0.0f32);
     let Some(cur) = p.current().cloned() else {
@@ -142,7 +144,8 @@ pub fn NowPlaying() -> Element {
                 div { class: "times",
                     span { "{format_duration(pos)}" }
                     if !p.info.codec.is_empty() {
-                        span { class: if lossless { "quality lossless" } else { "quality" },
+                        button { class: if lossless { "quality lossless" } else { "quality" },
+                            onclick: move |_| info_open.set(true),
                             Icon { name: "eq", size: 14 }
                             "{quality}"
                         }
@@ -202,6 +205,7 @@ pub fn NowPlaying() -> Element {
                     span { class: "vol-pct", "{(vol_now * 100.0).round()}%" }
                 }
             }
+            AudioInfoSheet { open: info_open }
             Dialog {
                 open: loud,
                 title: t!("loud-volume-title"),
